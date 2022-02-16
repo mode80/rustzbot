@@ -16,14 +16,16 @@ fn main() {
     let die_combos = die_combos();
     let die_index_combos = die_index_combos();
 
-    println!("{}",fact(34));
+    let it = all_outcomes_for_rolling_n_dice(5);
+
+    // println!("{}",fact(34));
     // println!("{}",n_take_r(13,13,true,false));
     // let roll_outcomes = all_outcomes_for_rolling_n_dice(5);
 
     // println!("{:#?}",die_index_combos.len());
     // let it:Vec<u128> = (1..=13).map(|r| n_take_r(13,r,false,false) ).collect::<>();
-    // println!("{:#?}", it);
-    // assert!({die_index_combos.len()== }n_take_r(5,6,false,true).try_into().unwrap());
+
+    println!("{:#?}", it);
 }
 
 // rudimentary factorial suitable for our purposes here.. handles up to fact(34) */
@@ -96,13 +98,25 @@ fn die_index_combos() -> Vec<Vec<u8>>  {
 }
 
 
+fn all_outcomes_for_rolling_n_dice(n:u8) -> Vec<Vec<u8>> {
 
+    assert!(n<=5);
 
-// fn all_outcomes_for_rolling_n_dice(n:usize)  {
-//     let mut them = [[0;5];usize::pow(2,3)];
-//     for (j, (i, ii, iii, iv, v)) in iproduct!(1..=6, 1..=6, 1..=6, 1..=6, 1..=6).enumerate() {
-//         them[j]=[i,ii,iii,iv,v];
-//     }
-//     return them;
-// }
-
+    let mut them = vec![Vec::<u8>::new()]; 
+    for i in 1..=6 {
+        if n==1 {them.push(vec![i])} else {
+        for ii in 1..=6 {
+            if n==2 {them.push(vec![i,ii])} else {
+            for iii in 1..=6 {
+                if n==3 {them.push(vec![i,ii,iii])} else {
+                for iv in 1..=6 {
+                    if n==4 {them.push(vec![i,ii,iii,iv])} else {
+                    for v in 1..=6 {
+                        if n==5 {them.push(vec![i,ii,iii,iv,v])} 
+                    }}
+                }}
+            }}
+        }}
+    }
+    them
+}
