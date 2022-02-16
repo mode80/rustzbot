@@ -16,17 +16,17 @@ fn main() {
     let die_combos = die_combos();
     let die_index_combos = die_index_combos();
 
-    // println!("{}",fact(13));
+    println!("{}",fact(34));
     // println!("{}",n_take_r(13,13,true,false));
     // let roll_outcomes = all_outcomes_for_rolling_n_dice(5);
 
-    println!("{:#?}",die_index_combos.len());
-    let it:Vec<u128> = (1..=13).map(|r| n_take_r(13,r,false,false) ).collect::<>();
-    println!("{:#?}", it);
+    // println!("{:#?}",die_index_combos.len());
+    // let it:Vec<u128> = (1..=13).map(|r| n_take_r(13,r,false,false) ).collect::<>();
+    // println!("{:#?}", it);
     // assert!({die_index_combos.len()== }n_take_r(5,6,false,true).try_into().unwrap());
 }
 
-// rudimentary factorial suitable for our purposes here.. ie combos up to fact(13) */
+// rudimentary factorial suitable for our purposes here.. handles up to fact(34) */
 fn fact(n: u128) -> u128{
     if n<=1 {1} else { n*fact(n-1) }
 }
