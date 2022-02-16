@@ -13,6 +13,7 @@ fn main() {
     let die_combos = die_combos();
 
     println!("{}",fact(13));
+    println!("{}",n_take_r(13,13,true,false));
     // let roll_outcomes = all_outcomes_for_rolling_n_dice(5);
 
     println!("hello yahtzeebot");
@@ -37,7 +38,7 @@ fn n_take_r(n:u64, r:u64, ordered:bool, with_replacement:bool)->u64{
         if with_replacement {
             n.pow(r.try_into().unwrap()) 
         } else { // no replacement
-            fact(n)//fact(n-r)
+            fact(n) / fact(n-r)
         }
     }
 }
