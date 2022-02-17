@@ -19,7 +19,8 @@ fn main() {
 
     // let it = score_upperbox(5, [1,4,2,5,5]) ;
     // let it = score_n_of_a_kind(3, [1,2,5,5,5]) ;
-    let it = straight_len([1,2,3,4,6]);
+    // let it = straight_len([1,2,3,4,6]);
+    let it = score_sixes([1,6,3,4,6]);
 
     // let it = all_outcomes_for_rolling_n_dice(5);
     // println!("{}",fact(34));
@@ -31,6 +32,18 @@ fn main() {
 
     println!("{:#?}", it);
 }
+
+enum Slot {
+    Aces, Twos, Threes, Fours, Fives, Sixes,
+    ThreeOfAKind, FourOfAKind, 
+    SmStraight, LgStraight, 
+    FullHouse, Yahtzee, Chance 
+}
+
+const ALL_DICE:[u8;5] = [0,1,2,3,4];
+const UNROLLED_DIEVALS:[u8;5] = [0,0,0,0,0];
+const SIDES:u8 = 6;
+
 
 // rudimentary factorial suitable for our purposes here.. handles up to fact(34) */
 fn fact(n: u128) -> u128{
@@ -158,16 +171,18 @@ fn straight_len(sorted_dievals:[u8;5])->u8 {
     maxinarow 
 }
 
-enum Slot {
-    Aces, Twos, Threes, Fours, Fives, Sixes,
-    ThreeOfAKind, FourOfAKind, 
-    SmStraight, LgStraight, 
-    FullHouse, Yahtzee, Chance 
-}
+fn score_aces(sorted_dievals:       [u8;5])->u8{ score_upperbox(1,sorted_dievals) }
+fn score_twos(sorted_dievals:       [u8;5])->u8{ score_upperbox(2,sorted_dievals) }
+fn score_threes(sorted_dievals:     [u8;5])->u8{ score_upperbox(3,sorted_dievals) }
+fn score_fours(sorted_dievals:      [u8;5])->u8{ score_upperbox(4,sorted_dievals) }
+fn score_fives(sorted_dievals:      [u8;5])->u8{ score_upperbox(5,sorted_dievals) }
+fn score_sixes(sorted_dievals:      [u8;5])->u8{ score_upperbox(6,sorted_dievals) }
 
-const ALL_DICE:[u8;5] = [0,1,2,3,4];
-const UNROLLED_DIEVALS:[u8;5] = [0,0,0,0,0];
-const SIDES:u8 = 6;
+fn score_3ofakind(sorted_dievals:   [u8;5])->u8{ score_n_of_a_kind(3,sorted_dievals) }
+fn score_4ofakind(sorted_dievals:   [u8;5])->u8{ score_n_of_a_kind(4,sorted_dievals) }
+fn score_sm_str8(sorted_dievals:    [u8;5])->u8{ if straight_len(sorted_dievals) >= 4 {30} else {0} }
+fn score_lg_str8(sorted_dievals:    [u8;5])->u8{ if straight_len(sorted_dievals) >= 5 {40} else {0} }
+
 
 
 
