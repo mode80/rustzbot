@@ -2,7 +2,7 @@
 #![allow(unused_variables)]
 #![allow(unused_imports)]
 
-use std::{collections::HashSet, vec};
+use std::{collections::HashSet, vec, cmp::max};
 
 use itertools::iproduct;
 
@@ -16,8 +16,10 @@ fn main() {
     let die_combos = die_combos();
     let die_index_combos = die_index_combos();
 
-    let it = all_outcomes_for_rolling_n_dice(5);
+    // let it = score_upperbox(5, [1,4,2,5,5]) ;
+    let it = score_n_of_a_kind(3, [1,2,5,5,5]) ;
 
+    // let it = all_outcomes_for_rolling_n_dice(5);
     // println!("{}",fact(34));
     // println!("{}",n_take_r(13,13,true,false));
     // let roll_outcomes = all_outcomes_for_rolling_n_dice(5);
@@ -120,3 +122,19 @@ fn all_outcomes_for_rolling_n_dice(n:u8) -> Vec<Vec<u8>> {
     }
     them
 }
+
+fn score_upperbox(boxnum:u8, sorted_dievals:[u8;5])->u8{
+   sorted_dievals.iter().filter(|x| **x==boxnum).sum()
+}
+
+fn score_n_of_a_kind(n:u8,sorted_dievals:[u8;5])->u8{
+    let mut inarow=1; let mut maxinarow=1; let mut lastval=255; let mut sum=0; 
+    for x in sorted_dievals {
+        if x==lastval {inarow +=1} else {inarow=1}
+        maxinarow = max(inarow,maxinarow);
+        lastval = x;
+        sum+=x;
+    }
+    if maxinarow>=n {sum} else {0}
+}
+
