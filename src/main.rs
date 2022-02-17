@@ -4,6 +4,7 @@
 
 use std::{collections::HashSet, vec, cmp::max};
 
+use cached::proc_macro::cached;
 use itertools::iproduct;
 
 
@@ -78,6 +79,7 @@ fn die_combos()-> [[bool;5];64] {
 
 
 // // the set of all ways to roll different dice, as represented by a collection of indice vecs 
+#[cached]
 fn die_index_combos() -> Vec<Vec<u8>>  {
 
     let mut them = vec![Vec::<u8>::new()]; 
@@ -100,6 +102,7 @@ fn die_index_combos() -> Vec<Vec<u8>>  {
 }
 
 
+#[cached]
 fn all_outcomes_for_rolling_n_dice(n:u8) -> Vec<Vec<u8>> {
 
     assert!(n<=5);
@@ -123,10 +126,12 @@ fn all_outcomes_for_rolling_n_dice(n:u8) -> Vec<Vec<u8>> {
     them
 }
 
+#[cached]
 fn score_upperbox(boxnum:u8, sorted_dievals:[u8;5])->u8{
    sorted_dievals.iter().filter(|x| **x==boxnum).sum()
 }
 
+#[cached]
 fn score_n_of_a_kind(n:u8,sorted_dievals:[u8;5])->u8{
     let mut inarow=1; let mut maxinarow=1; let mut lastval=255; let mut sum=0; 
     for x in sorted_dievals {
