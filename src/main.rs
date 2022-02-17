@@ -18,7 +18,8 @@ fn main() {
     let die_index_combos = die_index_combos();
 
     // let it = score_upperbox(5, [1,4,2,5,5]) ;
-    let it = score_n_of_a_kind(3, [1,2,5,5,5]) ;
+    // let it = score_n_of_a_kind(3, [1,2,5,5,5]) ;
+    let it = straight_len([1,2,3,4,6]);
 
     // let it = all_outcomes_for_rolling_n_dice(5);
     // println!("{}",fact(34));
@@ -142,4 +143,32 @@ fn score_n_of_a_kind(n:u8,sorted_dievals:[u8;5])->u8{
     }
     if maxinarow>=n {sum} else {0}
 }
+
+
+#[cached]
+fn straight_len(sorted_dievals:[u8;5])->u8 {
+    let mut inarow=1; 
+    let mut maxinarow=1; 
+    let mut lastval=254; // stub
+    for x in sorted_dievals {
+        if x==lastval+1 {inarow+=1} else {inarow=1};
+        maxinarow = max(inarow,maxinarow);
+        lastval = x;
+    } 
+    maxinarow 
+}
+
+enum Slot {
+    Aces, Twos, Threes, Fours, Fives, Sixes,
+    ThreeOfAKind, FourOfAKind, 
+    SmStraight, LgStraight, 
+    FullHouse, Yahtzee, Chance 
+}
+
+const ALL_DICE:[u8;5] = [0,1,2,3,4];
+const UNROLLED_DIEVALS:[u8;5] = [0,0,0,0,0];
+const SIDES:u8 = 6;
+
+
+
 
