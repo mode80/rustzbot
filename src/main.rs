@@ -2,11 +2,12 @@
 #![allow(unused_variables)]
 #![allow(unused_imports)]
 
-use std::{collections::HashSet, vec, cmp::max};
+use std::{collections::{HashSet, HashMap}, vec, cmp::max};
 use counter::Counter;
 
 use cached::proc_macro::cached;
-use itertools::{iproduct, Itertools};
+use itertools::{iproduct, Permutations, Itertools};
+use ordered_float::OrderedFloat;
 
 
 fn main() {
@@ -38,22 +39,22 @@ fn main() {
     println!("{:#?}", it);
 }
 
-const ACES:usize=1; 
-const TWOS:usize=2; 
-const THREES:usize=3; 
-const FOURS:usize=4; 
-const FIVES:usize=5; 
-const SIXES:usize=6;
+const ACES:u8=1; 
+const TWOS:u8=2; 
+const THREES:u8=3; 
+const FOURS:u8=4; 
+const FIVES:u8=5; 
+const SIXES:u8=6;
 
-const THREE_OF_AKIND:usize=7; 
-const FOUR_OF_AKIND:usize=8; 
+const THREE_OF_AKIND:u8=7; 
+const FOUR_OF_AKIND:u8=8; 
 
-const SM_STRAIGHT:usize=9; 
-const LG_STRAIGHT:usize=10; 
+const SM_STRAIGHT:u8=9; 
+const LG_STRAIGHT:u8=10; 
 
-const FULL_HOUSE:usize=11; 
-const YAHTZEE:usize=12; 
-const CHANCE:usize=13; 
+const FULL_HOUSE:u8=11; 
+const YAHTZEE:u8=12; 
+const CHANCE:u8=13; 
 
 const ALL_DICE:[u8;5] = [0,1,2,3,4];
 const UNROLLED_DIEVALS:[u8;5] = [0,0,0,0,0];
@@ -82,7 +83,7 @@ fn n_take_r(n:u128, r:u128, ordered:bool, with_replacement:bool)->u128{
         }
     } else { // is ordered
         if with_replacement {
-            n.pow(r.try_into().unwrap()) 
+            n.pow(r as u32)
         } else { // no replacement
             fact(n) / fact(n-r)
         }
@@ -212,5 +213,51 @@ fn score_fullhouse(sorted_dievals:[u8;5]) -> u8 {
 fn score_chance(sorted_dievals:[u8;5])->u8 { sorted_dievals.iter().sum()  }
 fn score_yahtzee(sorted_dievals:[u8;5])->u8 { 
     let deduped=sorted_dievals.iter().dedup().collect_vec();
-    if deduped.len()==1 {50} else {0} }
+    if deduped.len()==1 {50} else {0} 
+}
 
+// reports the score for a set of dice in a given slot w/o regard for exogenous gamestate (bonuses, yahtzee wildcards etc)
+fn score_slot(slot_index:usize, sorted_dievals:[u8;5])->u8{
+    SCORE_FNS[slot_index](sorted_dievals) 
+}
+
+
+// returns the best slot and corresponding ev for final dice, given the slot possibilities and other relevant state 
+fn best_slot_ev(sorted_open_slots:Vec<u8>, sorted_dievals:[u8;5], upper_bonus_deficit:u8, yahtzee_is_wild:bool) -> (u8,OrderedFloat<f32>) {
+
+    let slot_sequences = sorted_open_slots.iter().permutations(sorted_open_slots.len()); 
+    let mut evs:HashMap<OrderedFloat<f32>,Vec<&u8>> = HashMap::new();  // TODO consider faster hash function or BHashMap blah blah
+    for slot_sequence in slot_sequences{
+        let mut total:OrderedFloat<f32> = 0.0.into() ;
+        let head_slot = *slot_sequence[0];
+        let upper_deficit_now = upper_bonus_deficit ;
+
+        let mut head_ev = SCORE_FNS[head_slot as usize](sorted_dievals); // score slot itself w/o regard to game state adjustments
+        let yahtzee_rolled = sorted_dievals[0]==sorted_dievals[4]; // go on to adjust the raw ev for exogenous game state factors
+        if yahtzee_rolled && yahtzee_is_wild { 
+            head_ev+=100; // extra yahtzee bonus per rules
+            if head_slot==SM_STRAIGHT {head_ev=30}; // extra yahtzees are valid in any lower slot per wildcard rules
+            if head_slot==LG_STRAIGHT {head_ev=40}; 
+            if head_slot==FULL_HOUSE {head_ev=25}; 
+        }
+        if head_slot <=SIXES && upper_deficit_now>0 && head_ev>0 { 
+            if head_ev >= upper_deficit_now {head_ev+=35}; // add upper bonus when needed total is reached
+            upper_deficit_now = max(upper_deficit_now - head_ev, 0) ;
+        }
+        total = total + OrderedFloat(head_ev.into());
+
+        if slot_sequence.len() > 1 { // proceed to also score remaining slots
+            let wild_now = if head_slot==YAHTZEE && yahtzee_rolled {true} else {yahtzee_is_wild};
+            let tail_slots = slot_sequence[1..].iter().sorted();
+            let tail_ev = 0.0; //TODO! ev_for_state(tail_slots, None, 3, upper_deficit_now, wild_now) # <---------
+            total += tail_ev;
+        }
+        evs[&total] = slot_sequence;
+    }
+
+    let best_ev = evs.keys().max().unwrap();//_by(|a, b| a.partial_cmp(b).unwrap()); // slot is a choice -- use max ev // rust floats can't be compared normally
+    let best_sequence = evs[best_ev];
+    let best_slot = best_sequence[0];
+
+    return (*best_slot, *best_ev);
+}
