@@ -3,6 +3,7 @@
 #![allow(unused_imports)]
 
 use std::{collections::HashSet, vec, cmp::max};
+use counter::Counter;
 
 use cached::proc_macro::cached;
 use itertools::iproduct;
@@ -20,7 +21,8 @@ fn main() {
     // let it = score_upperbox(5, [1,4,2,5,5]) ;
     // let it = score_n_of_a_kind(3, [1,2,5,5,5]) ;
     // let it = straight_len([1,2,3,4,6]);
-    let it = score_sixes([1,6,3,4,6]);
+    // let it = score_sixes([1,6,3,4,6]);
+    let it = score_fullhouse([1,2,2,1,1]);
 
     // let it = all_outcomes_for_rolling_n_dice(5);
     // println!("{}",fact(34));
@@ -183,7 +185,10 @@ fn score_4ofakind(sorted_dievals:   [u8;5])->u8{ score_n_of_a_kind(4,sorted_diev
 fn score_sm_str8(sorted_dievals:    [u8;5])->u8{ if straight_len(sorted_dievals) >= 4 {30} else {0} }
 fn score_lg_str8(sorted_dievals:    [u8;5])->u8{ if straight_len(sorted_dievals) >= 5 {40} else {0} }
 
-
-
+// The official rule is that a Full House is "three of one number and two of another"
+fn score_fullhouse(sorted_dievals:[u8;5]) -> u8 { 
+    let counts = sorted_dievals.iter().collect::<Counter<_>>().most_common_ordered(); //sorted(list(Counter(sorted_dievals).values() ))
+    if counts.len()==2 && (counts[0].1==3 && counts[1].1==2) {25} else {0}
+}
 
 
