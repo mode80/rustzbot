@@ -6,7 +6,7 @@ use std::{collections::HashSet, vec, cmp::max};
 use counter::Counter;
 
 use cached::proc_macro::cached;
-use itertools::iproduct;
+use itertools::{iproduct, Itertools};
 
 
 fn main() {
@@ -22,7 +22,9 @@ fn main() {
     // let it = score_n_of_a_kind(3, [1,2,5,5,5]) ;
     // let it = straight_len([1,2,3,4,6]);
     // let it = score_sixes([1,6,3,4,6]);
-    let it = score_fullhouse([1,2,2,1,1]);
+    // let it = score_fullhouse([1,1,1,2,2]);
+    let it = score_chance([1,1,1,2,1]);
+    // let it = score_yahtzee([1,1,1,2,1]);
 
     // let it = all_outcomes_for_rolling_n_dice(5);
     // println!("{}",fact(34));
@@ -191,4 +193,8 @@ fn score_fullhouse(sorted_dievals:[u8;5]) -> u8 {
     if counts.len()==2 && (counts[0].1==3 && counts[1].1==2) {25} else {0}
 }
 
+fn score_chance(sorted_dievals:[u8;5])->u8 { sorted_dievals.iter().sum()  }
+fn score_yahtzee(sorted_dievals:[u8;5])->u8 { 
+    let deduped=sorted_dievals.iter().dedup().collect_vec();
+    if deduped.len()==1 {50} else {0} }
 
