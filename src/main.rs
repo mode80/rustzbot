@@ -23,8 +23,9 @@ fn main() {
     // let it = straight_len([1,2,3,4,6]);
     // let it = score_sixes([1,6,3,4,6]);
     // let it = score_fullhouse([1,1,1,2,2]);
-    let it = score_chance([1,1,1,2,1]);
+    // let it = score_chance([1,1,1,2,1]);
     // let it = score_yahtzee([1,1,1,2,1]);
+    let it = SCORE_FNS[ACES]([1,1,2,3,1]);
 
     // let it = all_outcomes_for_rolling_n_dice(5);
     // println!("{}",fact(34));
@@ -37,17 +38,32 @@ fn main() {
     println!("{:#?}", it);
 }
 
-enum Slot {
-    Aces, Twos, Threes, Fours, Fives, Sixes,
-    ThreeOfAKind, FourOfAKind, 
-    SmStraight, LgStraight, 
-    FullHouse, Yahtzee, Chance 
-}
+const ACES:usize=1; 
+const TWOS:usize=2; 
+const THREES:usize=3; 
+const FOURS:usize=4; 
+const FIVES:usize=5; 
+const SIXES:usize=6;
+
+const THREE_OF_AKIND:usize=7; 
+const FOUR_OF_AKIND:usize=8; 
+
+const SM_STRAIGHT:usize=9; 
+const LG_STRAIGHT:usize=10; 
+
+const FULL_HOUSE:usize=11; 
+const YAHTZEE:usize=12; 
+const CHANCE:usize=13; 
 
 const ALL_DICE:[u8;5] = [0,1,2,3,4];
 const UNROLLED_DIEVALS:[u8;5] = [0,0,0,0,0];
 const SIDES:u8 = 6;
 
+const SCORE_FNS:[fn(sorted_dievals:[u8;5])->u8;14] = [
+    score_aces, // duplicate placeholder so indices align more intuitively with categories 
+    score_aces, score_twos, score_threes, score_fours, score_fives, score_sixes, 
+    score_3ofakind, score_4ofakind, score_sm_str8, score_lg_str8, score_fullhouse, score_yahtzee, score_chance, 
+];
 
 // rudimentary factorial suitable for our purposes here.. handles up to fact(34) */
 fn fact(n: u128) -> u128{
