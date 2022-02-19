@@ -6,7 +6,7 @@ use std::{collections::{HashSet, HashMap}, vec, cmp::max};
 use counter::Counter;
 
 use cached::proc_macro::cached;
-use itertools::{iproduct, Permutations, Itertools};
+use itertools::{iproduct, Permutations, Itertools, Combinations};
 use ordered_float::OrderedFloat;
 
 
@@ -17,7 +17,6 @@ fn main() {
     let die_combo: [bool; 5] = [true, true, true, true, true];
 
     // let die_combos = die_combos();
-    let die_index_combos = die_index_combos();
 
     // let it = score_upperbox(5, [1,4,2,5,5]) ;
     // let it = score_n_of_a_kind(3, [1,2,5,5,5]) ;
@@ -28,13 +27,13 @@ fn main() {
     // let it = score_yahtzee([1,1,1,2,1]);
     // let it = SCORE_FNS[ACES as usize]([1,1,2,3,1]);
     let it = best_dice_ev(&[CHANCE], [6,6,6,6,6], 1, INIT_DEFICIT, false);
+    // let it = die_index_combos();
 
     // let it = all_outcomes_for_rolling_n_dice(5);
     // println!("{}",fact(34));
     // println!("{}",n_take_r(13,13,true,false));
     // let roll_outcomes = all_outcomes_for_rolling_n_dice(5);
 
-    // println!("{:#?}",die_index_combos.len());
     // let it:Vec<u128> = (1..=13).map(|r| n_take_r(13,r,false,false) ).collect::<>();
 
     println!("{:#?}", it);
@@ -114,27 +113,16 @@ fn n_take_r(n:u128, r:u128, ordered:bool, with_replacement:bool)->u128{
 // }
 
 
-// // the set of all ways to roll different dice, as represented by a collection of indice vecs 
-// #[cached]
-fn die_index_combos() -> Vec<Vec<u8>>  { // TODO rewrite this to return an iterator?
-
-    let mut them = vec![Vec::<u8>::new()]; 
-    for i in 0u8..=4 {
-        them.push(vec![i]);
-        for ii in 0..=4 {
-            them.push(vec![i,ii].into_iter().sorted().dedup().collect_vec() );
-            for iii in 0..=4 {
-                them.push(vec![i,ii,iii].into_iter().sorted().dedup().collect_vec() );
-                for iv in 0..=4 {
-                    them.push(vec![i,ii,iii,iv].into_iter().sorted().dedup().collect_vec() );
-                    for v in 0..=4 {
-                        them.push(vec![i,ii,iii,iv,v].into_iter().sorted().dedup().collect_vec() );
-                    }
-                }
-            }
-        }
-    }
-    them
+// the set of all ways to roll different dice, as represented by a collection of indice vecs 
+#[cached]
+fn die_index_combos() -> Vec<Vec<u8>>  { 
+    let mut them:Vec<Vec<u8>> = (0..=4).combinations(0).collect_vec();
+    them.append(& mut (0..=4).combinations(1).collect_vec());
+    them.append(& mut (0..=4).combinations(2).collect_vec());
+    them.append(& mut (0..=4).combinations(3).collect_vec());
+    them.append(& mut (0..=4).combinations(4).collect_vec());
+    them.append(& mut (0..=4).combinations(5).collect_vec());
+    them 
 }
 
 
