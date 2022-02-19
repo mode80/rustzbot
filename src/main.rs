@@ -16,7 +16,7 @@ fn main() {
     let dievals: [u8; 5] = [0, 0, 0, 0, 0];
     let die_combo: [bool; 5] = [true, true, true, true, true];
 
-    let die_combos = die_combos();
+    // let die_combos = die_combos();
     let die_index_combos = die_index_combos();
 
     // let it = score_upperbox(5, [1,4,2,5,5]) ;
@@ -26,7 +26,7 @@ fn main() {
     // let it = score_fullhouse([1,1,1,2,2]);
     // let it = score_chance([1,1,1,2,1]);
     // let it = score_yahtzee([1,1,1,2,1]);
-    let it = SCORE_FNS[ACES]([1,1,2,3,1]);
+    let it = SCORE_FNS[ACES as usize]([1,1,2,3,1]);
 
     // let it = all_outcomes_for_rolling_n_dice(5);
     // println!("{}",fact(34));
@@ -56,7 +56,6 @@ const FULL_HOUSE:u8=11;
 const YAHTZEE:u8=12; 
 const CHANCE:u8=13; 
 
-const ALL_DICE:Vec<u8> = vec![0,1,2,3,4];
 const UNROLLED_DIEVALS:[u8;5] = [0,0,0,0,0];
 const SIDES:u8 = 6;
 
@@ -225,41 +224,43 @@ fn score_slot(slot_index:usize, sorted_dievals:[u8;5])->u8{
 // returns the best slot and corresponding ev for final dice, given the slot possibilities and other relevant state 
 fn best_slot_ev(sorted_open_slots:Vec<u8>, sorted_dievals:[u8;5], upper_bonus_deficit:u8, yahtzee_is_wild:bool) -> (u8,OrderedFloat<f32>) {
 
-    let slot_sequences = sorted_open_slots.iter().permutations(sorted_open_slots.len()); 
-    let mut evs:HashMap<OrderedFloat<f32>,Vec<&u8>> = HashMap::new();  // TODO consider faster hash function or BHashMap blah blah
+    let slotlen = sorted_open_slots.len();
+    let slot_sequences = sorted_open_slots.into_iter().permutations(slotlen);
+    let evs:HashMap<OrderedFloat<f32>,Vec<u8>> = HashMap::new();  // TODO consider faster hash function or BHashMap blah blah
     for slot_sequence in slot_sequences{
-        let mut total:OrderedFloat<f32> = 0.0.into() ;
-        let head_slot = *slot_sequence[0];
-        let upper_deficit_now = upper_bonus_deficit ;
+        let mut total:f32 = 0.0;
+        let head_slot = slot_sequence[0];
+        let mut upper_deficit_now = upper_bonus_deficit ;
 
         let mut head_ev = SCORE_FNS[head_slot as usize](sorted_dievals); // score slot itself w/o regard to game state adjustments
         let yahtzee_rolled = sorted_dievals[0]==sorted_dievals[4]; // go on to adjust the raw ev for exogenous game state factors
         if yahtzee_rolled && yahtzee_is_wild { 
-            head_ev+=100; // extra yahtzee bonus per rules
             if head_slot==SM_STRAIGHT {head_ev=30}; // extra yahtzees are valid in any lower slot per wildcard rules
             if head_slot==LG_STRAIGHT {head_ev=40}; 
             if head_slot==FULL_HOUSE {head_ev=25}; 
+            head_ev+=100; // extra yahtzee bonus per rules
         }
         if head_slot <=SIXES && upper_deficit_now>0 && head_ev>0 { 
             if head_ev >= upper_deficit_now {head_ev+=35}; // add upper bonus when needed total is reached
             upper_deficit_now = max(upper_deficit_now - head_ev, 0) ;
         }
-        total = total + OrderedFloat(head_ev.into());
+        total = total + head_ev as f32;
 
         if slot_sequence.len() > 1 { // proceed to also score remaining slots
             let wild_now = if head_slot==YAHTZEE && yahtzee_rolled {true} else {yahtzee_is_wild};
-            let tail_slots = slot_sequence[1..].iter().sorted();
-            let tail_ev = 0.0; //TODO! ev_for_state(tail_slots, None, 3, upper_deficit_now, wild_now) # <---------
-            total += tail_ev;
+            let tail_slots:Vec<u8> = slot_sequence[1..].iter().cloned().collect();
+            let tail_ev = ev_for_state(tail_slots, UNROLLED_DIEVALS, 3, upper_deficit_now, wild_now); // <---------
+            total = total + tail_ev as f32;
         }
-        evs[&total] = slot_sequence;
+        let total_index:OrderedFloat<f32> = OrderedFloat(total);
+        evs[&total_index] = slot_sequence;
     }
 
     let best_ev = evs.keys().max().unwrap();//max_by(|a, b| a.partial_cmp(b).unwrap()); // slot is a choice -- use max ev // rust floats can't be compared normally
     let best_sequence = evs[best_ev];
     let best_slot = best_sequence[0];
 
-    return (*best_slot, *best_ev);
+    return (best_slot, *best_ev);
 }
 
 // returns the best selection of dice and corresponding ev, given slot possibilities and any existing dice and other relevant state 
@@ -269,14 +270,15 @@ fn best_dice_ev(sorted_open_slots:Vec<u8>, sorted_dievals:[u8;5], rolls_remainin
     let die_combos:Vec<Vec<u8>> = vec![];
     if rolls_remaining==3{ //# we must select all dice on the first roll
         let sorted_dievals = UNROLLED_DIEVALS;
-        let die_combos = vec![ALL_DICE] ;
+        let die_combos = vec![vec![0,1,2,3,4]]; //all dice
     } else { //  # otherwise we must try all possible combos
         let die_combos= die_index_combos();
     }
 
     for selection in die_combos.iter(){ 
-        let total:f32 = 0.0;
+        let mut total:f32 = 0.0;
         let outcomes = all_outcomes_for_rolling_n_dice(selection.len() as u8);
+        let outcomeslen=outcomes.len();
         for outcome in outcomes{ 
             //###### HOT CODE PATH #######
             let mut newvals=sorted_dievals.clone();
@@ -288,12 +290,61 @@ fn best_dice_ev(sorted_open_slots:Vec<u8>, sorted_dievals:[u8;5], rolls_remainin
             total += ev
             //############################
         }
-        let avg_ev = total/outcomes.len() as f32; // outcomes are not a choice -- track average ev
-        selection_evs[&OrderedFloat(avg_ev)] = *selection ;
+        let avg_ev = total/outcomeslen as f32; // outcomes are not a choice -- track average ev
+        let evs_index = OrderedFloat(avg_ev);
+        selection_evs[&evs_index] = selection.clone() ;
     }
     
     let best_ev = selection_evs.keys().max().unwrap(); // selection is a choice -- track max ev
-    let best_selection = selection_evs[best_ev] ;
-    (best_selection, *best_ev)
+    let best_selection = selection_evs[&best_ev] ;
+    (*best_selection, *best_ev)
 
+}
+
+// returns a hashable key for relevant state parameters 
+fn key_for_state(sorted_open_slots:&Vec<u8>, sorted_dievals:[u8;5], rolls_remaining:u8, upper_bonus_deficit:u8, yahtzee_is_wild:bool) -> String { 
+    // TODO optimize this?
+    let mut key = String::with_capacity(35); 
+    let mut deficit_now = upper_bonus_deficit; 
+    for slot in sorted_open_slots{ key.push_str(&slot.to_string()); }
+    for die in sorted_dievals{ key.push_str(&die.to_string()); }
+    key.push_str(&rolls_remaining.to_string());
+    if upper_bonus_deficit > 0 && sorted_open_slots[0]>SIXES{ //trim the cachable state by ignoring upper total variations when no more upper slots are left
+        deficit_now=63
+    }
+    key.push_str(&deficit_now.to_string());
+    key.push_str(&(yahtzee_is_wild as u8).to_string());
+    key
+}
+
+// returns the additional expected value to come, given relevant game state.'''
+#[cached(key = "String", convert = r#"{ key_for_state(&sorted_open_slots,sorted_dievals,rolls_remaining,upper_bonus_deficit,yahtzee_is_wild) }"#)]
+fn ev_for_state(sorted_open_slots:Vec<u8>, sorted_dievals:[u8;5], rolls_remaining:u8, upper_bonus_deficit:u8, yahtzee_is_wild:bool) -> f32{ 
+    // global progress_bar, log, done, ev_cache
+
+    // if progress_bar is None: 
+    //     lenslots=len(sorted_open_slots)
+    //     open_slot_combos = sum(n_take_r(lenslots,r,False,False) for r in fullrange(1,lenslots)) 
+    //     done = set(s for s,_,r,_,_ in ev_cache.keys() if r==3)
+    //     progress_bar = tqdm(initial=len(done), total=open_slot_combos, smoothing=0.0) 
+
+    let ev:OrderedFloat<f32> = OrderedFloat(0.0);
+    if rolls_remaining == 0 {
+        let (_, ev) = best_slot_ev(sorted_open_slots.clone(), sorted_dievals, upper_bonus_deficit, yahtzee_is_wild);                 // <-----------------
+    } else { 
+        let (_, ev) = best_dice_ev(sorted_open_slots, sorted_dievals, rolls_remaining, upper_bonus_deficit, yahtzee_is_wild);  // <-----------------
+    }
+            
+    // log_line = f'{rolls_remaining:<2}\t{str(_):<15}\t{ev:6.2f}\t{str(sorted_dievals):<15}\t{upper_bonus_deficit:<2}\t{yahtzee_is_wild}\t{str(sorted_open_slots)}' 
+    // progress_bar.write(log_line)
+    // print(log_line,file=log)
+
+    // if rolls_remaining==3: # periodically update progress and save
+    //     if sorted_open_slots not in done:
+    //         done.add(sorted_open_slots)
+    //         progress_bar.update(1) 
+    //         if len(done) % 80 == 0 :
+    //             with open('ev_cache.pkl','wb') as f: pickle.dump(ev_cache,f)
+ 
+    ev.into()
 }
