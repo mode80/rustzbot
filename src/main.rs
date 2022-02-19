@@ -27,7 +27,7 @@ fn main() {
     // let it = score_yahtzee([1,1,1,2,1]);
     // let it = SCORE_FNS[ACES as usize]([1,1,2,3,1]);
     // let it = best_dice_ev(&[CHANCE], [6,6,6,6,6], 1, INIT_DEFICIT, false);
-    let it = best_slot_ev(&[ACES,CHANCE,], [1,1,6,6,6], INIT_DEFICIT, false);
+    let it = ev_for_state(&[1,2,3,4,5,6,7,8,9,10,11,12,13], [1,1,6,6,6], 3, INIT_DEFICIT, false);
     // let it = die_index_combos();
 
     // let it = all_outcomes_for_rolling_n_dice(5);
@@ -331,6 +331,8 @@ fn ev_for_state(sorted_open_slots:&[u8], sorted_dievals:[u8;5], rolls_remaining:
     }
             
     // log_line = f'{rolls_remaining:<2}\t{str(_):<15}\t{ev:6.2f}\t{str(sorted_dievals):<15}\t{upper_bonus_deficit:<2}\t{yahtzee_is_wild}\t{str(sorted_open_slots)}' 
+    println!( "rolls_remaining: {}\t result: _ \t ev: {:.2}  \t dievals:{:?}\t deficit: {}\t wild: {}\t slots: {:?}", 
+             rolls_remaining,                    ev, sorted_dievals, upper_bonus_deficit, yahtzee_is_wild, sorted_open_slots);
     // progress_bar.write(log_line)
     // print(log_line,file=log)
 
