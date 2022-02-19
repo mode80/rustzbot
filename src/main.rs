@@ -26,8 +26,8 @@ fn main() {
     // let it = score_fullhouse([1,1,1,2,2]);
     // let it = score_chance([1,1,1,2,1]);
     // let it = score_yahtzee([1,1,1,2,1]);
-    let it = SCORE_FNS[ACES as usize]([1,1,2,3,1]);
-    // let it = best_slot_ev(vec!, sorted_dievals, upper_bonus_deficit, yahtzee_is_wild)
+    // let it = SCORE_FNS[ACES as usize]([1,1,2,3,1]);
+    let it = best_dice_ev(&[CHANCE], [6,6,6,6,6], 1, INIT_DEFICIT, false);
 
     // let it = all_outcomes_for_rolling_n_dice(5);
     // println!("{}",fact(34));
@@ -59,6 +59,7 @@ const CHANCE:u8=13;
 
 const UNROLLED_DIEVALS:[u8;5] = [0,0,0,0,0];
 const SIDES:u8 = 6;
+const INIT_DEFICIT:u8 = 63;
 
 const SCORE_FNS:[fn(sorted_dievals:[u8;5])->u8;14] = [
     score_aces, // duplicate placeholder so indices align more intuitively with categories 
@@ -114,20 +115,20 @@ fn n_take_r(n:u128, r:u128, ordered:bool, with_replacement:bool)->u128{
 
 
 // // the set of all ways to roll different dice, as represented by a collection of indice vecs 
-#[cached]
+// #[cached]
 fn die_index_combos() -> Vec<Vec<u8>>  { // TODO rewrite this to return an iterator?
 
     let mut them = vec![Vec::<u8>::new()]; 
     for i in 0u8..=4 {
         them.push(vec![i]);
         for ii in 0..=4 {
-            them.push(vec![i,ii]);
+            them.push(vec![i,ii].into_iter().sorted().dedup().collect_vec() );
             for iii in 0..=4 {
-                them.push(vec![i,ii,iii]);
+                them.push(vec![i,ii,iii].into_iter().sorted().dedup().collect_vec() );
                 for iv in 0..=4 {
-                    them.push(vec![i,ii,iii,iv]);
+                    them.push(vec![i,ii,iii,iv].into_iter().sorted().dedup().collect_vec() );
                     for v in 0..=4 {
-                        them.push(vec![i,ii,iii,iv,v]);
+                        them.push(vec![i,ii,iii,iv,v].into_iter().sorted().dedup().collect_vec() );
                     }
                 }
             }
@@ -142,7 +143,8 @@ fn all_outcomes_for_rolling_n_dice(n:u8) -> Vec<Vec<u8>> {
 
     assert!(n<=5);
 
-    let mut them = vec![Vec::<u8>::new()]; 
+    let mut them = vec![]; 
+    if n==0 {them.push(vec![]) } else {
     for i in 1..=6 {
         if n==1 {them.push(vec![i])} else {
         for ii in 1..=6 {
@@ -157,7 +159,7 @@ fn all_outcomes_for_rolling_n_dice(n:u8) -> Vec<Vec<u8>> {
                 }}
             }}
         }}
-    }
+    }}
     them
 }
 
@@ -268,12 +270,12 @@ fn best_slot_ev(sorted_open_slots:&[u8], sorted_dievals:[u8;5], upper_bonus_defi
 fn best_dice_ev(sorted_open_slots:&[u8], sorted_dievals:[u8;5], rolls_remaining:u8, upper_bonus_deficit:u8, yahtzee_is_wild:bool) -> (Vec<u8>,OrderedFloat<f32>){ 
 
     let mut selection_evs:HashMap<OrderedFloat<f32>,Vec<u8>> = HashMap::new(); 
-    let die_combos:Vec<Vec<u8>> = vec![];
+    let mut die_combos:Vec<Vec<u8>> = vec![];
     if rolls_remaining==3{ //# we must select all dice on the first roll
         let sorted_dievals = UNROLLED_DIEVALS;
-        let die_combos = vec![vec![0,1,2,3,4]]; //all dice
+        die_combos.push(vec![0,1,2,3,4]) ; //all dice
     } else { //  # otherwise we must try all possible combos
-        let die_combos= die_index_combos();
+        die_combos= die_index_combos();
     }
 
     for selection in die_combos.iter(){ 
@@ -286,9 +288,9 @@ fn best_dice_ev(sorted_open_slots:&[u8], sorted_dievals:[u8;5], rolls_remaining:
             for (i, j) in selection.iter().enumerate() { 
                 newvals[*j as usize]=outcome[i];    // TODO performance implications of the cast?
             }
-            let sorted_newvals = newvals.iter().sorted().collect_vec();
-            let ev = 0.0; // TODO! ev_for_state(sorted_open_slots, sorted_newvals, rolls_remaining-1, upper_bonus_deficit, yahtzee_is_wild)
-            total += ev
+            let sorted_newvals = newvals.iter().sorted().cloned().collect_vec().try_into().unwrap(); // oy
+            let ev =  ev_for_state(sorted_open_slots, sorted_newvals, rolls_remaining-1, upper_bonus_deficit, yahtzee_is_wild);
+            total += ev;
             //############################
         }
         let avg_ev = total/outcomeslen as f32; // outcomes are not a choice -- track average ev
