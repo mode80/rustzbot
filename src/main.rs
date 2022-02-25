@@ -29,7 +29,13 @@ fn main() {
     // let it = score_chance([1,1,1,2,1]);
     // let it = score_yahtzee([1,1,1,2,1]);
     // let it = SCORE_FNS[ACES as usize]([1,1,2,3,1]);
-    let it = best_dice_ev(&[Chance], [6,6,6,6,6], 1, INIT_DEFICIT, false);
+    let it = best_dice_ev(&GameState{
+        sorted_open_slots: &[Chance],
+        sorted_dievals: [6,6,6,6,6],
+        rolls_remaining: 1,
+        upper_bonus_deficit: INIT_DEFICIT,
+        yahtzee_is_wild: false,
+    });
     // let it = die_index_combos();
 
     // let it = all_outcomes_for_rolling_n_dice(5);
@@ -126,7 +132,7 @@ fn n_take_r(n:u128, r:u128, ordered:bool, with_replacement:bool)->u128{
 
 
 /// the set of all ways to roll different dice, as represented by a collection of indice vecs 
-#[cached]
+// #[cached]
 fn die_index_combos() -> Vec<Vec<u8>>  { 
     let mut them:Vec<Vec<u8>> = (0..=4).combinations(0).collect_vec();
     them.append(& mut (0..=4).combinations(1).collect_vec());
@@ -138,7 +144,7 @@ fn die_index_combos() -> Vec<Vec<u8>>  {
 }
 
 
-#[cached]
+// #[cached]
 fn all_outcomes_for_rolling_n_dice(n:u8) -> Vec<Vec<u8>> {
 
     assert!(n<=5);
@@ -163,12 +169,10 @@ fn all_outcomes_for_rolling_n_dice(n:u8) -> Vec<Vec<u8>> {
     them
 }
 
-#[cached]
 fn score_upperbox(boxnum:u8, sorted_dievals:[u8;5])->u8{
    sorted_dievals.iter().filter(|x| **x==boxnum).sum()
 }
 
-#[cached]
 fn score_n_of_a_kind(n:u8,sorted_dievals:[u8;5])->u8{
     let mut inarow=1; let mut maxinarow=1; let mut lastval=255; let mut sum=0; 
     for x in sorted_dievals {
@@ -181,7 +185,6 @@ fn score_n_of_a_kind(n:u8,sorted_dievals:[u8;5])->u8{
 }
 
 
-#[cached]
 fn straight_len(sorted_dievals:[u8;5])->u8 {
     let mut inarow=1; 
     let mut maxinarow=1; 
@@ -219,26 +222,34 @@ fn score_yahtzee(sorted_dievals:[u8;5])->u8 {
 }
 
 /// reports the score for a set of dice in a given slot w/o regard for exogenous gamestate (bonuses, yahtzee wildcards etc)
+// #[cached]
 fn score_slot(slot_index:usize, sorted_dievals:[u8;5])->u8{
     SCORE_FNS[slot_index](sorted_dievals) 
 }
 
+struct GameState<'a>{
+    sorted_open_slots:&'a [SlotType], 
+    sorted_dievals:[u8;5], 
+    rolls_remaining:u8, 
+    upper_bonus_deficit:u8, 
+    yahtzee_is_wild:bool
+}
 
 /// returns the best slot and corresponding ev for final dice, given the slot possibilities and other relevant state 
-fn best_slot_ev(sorted_open_slots:&[SlotType], sorted_dievals:[u8;5], upper_bonus_deficit:u8, yahtzee_is_wild:bool) -> (SlotType,f32) {
+fn best_slot_ev(s:&GameState) -> (SlotType,f32) {
 
     use SlotType::*;
-    let slot_sequences = sorted_open_slots.iter().permutations(sorted_open_slots.len());
+    let slot_sequences = s.sorted_open_slots.iter().permutations(s.sorted_open_slots.len());
     let mut evs:HashMap<OrderedFloat<f32>,Vec<SlotType>> = HashMap::new();  // TODO consider faster hash function  (fnv crate?) or BHashMap blah blah
     for slot_sequence in slot_sequences{
         let mut total:f32 = 0.0;
         let slot_sequence:Vec<SlotType> = slot_sequence.iter().copied().copied().collect(); // wtf rust?
         let head_slot = slot_sequence[0];
-        let mut upper_deficit_now = upper_bonus_deficit ;
+        let mut upper_deficit_now = s.upper_bonus_deficit ;
 
-        let mut head_ev = SCORE_FNS[head_slot as usize](sorted_dievals); // score slot itself w/o regard to game state adjustments
-        let yahtzee_rolled = sorted_dievals[0]==sorted_dievals[4]; // go on to adjust the raw ev for exogenous game state factors
-        if yahtzee_rolled && yahtzee_is_wild { 
+        let mut head_ev = SCORE_FNS[head_slot as usize](s.sorted_dievals); // score slot itself w/o regard to game state adjustments
+        let yahtzee_rolled = s.sorted_dievals[0]==s.sorted_dievals[4]; // go on to adjust the raw ev for exogenous game state factors
+        if yahtzee_rolled && s.yahtzee_is_wild { 
             if head_slot==SmStraight {head_ev=30}; // extra yahtzees are valid in any lower slot per wildcard rules
             if head_slot==LgStraight {head_ev=40}; 
             if head_slot==FullHouse  {head_ev=25}; 
@@ -251,9 +262,14 @@ fn best_slot_ev(sorted_open_slots:&[SlotType], sorted_dievals:[u8;5], upper_bonu
         total += head_ev as f32;
 
         if slot_sequence.len() > 1 { // proceed to also score remaining slots
-            let wild_now = if head_slot==Yahtzee && yahtzee_rolled {true} else {yahtzee_is_wild};
-            let tail_slots:Vec<SlotType> = slot_sequence[1..].to_vec(); // TODO pop instead for performance?
-            let tail_ev = ev_for_state(&tail_slots, UNROLLED_DIEVALS, 3, upper_deficit_now, wild_now); // <---------
+            let newstate= GameState{
+                yahtzee_is_wild: if head_slot==Yahtzee && yahtzee_rolled {true} else {s.yahtzee_is_wild},
+                sorted_open_slots: &slot_sequence[1..].to_vec(), // TODO pop instead for performance?
+                rolls_remaining: 3,
+                upper_bonus_deficit: upper_deficit_now,
+                sorted_dievals: s.sorted_dievals, 
+            };
+            let tail_ev = ev_for_state(&newstate); // <---------
             total += tail_ev as f32;
         }
         let total_index:OrderedFloat<f32> = OrderedFloat(total);
@@ -269,13 +285,13 @@ fn best_slot_ev(sorted_open_slots:&[SlotType], sorted_dievals:[u8;5], upper_bonu
 }
 
 /// returns the best selection of dice and corresponding ev, given slot possibilities and any existing dice and other relevant state 
-fn best_dice_ev(sorted_open_slots:&[SlotType], sorted_dievals:[u8;5], rolls_remaining:u8, upper_bonus_deficit:u8, yahtzee_is_wild:bool) -> (Vec<u8>,f32){ 
+fn best_dice_ev(s:&GameState) -> (Vec<u8>,f32){ 
 
     let mut selection_evs:HashMap<OrderedFloat<f32>,Vec<u8>> = HashMap::new();  //TODO change this to BinaryHeap so that retreiving the max is O(1)
     let mut die_combos:Vec<Vec<u8>> = vec![];
 
-    let mut dievals = sorted_dievals;
-    if rolls_remaining==3{ //# we must select all dice on the first roll
+    let mut dievals = s.sorted_dievals;
+    if s.rolls_remaining==3{ //# we must select all dice on the first roll
         dievals = UNROLLED_DIEVALS;
         die_combos.push(vec![0,1,2,3,4]) ; //all dice
     } else { //  # otherwise we must try all possible combos
@@ -294,7 +310,7 @@ fn best_dice_ev(sorted_open_slots:&[SlotType], sorted_dievals:[u8;5], rolls_rema
             }
             let mut sorted_newvals = newvals; 
             sorted_newvals.sort_unstable();
-            let ev =  ev_for_state(sorted_open_slots, sorted_newvals, rolls_remaining-1, upper_bonus_deficit, yahtzee_is_wild);
+            let ev =  ev_for_state(s);
             total += ev;
             //############################
         }
@@ -310,25 +326,25 @@ fn best_dice_ev(sorted_open_slots:&[SlotType], sorted_dievals:[u8;5], rolls_rema
 }
 
 /// returns a hashable key for relevant state parameters 
-fn key_for_state(sorted_open_slots:&[SlotType], sorted_dievals:[u8;5], rolls_remaining:u8, upper_bonus_deficit:u8, yahtzee_is_wild:bool) -> String { 
+fn key_for_state(s:&GameState) -> String { 
     // TODO optimize this for size with struct? bitmasked u128?
     use SlotType::*;
     let mut key = String::with_capacity(35); 
-    let mut deficit_now = upper_bonus_deficit; 
-    for slot in sorted_open_slots{ key.push_str(&(*slot as u8).to_string()); }
-    for die in sorted_dievals{ key.push_str(&die.to_string()); }
-    key.push_str(&rolls_remaining.to_string());
-    if upper_bonus_deficit > 0 && sorted_open_slots[0] > Sixes { //trim the cachable state by ignoring upper total variations when no more upper slots are left
+    let mut deficit_now = s.upper_bonus_deficit; 
+    for slot in s.sorted_open_slots{ key.push_str(&(*slot as u8).to_string()); }
+    for die in s.sorted_dievals{ key.push_str(&die.to_string()); }
+    key.push_str(&s.rolls_remaining.to_string());
+    if s.upper_bonus_deficit > 0 && s.sorted_open_slots[0] > Sixes { //trim the cachable state by ignoring upper total variations when no more upper slots are left
         deficit_now=63
     }
     key.push_str(&deficit_now.to_string());
-    key.push_str(&(yahtzee_is_wild as u8).to_string());
+    key.push_str(&(s.yahtzee_is_wild as u8).to_string());
     key
 }
 
 /// returns the additional expected value to come, given relevant game state.'''
 /// #[cached(key = "String", convert = r#"{ key_for_state(&sorted_open_slots,sorted_dievals,rolls_remaining,upper_bonus_deficit,yahtzee_is_wild) }"#)]
-fn ev_for_state(sorted_open_slots:&[SlotType], sorted_dievals:[u8;5], rolls_remaining:u8, upper_bonus_deficit:u8, yahtzee_is_wild:bool) -> f32{ 
+fn ev_for_state(s:&GameState) -> f32{ 
     // global progress_bar, log, done, ev_cache
 
     // static mut TQDM:Option<TqdmManual> = None;
@@ -344,11 +360,11 @@ fn ev_for_state(sorted_open_slots:&[SlotType], sorted_dievals:[u8;5], rolls_rema
     // }
 
     let ev:f32;
-    if rolls_remaining == 0 {
-        let answer = best_slot_ev(sorted_open_slots, sorted_dievals, upper_bonus_deficit, yahtzee_is_wild);                  // <-----------------
+    if s.rolls_remaining == 0 {
+        let answer = best_slot_ev(s);                  // <-----------------
         ev = answer.1;
     } else { 
-        let answer = best_dice_ev(sorted_open_slots, sorted_dievals, rolls_remaining, upper_bonus_deficit, yahtzee_is_wild);  // <-----------------
+        let answer = best_dice_ev(s);  // <-----------------
         ev = answer.1;
     }
             
