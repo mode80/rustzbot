@@ -228,11 +228,11 @@ fn score_slot(slot_index:usize, sorted_dievals:[u8;5])->u8{
 }
 
 struct GameState<'a>{
-    sorted_open_slots:&'a [SlotType], 
     sorted_dievals:[u8;5], 
     rolls_remaining:u8, 
     upper_bonus_deficit:u8, 
-    yahtzee_is_wild:bool
+    yahtzee_is_wild:bool,
+    sorted_open_slots:&'a [SlotType], 
 }
 
 /// returns the best slot and corresponding ev for final dice, given the slot possibilities and other relevant state 
@@ -310,7 +310,14 @@ fn best_dice_ev(s:&GameState) -> (Vec<u8>,f32){
             }
             let mut sorted_newvals = newvals; 
             sorted_newvals.sort_unstable();
-            let ev =  ev_for_state(s);
+            let newstate= GameState{ // TODO slower than individual args?
+                yahtzee_is_wild: s.yahtzee_is_wild, 
+                sorted_open_slots: s.sorted_open_slots, 
+                rolls_remaining: s.rolls_remaining-1,
+                upper_bonus_deficit: s.upper_bonus_deficit,
+                sorted_dievals: sorted_newvals, 
+            };
+            let ev =  ev_for_state(&newstate);
             total += ev;
             //############################
         }
