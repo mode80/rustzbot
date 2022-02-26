@@ -18,9 +18,9 @@ fn main() {
 
     /* setup game state */
     let game_state = &GameState{
-            sorted_open_slots: &[Chance,Yahtzee],
-            sorted_dievals: [1,1,6,6,6],
-            rolls_remaining: 1,
+            sorted_open_slots: &[Aces,Twos,Threes,Fours,Fives,Sixes,ThreeOfAKind,FourOfAKind,SmStraight,LgStraight,FullHouse,Yahtzee,Chance],
+            sorted_dievals: UNROLLED_DIEVALS,
+            rolls_remaining: 3,
             upper_bonus_deficit: INIT_DEFICIT,
             yahtzee_is_wild: false,
         };
@@ -64,8 +64,8 @@ enum SlotType {
     Fours=4, 
     Fives=5, 
     Sixes=6,
-    ThreeOfAkind=7, 
-    FourOfAkind=8, 
+    ThreeOfAKind=7, 
+    FourOfAKind=8, 
     SmStraight=9, 
     LgStraight=10, 
     FullHouse=11, 
