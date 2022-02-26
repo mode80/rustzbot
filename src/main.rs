@@ -18,8 +18,8 @@ fn main() {
 
     /* setup game state */
     let game_state = &GameState{
-            sorted_open_slots: &[Chance],
-            sorted_dievals: [6,6,6,6,6],
+            sorted_open_slots: &[Chance,Yahtzee],
+            sorted_dievals: [1,1,6,6,6],
             rolls_remaining: 1,
             upper_bonus_deficit: INIT_DEFICIT,
             yahtzee_is_wild: false,
@@ -29,10 +29,11 @@ fn main() {
     let slot_count=game_state.sorted_open_slots.len();
     let combo_count = (1..=slot_count).reduce(|accum,r| accum+n_take_r(slot_count as u128, r as u128 ,false,false) as usize ).unwrap();
     let app_state = & mut AppState{
-        progress_bar : tqdm_rs::Tqdm::manual(combo_count), 
+        progress_bar : tqdm_rs::Tqdm::manual(combo_count+1), 
         done : HashSet::new() ,  // TODO try DashMap crate
         ev_cache : HashMap::new(),
     };
+    app_state.progress_bar.update(1);
 
     /* do it */
     let it = best_dice_ev(game_state, app_state);
@@ -137,7 +138,7 @@ fn n_take_r(n:u128, r:u128, ordered:bool, with_replacement:bool)->u128{
 
 
 /// the set of all ways to roll different dice, as represented by a collection of indice vecs 
-// #[cached]
+#[cached]
 fn die_index_combos() -> Vec<Vec<u8>>  { 
     let mut them:Vec<Vec<u8>> = (0..=4).combinations(0).collect_vec();
     them.append(& mut (0..=4).combinations(1).collect_vec());
@@ -149,7 +150,7 @@ fn die_index_combos() -> Vec<Vec<u8>>  {
 }
 
 
-// #[cached]
+#[cached]
 fn all_outcomes_for_rolling_n_dice(n:u8) -> Vec<Vec<u8>> {
 
     assert!(n<=5);
@@ -227,7 +228,7 @@ fn score_yahtzee(sorted_dievals:[u8;5])->u8 {
 }
 
 /// reports the score for a set of dice in a given slot w/o regard for exogenous gamestate (bonuses, yahtzee wildcards etc)
-// #[cached]
+#[cached]
 fn score_slot(slot_index:usize, sorted_dievals:[u8;5])->u8{
     SCORE_FNS[slot_index](sorted_dievals) 
 }
@@ -348,7 +349,7 @@ fn key_for_state(s:&GameState) -> String {
 }
 
 /// returns the additional expected value to come, given relevant game state.
-// #[cached(key = "String", convert = r#"{ key_for_state(&sorted_open_slots,sorted_dievals,rolls_remaining,upper_bonus_deficit,yahtzee_is_wild) }"#)]
+#[cached(key = "String", convert = r#"{ key_for_state(&game) }"#)]
 fn ev_for_state(game:&GameState, app:&mut AppState) -> f32 { 
 
     let ev:f32;
@@ -360,9 +361,8 @@ fn ev_for_state(game:&GameState, app:&mut AppState) -> f32 {
         ev = answer.1;
     }
 
-    // let log_line = format!( "rolls_remaining: {}\t answer: _ \t ev: {:.2}  \t dievals:{:?}\t deficit: {}\t wild: {}\t slots: {:?}", 
-            //  rolls_remaining,                    ev, sorted_dievals, upper_bonus_deficit, yahtzee_is_wild, sorted_open_slots);
-    // tqdm_rs::write(&log_line);
+    println!( "rolls_remaining: {}\t answer: _ \t ev: {:.2}  \t dievals:{:?}\t deficit: {}\t wild: {}\t slots: {:?}", 
+                    game.rolls_remaining, ev, game.sorted_dievals, game.upper_bonus_deficit, game.yahtzee_is_wild, game.sorted_open_slots);
     // print(log_line,file=log)
 
     if game.rolls_remaining==3{ // periodically update progress and save
