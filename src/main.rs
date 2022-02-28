@@ -40,6 +40,7 @@ fn main() {
     println!("{:?}", it);
 }
 
+#[derive(Debug, PartialEq, Eq, Ord, PartialOrd, Hash, Clone, Copy)]
 struct GameState{
     sorted_dievals:[u8;5], 
     rolls_remaining:u8, 
@@ -271,7 +272,7 @@ fn best_slot_ev(game:&GameState, app: &mut AppState) -> (SlotType,f32) {
         }
         if next_slot <= SlotType::Sixes && upper_deficit_now>0 && head_ev>0 { 
             if head_ev >= upper_deficit_now {head_ev+=35}; // add upper bonus when needed total is reached
-            upper_deficit_now = max(upper_deficit_now - head_ev, 0) ;
+            upper_deficit_now = upper_deficit_now.saturating_sub(head_ev) ;
         }
         total += head_ev as f32;
 
@@ -364,7 +365,7 @@ fn key_for_state(s:&GameState) -> String {
 }
 
 /// returns the additional expected value to come, given relevant game state.
-#[cached(key = "String", convert = r#"{ key_for_state(&game) }"#)]
+#[cached(key = "GameState", convert = r#"{ *game }"#)] //TODO implement this manually for better control/debugging
 fn ev_for_state(game:&GameState, app:&mut AppState) -> f32 { 
 
     let ev:f32;
