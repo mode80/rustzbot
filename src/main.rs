@@ -10,7 +10,7 @@ use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use indicatif::ProgressBar;
 use std::fmt::{Formatter, Display, Result};
-
+use tinyvec::*;
 
 fn main() {
     use SlotType::*;
@@ -18,7 +18,7 @@ fn main() {
 
     /* setup game state */
     let game_state = &GameState{
-            sorted_open_slots: &[Aces,Twos,Threes,Fours,Fives,Sixes,ThreeOfAKind,FourOfAKind,SmStraight,LgStraight,FullHouse,Yahtzee,Chance],
+            sorted_open_slots: ArrayVec::from([Aces,Twos,Threes,Fours,Fives,Sixes,ThreeOfAKind,FourOfAKind,SmStraight,LgStraight,FullHouse,Yahtzee,Chance]),
             sorted_dievals: UNROLLED_DIEVALS,
             rolls_remaining: 3,
             upper_bonus_deficit: INIT_DEFICIT,
@@ -40,18 +40,19 @@ fn main() {
     println!("{:?}", it);
 }
 
-struct GameState<'a>{
+struct GameState{
     sorted_dievals:[u8;5], 
     rolls_remaining:u8, 
     upper_bonus_deficit:u8, 
     yahtzee_is_wild:bool,
-    sorted_open_slots:&'a [SlotType], 
+    // sorted_open_slots:&'a [SlotType], 
+    sorted_open_slots:ArrayVec<[SlotType;13]>, 
 }
 
 struct AppState{
     progress_bar:ProgressBar, 
     done:HashSet<[SlotType;13]>, 
-    ev_cache:HashMap<GameState<'static>,f32>,
+    ev_cache:HashMap<GameState,f32>,
     // log, 
 }
 
@@ -77,6 +78,11 @@ enum SlotType {
 //         (*self as u8).to_string()
 //     }
 // }
+impl Default for SlotType {
+    fn default() -> SlotType {
+        SlotType::Stub
+    }
+}
 impl Display for SlotType {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         // write!(f, "({}, {})", self.longitude, self.latitude)
@@ -245,23 +251,25 @@ fn score_slot(slot_index:usize, sorted_dievals:[u8;5])->u8{
 fn best_slot_ev(game:&GameState, app: &mut AppState) -> (SlotType,f32) {
 
     use SlotType::*;
-    let slot_sequences = game.sorted_open_slots.iter().permutations(game.sorted_open_slots.len());
-    let mut evs:HashMap<OrderedFloat<f32>,Vec<SlotType>> = HashMap::new();  // TODO consider faster hash function  (fnv crate?) or BHashMap blah blah
-    for slot_sequence in slot_sequences{
+    let slot_sequences = game.sorted_open_slots.into_iter().permutations(game.sorted_open_slots.len()); // TODO I need to make a version of this that doesn't allocate with vecs
+    let mut evs:HashMap<OrderedFloat<f32>,ArrayVec<[SlotType;13]>> = HashMap::new();  // TODO consider faster hash function  (fnv crate?) or BHashMap blah blah
+    for slot_sequence_vec in slot_sequences {
         let mut total:f32 = 0.0;
-        let slot_sequence:Vec<SlotType> = slot_sequence.iter().copied().copied().collect(); // wtf rust?
-        let head_slot = slot_sequence[0];
+        // let slot_sequence:Vec<SlotType> = slot_sequence.iter().copied().copied().collect(); // wtf rust?
+        let mut slot_sequence = ArrayVec::<[SlotType;13]>::new();
+        slot_sequence_vec.into_iter().for_each(|x| slot_sequence.push(x));
+        let next_slot = slot_sequence.pop().unwrap();
         let mut upper_deficit_now = game.upper_bonus_deficit ;
 
-        let mut head_ev = SCORE_FNS[head_slot as usize](game.sorted_dievals); // score slot itself w/o regard to game state adjustments
+        let mut head_ev = SCORE_FNS[next_slot as usize](game.sorted_dievals); // score slot itself w/o regard to game state adjustments
         let yahtzee_rolled = game.sorted_dievals[0]==game.sorted_dievals[4]; // go on to adjust the raw ev for exogenous game state factors
         if yahtzee_rolled && game.yahtzee_is_wild { 
-            if head_slot==SmStraight {head_ev=30}; // extra yahtzees are valid in any lower slot per wildcard rules
-            if head_slot==LgStraight {head_ev=40}; 
-            if head_slot==FullHouse  {head_ev=25}; 
+            if next_slot==SmStraight {head_ev=30}; // extra yahtzees are valid in any lower slot per wildcard rules
+            if next_slot==LgStraight {head_ev=40}; 
+            if next_slot==FullHouse  {head_ev=25}; 
             head_ev+=100; // extra yahtzee bonus per rules
         }
-        if head_slot <= SlotType::Sixes && upper_deficit_now>0 && head_ev>0 { 
+        if next_slot <= SlotType::Sixes && upper_deficit_now>0 && head_ev>0 { 
             if head_ev >= upper_deficit_now {head_ev+=35}; // add upper bonus when needed total is reached
             upper_deficit_now = max(upper_deficit_now - head_ev, 0) ;
         }
@@ -269,8 +277,8 @@ fn best_slot_ev(game:&GameState, app: &mut AppState) -> (SlotType,f32) {
 
         if slot_sequence.len() > 1 { // proceed to also score remaining slots
             let newstate= GameState{
-                yahtzee_is_wild: if head_slot==Yahtzee && yahtzee_rolled {true} else {game.yahtzee_is_wild},
-                sorted_open_slots: &slot_sequence[1..].to_vec(), // TODO pop instead for performance?
+                yahtzee_is_wild: if next_slot==Yahtzee && yahtzee_rolled {true} else {game.yahtzee_is_wild},
+                sorted_open_slots: slot_sequence, 
                 rolls_remaining: 3,
                 upper_bonus_deficit: upper_deficit_now,
                 sorted_dievals: game.sorted_dievals, 
@@ -344,7 +352,7 @@ fn key_for_state(s:&GameState) -> String {
     use SlotType::*;
     let mut key = String::with_capacity(35); 
     let mut deficit_now = s.upper_bonus_deficit; 
-    for slot in s.sorted_open_slots{ key.push_str(&(*slot as u8).to_string()); }
+    for slot in s.sorted_open_slots{ key.push_str(&(slot as u8).to_string()); }
     for die in s.sorted_dievals{ key.push_str(&die.to_string()); }
     key.push_str(&s.rolls_remaining.to_string());
     if s.upper_bonus_deficit > 0 && s.sorted_open_slots[0] > Sixes { //trim the cachable state by ignoring upper total variations when no more upper slots are left

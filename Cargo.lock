@@ -323,6 +323,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "tinyvec"
+version = "1.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2c1c1d5a42b6245520c249549ec267180beaffcc0615401ac8e31853d4b6d8d2"
+
+[[package]]
 name = "tokio"
 version = "1.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -381,4 +387,5 @@ dependencies = [
  "indicatif",
  "itertools",
  "ordered-float",
+ "tinyvec",
 ]
