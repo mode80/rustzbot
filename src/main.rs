@@ -2,7 +2,7 @@
 //#![allow(unused_variables)]
 #![allow(unused_imports)]
 
-use std::{collections::{HashSet, HashMap}, vec, cmp::max};
+use std::{collections::{HashSet, HashMap, BinaryHeap}, vec, cmp::max};
 use counter::Counter;
 
 use cached::proc_macro::cached;
@@ -253,7 +253,8 @@ fn best_slot_ev(game:&GameState, app: &mut AppState) -> (SlotType,f32) {
 
     use SlotType::*;
     let slot_sequences = game.sorted_open_slots.into_iter().permutations(game.sorted_open_slots.len()); // TODO I need to make a version of this that doesn't allocate with vecs
-    let mut evs:HashMap<OrderedFloat<f32>,ArrayVec<[SlotType;13]>> = HashMap::new();  // TODO consider faster hash function  (fnv crate?) or BHashMap blah blah
+    let mut evs:HashMap<OrderedFloat<f32>,ArrayVec<[SlotType;13]>> = HashMap::new();  
+    let mut best_ev:OrderedFloat<f32> = OrderedFloat(0.0); 
     for slot_sequence_vec in slot_sequences {
         let mut total:f32 = 0.0;
         // let slot_sequence:Vec<SlotType> = slot_sequence.iter().copied().copied().collect(); // wtf rust?
@@ -289,20 +290,19 @@ fn best_slot_ev(game:&GameState, app: &mut AppState) -> (SlotType,f32) {
         }
         let total_index:OrderedFloat<f32> = OrderedFloat(total);
         evs.insert(total_index, slot_sequence);
+        best_ev = max(best_ev, total_index);
     }
 
-    let best_ev = *evs.keys().max().unwrap();
     let best_sequence = evs.get(&best_ev).unwrap();
     let best_slot:SlotType = best_sequence[0];
-    let ev_f32 = best_ev.into_inner();
 
-    (best_slot,ev_f32)
+    (best_slot,best_ev.into_inner())
 }
 
 /// returns the best selection of dice and corresponding ev, given slot possibilities and any existing dice and other relevant state 
 fn best_dice_ev(s:&GameState, app: &mut AppState) -> (Vec<u8>,f32){ 
 
-    let mut selection_evs:HashMap<OrderedFloat<f32>,Vec<u8>> = HashMap::new();  //TODO change this to BinaryHeap so that retreiving the max is O(1)
+    let mut selection_evs:HashMap<OrderedFloat<f32>,Vec<u8>> = HashMap::new();  
     let mut die_combos:Vec<Vec<u8>> = vec![];
 
     let mut dievals = s.sorted_dievals;
