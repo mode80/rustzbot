@@ -347,35 +347,15 @@ fn best_dice_ev(s:&GameState, app: &mut AppState) -> (Vec<u8>,f32){
 
 }
 
-/// returns a hashable key for relevant state parameters 
-fn key_for_state(s:&GameState) -> String { 
-    // TODO optimize this for size with struct? bitmasked u128?
-    use SlotType::*;
-    let mut key = String::with_capacity(35); 
-    let mut deficit_now = s.upper_bonus_deficit; 
-    for slot in s.sorted_open_slots{ key.push_str(&(slot as u8).to_string()); }
-    for die in s.sorted_dievals{ key.push_str(&die.to_string()); }
-    key.push_str(&s.rolls_remaining.to_string());
-    if s.upper_bonus_deficit > 0 && s.sorted_open_slots[0] > Sixes { //trim the cachable state by ignoring upper total variations when no more upper slots are left
-        deficit_now=63
-    }
-    key.push_str(&deficit_now.to_string());
-    key.push_str(&(s.yahtzee_is_wild as u8).to_string());
-    key
-}
-
 /// returns the additional expected value to come, given relevant game state.
 #[cached(key = "GameState", convert = r#"{ *game }"#)] //TODO implement this manually for better control/debugging
 fn ev_for_state(game:&GameState, app:&mut AppState) -> f32 { 
 
-    let ev:f32;
-    if game.rolls_remaining == 0 {
-        let answer = best_slot_ev(game,app);  // <-----------------
-        ev = answer.1;
+    let ev:f32 = if game.rolls_remaining == 0 {
+        best_slot_ev(game,app).1  // <-----------------
     } else { 
-        let answer = best_dice_ev(game,app);  // <-----------------
-        ev = answer.1;
-    }
+        best_dice_ev(game,app).1  // <-----------------
+    };
 
     app.progress_bar.println (
         format!("{}\t_\t{:>.0}\t{:?}\t{}\t{}\t{:?}", 
