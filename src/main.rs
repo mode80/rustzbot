@@ -27,9 +27,10 @@ fn main() {
     
     /* setup app state */
     let slot_count=game_state.sorted_open_slots.len();
-    let combo_count = (1..=slot_count).reduce(|accum,r| accum+n_take_r(slot_count as u128, r as u128 ,false,false) as usize).unwrap() ;
+    // let combo_count = (1..=slot_count).reduce(|accum,r| accum+n_take_r(slot_count as u128, r as u128 ,false,false) as usize).unwrap() ;
+    let combo_count = (1..=slot_count).map(|r| n_take_r(slot_count as u128, r as u128 ,false,false) as u64 ).sum() ;
     let app_state = & mut AppState{
-        progress_bar : ProgressBar::new(combo_count as u64), 
+        progress_bar : ProgressBar::new(combo_count), 
         done : HashSet::new() ,  // TODO try DashMap crate
         ev_cache : HashMap::new(),
     };
@@ -243,8 +244,8 @@ fn score_yahtzee(sorted_dievals:[u8;5])->u8 {
 
 /// reports the score for a set of dice in a given slot w/o regard for exogenous gamestate (bonuses, yahtzee wildcards etc)
 #[cached]
-fn score_slot(slot_index:usize, sorted_dievals:[u8;5])->u8{
-    SCORE_FNS[slot_index](sorted_dievals) 
+fn score_slot(slot:SlotType, sorted_dievals:[u8;5])->u8{
+    SCORE_FNS[slot as usize](sorted_dievals) 
 }
 
 
@@ -252,7 +253,7 @@ fn score_slot(slot_index:usize, sorted_dievals:[u8;5])->u8{
 fn best_slot_ev(game:&GameState, app: &mut AppState) -> (SlotType,f32) {
 
     use SlotType::*;
-    let slot_sequences = game.sorted_open_slots.into_iter().permutations(game.sorted_open_slots.len()); // TODO I need to make a version of this that doesn't allocate with vecs
+    let slot_sequences = game.sorted_open_slots.into_iter().permutations(game.sorted_open_slots.len()); // TODO a version of this that doesn't allocate with vecs
     let mut evs:HashMap<OrderedFloat<f32>,ArrayVec<[SlotType;13]>> = HashMap::new();  
     let mut best_ev:OrderedFloat<f32> = OrderedFloat(0.0); 
     for slot_sequence_vec in slot_sequences {
@@ -263,7 +264,7 @@ fn best_slot_ev(game:&GameState, app: &mut AppState) -> (SlotType,f32) {
         let next_slot = slot_sequence.pop().unwrap();
         let mut upper_deficit_now = game.upper_bonus_deficit ;
 
-        let mut head_ev = SCORE_FNS[next_slot as usize](game.sorted_dievals); // score slot itself w/o regard to game state adjustments
+        let mut head_ev = score_slot(next_slot, game.sorted_dievals); // score slot itself w/o regard to game state adjustments
         let yahtzee_rolled = game.sorted_dievals[0]==game.sorted_dievals[4]; // go on to adjust the raw ev for exogenous game state factors
         if yahtzee_rolled && game.yahtzee_is_wild { 
             if next_slot==SmStraight {head_ev=30}; // extra yahtzees are valid in any lower slot per wildcard rules
@@ -313,7 +314,7 @@ fn best_dice_ev(s:&GameState, app: &mut AppState) -> (Vec<u8>,f32){
         die_combos= die_index_combos();
     }
 
-    for selection in die_combos.iter(){ 
+    for selection in die_combos{ 
         let mut total:f32 = 0.0;
         let outcomes = all_outcomes_for_rolling_n_dice(selection.len() as u8);
         let outcomeslen=outcomes.len();
@@ -351,7 +352,7 @@ fn best_dice_ev(s:&GameState, app: &mut AppState) -> (Vec<u8>,f32){
 #[cached(key = "GameState", convert = r#"{ *game }"#)] //TODO implement this manually for better control/debugging
 fn ev_for_state(game:&GameState, app:&mut AppState) -> f32 { 
 
-    let ev:f32 = if game.rolls_remaining == 0 {
+    let ev = if game.rolls_remaining == 0 {
         best_slot_ev(game,app).1  // <-----------------
     } else { 
         best_dice_ev(game,app).1  // <-----------------
