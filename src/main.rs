@@ -2,10 +2,11 @@
 //#![allow(unused_variables)]
 #![allow(unused_imports)]
 
-use std::{collections::{HashSet, HashMap, BinaryHeap}, vec, cmp::max};
+use std::{collections::{HashSet, HashMap, BinaryHeap}, vec, cmp::max, sync::{Arc, Mutex, RwLock}};
 use counter::Counter;
 
 use cached::proc_macro::cached;
+use dashmap::{DashMap, DashSet};
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use indicatif::ProgressBar;
@@ -30,9 +31,9 @@ fn main() {
     // let combo_count = (1..=slot_count).reduce(|accum,r| accum+n_take_r(slot_count as u128, r as u128 ,false,false) as usize).unwrap() ;
     let combo_count = (1..=slot_count).map(|r| n_take_r(slot_count as u128, r as u128 ,false,false) as u64 ).sum() ;
     let app_state = & mut AppState{
-        progress_bar : ProgressBar::new(combo_count), 
-        done : HashSet::new() ,  // TODO try DashMap crate
-        ev_cache : HashMap::new(),
+        progress_bar : Arc::new(RwLock::new(ProgressBar::new(combo_count))), 
+        done : Arc::new(DashSet::new()) ,  // TODO try DashMap crate
+        ev_cache : Arc::new(DashMap::new()),
     };
 
     /* do it */
@@ -52,9 +53,9 @@ struct GameState{
 }
 
 struct AppState{
-    progress_bar:ProgressBar, 
-    done:HashSet<[SlotType;13]>, 
-    ev_cache:HashMap<GameState,f32>,
+    progress_bar:Arc<RwLock<ProgressBar>>, 
+    done:Arc<DashSet<[SlotType;13]>>, 
+    ev_cache:Arc<DashMap<GameState,f32>>,
     // log, 
 }
 
@@ -358,19 +359,22 @@ fn ev_for_state(game:&GameState, app:&mut AppState) -> f32 {
         best_dice_ev(game,app).1  // <-----------------
     };
 
-    app.progress_bar.println (
-        format!("{}\t_\t{:>.0}\t{:?}\t{}\t{}\t{:?}", 
-            game.rolls_remaining, ev, game.sorted_dievals, game.upper_bonus_deficit, game.yahtzee_is_wild, game.sorted_open_slots
-        )
-    );
+    {
+        app.progress_bar.read().unwrap().println (
+            format!("{}\t_\t{:>.0}\t{:?}\t{}\t{}\t{:?}", 
+                game.rolls_remaining, ev, game.sorted_dievals, game.upper_bonus_deficit, game.yahtzee_is_wild, game.sorted_open_slots
+            )
+        );
+    }
     // print(log_line,file=log)
 
     if game.rolls_remaining==3{ // periodically update progress and save
         let mut slotkey:[SlotType;13] = [SlotType::Stub;13];
         slotkey.iter_mut().set_from(game.sorted_open_slots.iter().cloned());
-        if ! app.done.contains(&slotkey) {
+        let is_done = {app.done.contains(&slotkey)} ;
+        if ! is_done  {
             app.done.insert(slotkey);
-            app.progress_bar.inc(1) ;
+            {app.progress_bar.write().unwrap().inc(1);}
             // if len(done) % 80 == 0 : with open('ev_cache.pkl','wb') as f: pickle.dump(ev_cache,f)
         }
     }
