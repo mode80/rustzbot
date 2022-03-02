@@ -29,11 +29,11 @@ mod tests {
     #[test]
     fn best_dice_ev_test() {
         let mut slots:ArrayVec<[SlotType;13]> = array_vec![]; 
-        slots.push(Yahtzee);
+        slots.push(FourOfAKind);
         slots.push(Chance);
         let game_state = &GameState{
             sorted_open_slots: slots,
-            sorted_dievals: [5,5,5,5,5],
+            sorted_dievals: [1,2,5,5,5],
             rolls_remaining: 1,
             upper_bonus_deficit: INIT_DEFICIT,
             yahtzee_is_wild: false,
@@ -43,18 +43,35 @@ mod tests {
             done : Arc::new(DashSet::new()) ,  
             ev_cache : Arc::new(DashMap::new()),
         };
-        assert_eq!(76.61225, best_dice_ev(game_state,app_state).1);
+        assert_eq!(33.04651, best_dice_ev(game_state,app_state).1);
     }
 
 
     #[bench]
     fn score_slot_bench(b: &mut Bencher) {
-        b.iter(|| score_slot(Fives,[1,2,5,5,5]));
+        b.iter(best_dice_ev_test);
     }
 }
 
 fn main() {
     use SlotType::*;
+
+    // let mut slots:ArrayVec<[SlotType;13]> = array_vec![]; 
+    // slots.push(FourOfAKind);
+    // slots.push(Chance);
+    // let game_state = &GameState{
+    //     sorted_open_slots: slots,
+    //     sorted_dievals: [1,2,5,5,5],
+    //     rolls_remaining: 1,
+    //     upper_bonus_deficit: INIT_DEFICIT,
+    //     yahtzee_is_wild: false,
+    // };
+    // let app_state = & mut AppState{
+    //     progress_bar : Arc::new(RwLock::new(ProgressBar::new(2))), 
+    //     done : Arc::new(DashSet::new()) ,  
+    //     ev_cache : Arc::new(DashMap::new()),
+    // };
+    // assert_eq!(33.04651, best_dice_ev(game_state,app_state).1); 
 
     /* setup game state */
     let game_state = &GameState{
@@ -77,7 +94,7 @@ fn main() {
 
     /* do it */
     let it = best_dice_ev(game_state, app_state);
-    
+   
     println!("{:?}", it);
 }
 
