@@ -14,3 +14,4 @@ ordered-float = "2.10.0"
 indicatif = "0.16.2"
 tinyvec = {version="1.5.1", features=["rustc_1_55"]}
 dashmap = "5.1.0"
+rayon = "1.5.1"

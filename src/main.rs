@@ -9,8 +9,10 @@ use cached::proc_macro::cached;
 use dashmap::{DashMap, DashSet};
 use itertools::Itertools;
 use indicatif::ProgressBar;
+use rayon::iter::IntoParallelRefIterator;
 use std::fmt::{Formatter, Display, Result};
 use tinyvec::*;
+use rayon::prelude::*; 
 
 fn main() {
     use SlotType::*;
@@ -31,7 +33,7 @@ fn main() {
     let combo_count = (1..=slot_count).map(|r| n_take_r(slot_count as u128, r as u128 ,false,false) as u64 ).sum() ;
     let app_state = & mut AppState{
         progress_bar : Arc::new(RwLock::new(ProgressBar::new(combo_count))), 
-        done : Arc::new(DashSet::new()) ,  // TODO try DashMap crate
+        done : Arc::new(DashSet::new()) ,  
         ev_cache : Arc::new(DashMap::new()),
     };
 
@@ -249,7 +251,7 @@ fn score_slot(slot:SlotType, sorted_dievals:[u8;5])->u8{
 
 
 /// returns the best slot and corresponding ev for final dice, given the slot possibilities and other relevant state 
-fn best_slot_ev(game:&GameState, app: &mut AppState) -> (SlotType,f32) {
+fn best_slot_ev(game:&GameState, app: &AppState) -> (SlotType,f32) {
 
     use SlotType::*;
     let slot_sequences = game.sorted_open_slots.into_iter().permutations(game.sorted_open_slots.len()); // TODO a version of this that doesn't allocate with vecs
@@ -298,7 +300,7 @@ fn best_slot_ev(game:&GameState, app: &mut AppState) -> (SlotType,f32) {
 }
 
 /// returns the best selection of dice and corresponding ev, given slot possibilities and any existing dice and other relevant state 
-fn best_dice_ev(s:&GameState, app: &mut AppState) -> (Vec<u8>,f32){ 
+fn best_dice_ev(s:&GameState, app: &AppState) -> (Vec<u8>,f32){ 
 
     let mut die_combos:Vec<Vec<u8>> = vec![];
 
@@ -310,9 +312,9 @@ fn best_dice_ev(s:&GameState, app: &mut AppState) -> (Vec<u8>,f32){
         die_combos= die_index_combos();
     }
 
-    let mut best_ev = 0.0; 
-    let mut best_selection = vec![]; 
-    for selection in die_combos{ 
+    let best_ev = Arc::new(RwLock::new(0.0)); 
+    let best_selection = Arc::new(RwLock::new(vec![])); 
+    die_combos.into_par_iter().for_each(|selection|{ 
         let mut total:f32 = 0.0;
         let outcomes = all_outcomes_for_rolling_n_dice(selection.len() as u8);
         let outcomeslen = outcomes.len();
@@ -336,19 +338,21 @@ fn best_dice_ev(s:&GameState, app: &mut AppState) -> (Vec<u8>,f32){
             //############################
         }
         let avg_ev = total/outcomeslen as f32; // outcomes are not a choice -- track average ev
-        if avg_ev > best_ev {
-            best_ev = avg_ev;
-            best_selection = selection.clone();
+        if avg_ev > *best_ev.read().unwrap() {
+            *best_ev.write().unwrap() = avg_ev;
+            *best_selection.write().unwrap() = selection;
         }
-    }
-    
-    (best_selection, best_ev)
+    });
+   
+    let x = (*best_selection).read().unwrap().clone();
+    let y = *best_ev.read().unwrap();
+    (x,y)
 
 }
 
 /// returns the additional expected value to come, given relevant game state.
 #[cached(key = "GameState", convert = r#"{ *game }"#)] //TODO implement this manually for better control/debugging
-fn ev_for_state(game:&GameState, app:&mut AppState) -> f32 { 
+fn ev_for_state(game:&GameState, app:&AppState) -> f32 { 
 
     let ev = if game.rolls_remaining == 0 {
         best_slot_ev(game,app).1  // <-----------------
