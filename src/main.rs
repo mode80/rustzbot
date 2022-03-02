@@ -21,12 +21,12 @@ mod tests {
     use test::Bencher;
     use SlotType::*;
 
-    // #[test]
+    #[test]
     fn score_slot_test() {
         assert_eq!(15, score_slot(Fives,[1,2,5,5,5]));
     }
 
-    #[test]
+    // #[test]
     fn best_dice_ev_test() {
         let mut slots:ArrayVec<[SlotType;13]> = array_vec![]; 
         slots.push(FourOfAKind);
@@ -43,7 +43,7 @@ mod tests {
             done : Arc::new(DashSet::new()) ,  
             ev_cache : Arc::new(DashMap::new()),
         };
-        assert_eq!(33.04651, best_dice_ev(game_state,app_state).1);
+        assert_eq!(18.35108, best_dice_ev(game_state,app_state).1);
     }
 
 
@@ -55,23 +55,6 @@ mod tests {
 
 fn main() {
     use SlotType::*;
-
-    // let mut slots:ArrayVec<[SlotType;13]> = array_vec![]; 
-    // slots.push(FourOfAKind);
-    // slots.push(Chance);
-    // let game_state = &GameState{
-    //     sorted_open_slots: slots,
-    //     sorted_dievals: [1,2,5,5,5],
-    //     rolls_remaining: 1,
-    //     upper_bonus_deficit: INIT_DEFICIT,
-    //     yahtzee_is_wild: false,
-    // };
-    // let app_state = & mut AppState{
-    //     progress_bar : Arc::new(RwLock::new(ProgressBar::new(2))), 
-    //     done : Arc::new(DashSet::new()) ,  
-    //     ev_cache : Arc::new(DashMap::new()),
-    // };
-    // assert_eq!(33.04651, best_dice_ev(game_state,app_state).1); 
 
     /* setup game state */
     let game_state = &GameState{
@@ -209,15 +192,16 @@ fn n_take_r(n:u128, r:u128, ordered:bool, with_replacement:bool)->u128{
 
 
 /// the set of all ways to roll different dice, as represented by a collection of indice vecs 
-#[cached]
-fn die_index_combos() -> Vec<Vec<u8>>  { 
-    let mut them:Vec<Vec<u8>> = (0..=4).combinations(0).collect_vec();
-    them.append(& mut (0..=4).combinations(1).collect_vec());
-    them.append(& mut (0..=4).combinations(2).collect_vec());
-    them.append(& mut (0..=4).combinations(3).collect_vec());
-    them.append(& mut (0..=4).combinations(4).collect_vec());
-    them.append(& mut (0..=4).combinations(5).collect_vec());
-    them 
+// #[cached]
+fn die_index_combos() ->Vec<ArrayVec<[usize;5]>>  { 
+    let mut them:Vec<ArrayVec<[usize;5]>> = vec![]; 
+    for combo in (0..=4).combinations(0){ them.push(ArrayVec::<[usize;5]>::new().fill(combo.into_iter()).collect()); }
+    for combo in (0..=4).combinations(1){ them.push(ArrayVec::<[usize;5]>::new().fill(combo.into_iter()).collect()); }
+    for combo in (0..=4).combinations(2){ them.push(ArrayVec::<[usize;5]>::new().fill(combo.into_iter()).collect()); }
+    for combo in (0..=4).combinations(3){ them.push(ArrayVec::<[usize;5]>::new().fill(combo.into_iter()).collect()); }
+    for combo in (0..=4).combinations(4){ them.push(ArrayVec::<[usize;5]>::new().fill(combo.into_iter()).collect()); }
+    for combo in (0..=4).combinations(5){ them.push(ArrayVec::<[usize;5]>::new().fill(combo.into_iter()).collect()); }
+    them
 }
 
 
@@ -314,7 +298,6 @@ fn best_slot_ev(game:&GameState, app: &AppState) -> (SlotType,f32) {
     let mut best_slot=Stub; 
     for slot_sequence_vec in slot_sequences {
         let mut total:f32 = 0.0;
-        // let slot_sequence:Vec<SlotType> = slot_sequence.iter().copied().copied().collect(); // wtf rust?
         let mut slot_sequence = ArrayVec::<[SlotType;13]>::new();
         slot_sequence_vec.into_iter().for_each(|x| slot_sequence.push(x));
         let top_slot = slot_sequence.pop().unwrap();
@@ -355,37 +338,34 @@ fn best_slot_ev(game:&GameState, app: &AppState) -> (SlotType,f32) {
 }
 
 /// returns the best selection of dice and corresponding ev, given slot possibilities and any existing dice and other relevant state 
-fn best_dice_ev(s:&GameState, app: &AppState) -> (Vec<u8>,f32){ 
+fn best_dice_ev(s:&GameState, app: &AppState) -> (ArrayVec<[usize;5]>,f32){ 
 
-    let mut die_combos:Vec<Vec<u8>> = vec![];
+    let mut die_combos:Vec<ArrayVec<[usize;5]>> = vec![];
 
-    let mut dievals = s.sorted_dievals;
     if s.rolls_remaining==3{ //# we must select all dice on the first roll
-        dievals = UNROLLED_DIEVALS;
-        die_combos.push(vec![0,1,2,3,4]) ; //all dice
+        die_combos.push(array_vec![0,1,2,3,4]) ; //all dice
     } else { //  # otherwise we must try all possible combos
-        die_combos= die_index_combos();
+        die_combos= die_index_combos(); //TODO more efficient to Arc(RwLock) or copy fully to the stack??
     }
 
     let mut best_ev = 0.0; 
-    let mut best_selection = vec![]; 
+    let mut best_selection = array_vec![]; 
     for selection in die_combos {
         let outcomes = all_outcomes_for_rolling_n_dice(selection.len() as u8);
         let outcomeslen = outcomes.len();
         let total:f32 = outcomes.iter().map(|outcome| -> f32 { 
             //###### HOT CODE PATH #######
-            let mut newvals=dievals;
+            let mut newvals=s.sorted_dievals;
             for (i, j) in selection.iter().enumerate() { 
-                newvals[*j as usize]=outcome[i];    // TODO performance implications of the cast?
+                newvals[*j]=outcome[i];    
             }
-            let mut sorted_newvals = newvals; 
-            sorted_newvals.sort_unstable();
-            let newstate= GameState{ // TODO slower than individual args?
+            newvals.sort_unstable();
+            let newstate= GameState{ 
                 yahtzee_is_wild: s.yahtzee_is_wild, 
                 sorted_open_slots: s.sorted_open_slots, 
                 rolls_remaining: s.rolls_remaining-1,
                 upper_bonus_deficit: s.upper_bonus_deficit,
-                sorted_dievals: sorted_newvals, 
+                sorted_dievals: newvals, 
             };
             ev_for_state(&newstate,app)
             //############################
