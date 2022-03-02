@@ -8,7 +8,6 @@ use counter::Counter;
 use cached::proc_macro::cached;
 use dashmap::{DashMap, DashSet};
 use itertools::Itertools;
-use ordered_float::OrderedFloat;
 use indicatif::ProgressBar;
 use std::fmt::{Formatter, Display, Result};
 use tinyvec::*;
@@ -254,7 +253,7 @@ fn best_slot_ev(game:&GameState, app: &mut AppState) -> (SlotType,f32) {
 
     use SlotType::*;
     let slot_sequences = game.sorted_open_slots.into_iter().permutations(game.sorted_open_slots.len()); // TODO a version of this that doesn't allocate with vecs
-    let mut best_ev:OrderedFloat<f32> = OrderedFloat(0.0); 
+    let mut best_ev = 0.0; 
     let mut best_slot=Stub; 
     for slot_sequence_vec in slot_sequences {
         let mut total:f32 = 0.0;
@@ -289,14 +288,13 @@ fn best_slot_ev(game:&GameState, app: &mut AppState) -> (SlotType,f32) {
             let tail_ev = ev_for_state(&newstate,app); // <---------
             total += tail_ev as f32;
         }
-        let ordered_total:OrderedFloat<f32> = OrderedFloat(total);
-        if ordered_total > best_ev {
-            best_ev = ordered_total;
+        if total > best_ev {
+            best_ev = total;
             best_slot = slot_sequence[0] ;
         }
     }
 
-    (best_slot,best_ev.into_inner())
+    (best_slot,best_ev)
 }
 
 /// returns the best selection of dice and corresponding ev, given slot possibilities and any existing dice and other relevant state 
@@ -312,7 +310,7 @@ fn best_dice_ev(s:&GameState, app: &mut AppState) -> (Vec<u8>,f32){
         die_combos= die_index_combos();
     }
 
-    let mut best_ev = OrderedFloat(0.0); 
+    let mut best_ev = 0.0; 
     let mut best_selection = vec![]; 
     for selection in die_combos{ 
         let mut total:f32 = 0.0;
@@ -337,14 +335,14 @@ fn best_dice_ev(s:&GameState, app: &mut AppState) -> (Vec<u8>,f32){
             total += ev;
             //############################
         }
-        let avg_ev = OrderedFloat(total/outcomeslen as f32); // outcomes are not a choice -- track average ev
+        let avg_ev = total/outcomeslen as f32; // outcomes are not a choice -- track average ev
         if avg_ev > best_ev {
             best_ev = avg_ev;
             best_selection = selection.clone();
         }
     }
     
-    (best_selection, best_ev.into_inner())
+    (best_selection, best_ev)
 
 }
 
