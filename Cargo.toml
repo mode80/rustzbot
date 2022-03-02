@@ -7,9 +7,9 @@ edition = "2021"
 
 [dependencies]
 itertools = "0.10.3"
-cached = "0.32.0"
+cached = "0.33.0"
 counter = "0.5.3"
 ordered-float = "2.10.0"
 # tqdm-rs = "0.1.1"
 indicatif = "0.16.2"
-tinyvec = "1.5.1"
+tinyvec = {version="1.5.1", features=["rustc_1_55"]}
