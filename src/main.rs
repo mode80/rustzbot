@@ -28,9 +28,12 @@ mod tests {
 
     #[test]
     fn best_dice_ev_test() {
+        let mut slots:ArrayVec<[SlotType;13]> = array_vec![]; 
+        slots.push(Yahtzee);
+        slots.push(Chance);
         let game_state = &GameState{
-            sorted_open_slots: array_vec![Yahtzee,Chance],
-            sorted_dievals: [1,2,5,5,5],
+            sorted_open_slots: slots,
+            sorted_dievals: [5,5,5,5,5],
             rolls_remaining: 1,
             upper_bonus_deficit: INIT_DEFICIT,
             yahtzee_is_wild: false,
@@ -40,7 +43,7 @@ mod tests {
             done : Arc::new(DashSet::new()) ,  
             ev_cache : Arc::new(DashMap::new()),
         };
-        assert_eq!(22.694445, best_dice_ev(game_state,app_state).1);
+        assert_eq!(76.61225, best_dice_ev(game_state,app_state).1);
     }
 
 
@@ -297,26 +300,26 @@ fn best_slot_ev(game:&GameState, app: &AppState) -> (SlotType,f32) {
         // let slot_sequence:Vec<SlotType> = slot_sequence.iter().copied().copied().collect(); // wtf rust?
         let mut slot_sequence = ArrayVec::<[SlotType;13]>::new();
         slot_sequence_vec.into_iter().for_each(|x| slot_sequence.push(x));
-        let next_slot = slot_sequence.pop().unwrap();
+        let top_slot = slot_sequence.pop().unwrap();
         let mut upper_deficit_now = game.upper_bonus_deficit ;
 
-        let mut head_ev = score_slot(next_slot, game.sorted_dievals); // score slot itself w/o regard to game state adjustments
+        let mut head_ev = score_slot(top_slot, game.sorted_dievals); // score slot itself w/o regard to game state adjustments
         let yahtzee_rolled = game.sorted_dievals[0]==game.sorted_dievals[4]; // go on to adjust the raw ev for exogenous game state factors
         if yahtzee_rolled && game.yahtzee_is_wild { 
-            if next_slot==SmStraight {head_ev=30}; // extra yahtzees are valid in any lower slot per wildcard rules
-            if next_slot==LgStraight {head_ev=40}; 
-            if next_slot==FullHouse  {head_ev=25}; 
+            if top_slot==SmStraight {head_ev=30}; // extra yahtzees are valid in any lower slot per wildcard rules
+            if top_slot==LgStraight {head_ev=40}; 
+            if top_slot==FullHouse  {head_ev=25}; 
             head_ev+=100; // extra yahtzee bonus per rules
         }
-        if next_slot <= SlotType::Sixes && upper_deficit_now>0 && head_ev>0 { 
+        if top_slot <= SlotType::Sixes && upper_deficit_now>0 && head_ev>0 { 
             if head_ev >= upper_deficit_now {head_ev+=35}; // add upper bonus when needed total is reached
             upper_deficit_now = upper_deficit_now.saturating_sub(head_ev) ;
         }
         total += head_ev as f32;
 
-        if slot_sequence.len() > 1 { // proceed to also score remaining slots
+        if ! slot_sequence.is_empty() { // proceed to add in scores for any for remaining slots
             let newstate= GameState{
-                yahtzee_is_wild: if next_slot==Yahtzee && yahtzee_rolled {true} else {game.yahtzee_is_wild},
+                yahtzee_is_wild: if top_slot==Yahtzee && yahtzee_rolled {true} else {game.yahtzee_is_wild},
                 sorted_open_slots: slot_sequence, 
                 rolls_remaining: 3,
                 upper_bonus_deficit: upper_deficit_now,
@@ -327,7 +330,7 @@ fn best_slot_ev(game:&GameState, app: &AppState) -> (SlotType,f32) {
         }
         if total > best_ev {
             best_ev = total;
-            best_slot = slot_sequence[0] ;
+            best_slot = top_slot ;
         }
     }
 
