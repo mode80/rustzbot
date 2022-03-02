@@ -1,22 +1,57 @@
 #![allow(dead_code)]
 //#![allow(unused_variables)]
 #![allow(unused_imports)]
+#![feature(test)]
 
-use std::{collections::{HashSet, HashMap, BinaryHeap}, vec, cmp::max, sync::{Arc, Mutex, RwLock}};
+extern crate test;
+
+use std::{vec, cmp::max, sync::{Arc, RwLock}};
 use counter::Counter;
-
 use cached::proc_macro::cached;
 use dashmap::{DashMap, DashSet};
 use itertools::Itertools;
 use indicatif::ProgressBar;
-use rayon::iter::IntoParallelRefIterator;
 use std::fmt::{Formatter, Display, Result};
 use tinyvec::*;
 use rayon::prelude::*; 
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use test::Bencher;
+    use SlotType::*;
+
+    // #[test]
+    fn score_slot_test() {
+        assert_eq!(15, score_slot(Fives,[1,2,5,5,5]));
+    }
+
+    #[test]
+    fn best_dice_ev_test() {
+        let game_state = &GameState{
+            sorted_open_slots: array_vec![Yahtzee,Chance],
+            sorted_dievals: [1,2,5,5,5],
+            rolls_remaining: 1,
+            upper_bonus_deficit: INIT_DEFICIT,
+            yahtzee_is_wild: false,
+        };
+        let app_state = & mut AppState{
+            progress_bar : Arc::new(RwLock::new(ProgressBar::new(2))), 
+            done : Arc::new(DashSet::new()) ,  
+            ev_cache : Arc::new(DashMap::new()),
+        };
+        assert_eq!(22.694445, best_dice_ev(game_state,app_state).1);
+    }
+
+
+    #[bench]
+    fn score_slot_bench(b: &mut Bencher) {
+        b.iter(|| score_slot(Fives,[1,2,5,5,5]));
+    }
+}
+
 fn main() {
     use SlotType::*;
-    //ad hoc testing code here for now 
 
     /* setup game state */
     let game_state = &GameState{
@@ -312,13 +347,12 @@ fn best_dice_ev(s:&GameState, app: &AppState) -> (Vec<u8>,f32){
         die_combos= die_index_combos();
     }
 
-    let best_ev = Arc::new(RwLock::new(0.0)); 
-    let best_selection = Arc::new(RwLock::new(vec![])); 
-    die_combos.into_par_iter().for_each(|selection|{ 
-        let mut total:f32 = 0.0;
+    let mut best_ev = 0.0; 
+    let mut best_selection = vec![]; 
+    for selection in die_combos {
         let outcomes = all_outcomes_for_rolling_n_dice(selection.len() as u8);
         let outcomeslen = outcomes.len();
-        for outcome in outcomes{ 
+        let total:f32 = outcomes.iter().map(|outcome| -> f32 { 
             //###### HOT CODE PATH #######
             let mut newvals=dievals;
             for (i, j) in selection.iter().enumerate() { 
@@ -333,19 +367,18 @@ fn best_dice_ev(s:&GameState, app: &AppState) -> (Vec<u8>,f32){
                 upper_bonus_deficit: s.upper_bonus_deficit,
                 sorted_dievals: sorted_newvals, 
             };
-            let ev =  ev_for_state(&newstate,app);
-            total += ev;
+            ev_for_state(&newstate,app)
             //############################
-        }
+        }).sum();
         let avg_ev = total/outcomeslen as f32; // outcomes are not a choice -- track average ev
-        if avg_ev > *best_ev.read().unwrap() {
-            *best_ev.write().unwrap() = avg_ev;
-            *best_selection.write().unwrap() = selection;
+        if avg_ev > best_ev{
+            best_ev = avg_ev;
+            best_selection = selection;
         }
-    });
+    }
    
-    let x = (*best_selection).read().unwrap().clone();
-    let y = *best_ev.read().unwrap();
+    let x = best_selection;
+    let y = best_ev;
     (x,y)
 
 }
