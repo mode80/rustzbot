@@ -344,23 +344,26 @@ fn ev_for_state(game:&GameState, app:&AppState) -> f32 {
         best_dice_ev(game,app).1  // <-----------------
     };
 
-    {
-        app.progress_bar.read().unwrap().println (
-            format!("{}\t_\t{:>.0}\t{:?}\t{}\t{}\t{:?}", 
-                game.rolls_remaining, ev, game.sorted_dievals, game.upper_bonus_deficit, game.yahtzee_is_wild, game.sorted_open_slots
-            )
-        );
-    }
-    // print(log_line,file=log)
+    // console_log(game,app,ev);
 
     if game.rolls_remaining==3{ // periodically update progress and save
         let is_done = {app.done.contains(&game.sorted_open_slots)} ;
         if ! is_done  {
             app.done.insert(game.sorted_open_slots);
             {app.progress_bar.write().unwrap().inc(1);}
+            console_log(game,app,ev);
             // if len(done) % 80 == 0 : with open('ev_cache.pkl','wb') as f: pickle.dump(ev_cache,f)
         }
     }
  
     ev 
+}
+
+#[inline(always)]
+fn console_log(game:&GameState, app:&AppState, ev:f32){
+    app.progress_bar.read().unwrap().println (
+        format!("{}\t_\t{:>.0}\t{:?}\t{}\t{}\t{:?}", 
+            game.rolls_remaining, ev, game.sorted_dievals, game.upper_bonus_deficit, game.yahtzee_is_wild, game.sorted_open_slots
+        )
+    );
 }
