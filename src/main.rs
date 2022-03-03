@@ -43,12 +43,11 @@ mod tests {
             done : Arc::new(DashSet::new()) ,  
             ev_cache : Arc::new(DashMap::new()),
         };
-        // assert_eq!(18.35108, best_dice_ev(game_state,app_state).1);
         ev_for_state(game_state,app_state);
     }
 
 
-    #[bench]
+    // #[bench]
     fn score_slot_bench(b: &mut Bencher) {
         b.iter(best_dice_ev_test);
     }
@@ -144,29 +143,6 @@ fn n_take_r(n:u128, r:u128, ordered:bool, with_replacement:bool)->u128{
         }
     }
 }
-
-// // the set of all ways to roll different dice, as represented by a collection of bool arrays
-// // [[0,0,0,0,0], [1,0,0,0,0], [0,1,0,0,0], [0,0,1,0,0], [0,0,0,1,0], [0,0,0,0,1], [1,1,0,0,0],...
-// fn die_combos()-> [[bool;5];64] {
-
-//     let mut them = [[false;5];64] ;
-//     let mut j = 0;
-//     let false_true = [false, true];
-//     for i in false_true {
-//         for ii in false_true {
-//             for iii in false_true {
-//                 for iv in false_true {
-//                     for v in false_true {
-//                         them[j] = [i,ii,iii,iv,v]; 
-//                         j+=1;
-//                     }
-//                 }
-//             }
-//         }
-//     }
-//     them
-// }
-
 
 /// the set of all ways to roll different dice, as represented by a collection of indice vecs 
 #[cached]
@@ -265,7 +241,6 @@ fn score_slot(slot:usize, sorted_dievals:[u8;5])->u8{
     SCORE_FNS[slot as usize](sorted_dievals) 
 }
 
-
 /// returns the best slot and corresponding ev for final dice, given the slot possibilities and other relevant state 
 fn best_slot_ev(game:&GameState, app: &AppState) -> (usize,f32) {
 
@@ -332,8 +307,8 @@ fn best_dice_ev(s:&GameState, app: &AppState) -> (ArrayVec<[usize;5]>,f32){
         let total:f32 = outcomes.iter().map(|outcome| -> f32 { 
             //###### HOT CODE PATH #######
             let mut newvals=s.sorted_dievals;
-            for (i, j) in selection.iter().enumerate() { 
-                newvals[*j]=outcome[i];    
+            for (i, j) in selection.into_iter().enumerate() { 
+                newvals[j]=outcome[i];    
             }
             newvals.sort_unstable();
             let newstate= GameState{ 
