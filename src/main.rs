@@ -26,17 +26,17 @@ mod tests {
 
     #[test]
     fn best_dice_ev_test() {
-        let slots= array_vec!([usize;13] => FULL_HOUSE,YAHTZEE,CHANCE);
+        let slots= array_vec!([usize;13] => 11,12,13);
         // let slots= array_vec!([usize;13] => 1,2,3,4,5,6,7,8,9,10,11,12,13);
         let game_state = &GameState{
             sorted_open_slots: slots,
             sorted_dievals: UNROLLED_DIEVALS,
-            rolls_remaining: 1,
+            rolls_remaining: 3,
             upper_bonus_deficit: INIT_DEFICIT,
             yahtzee_is_wild: false,
         };
         let slot_count=game_state.sorted_open_slots.len();
-        let combo_count = (0..=slot_count).map(|r| n_take_r(slot_count as u128, r as u128 ,false,false) as u64 ).sum() ;
+        let combo_count = (1..=slot_count).map(|r| n_take_r(slot_count as u128, r as u128,false,false) as u64 ).sum() ;
         let app_state = & mut AppState{
             progress_bar : Arc::new(RwLock::new(ProgressBar::new(combo_count))), 
             done : Arc::new(DashSet::new()) ,  
@@ -73,7 +73,7 @@ fn main() {
     };
 
     /* do it */
-    let it = best_dice_ev(game_state, app_state);
+    let it = ev_for_state(game_state, app_state);
    
     println!("{:?}", it);
 }
@@ -247,9 +247,10 @@ fn best_slot_ev(game:&GameState, app: &AppState) -> (usize,f32) {
     let mut best_ev = 0.0; 
     let mut best_slot=STUB; 
     for slot_sequence_vec in slot_sequences {
+        // println!("{:?}",slot_sequence_vec);
         let mut total:f32 = 0.0;
         let mut slot_sequence = ArrayVec::<[usize;13]>::new();
-        slot_sequence_vec.into_iter().for_each(|x| slot_sequence.push(x));
+        slot_sequence.extend_from_slice(&slot_sequence_vec);
         let top_slot = slot_sequence.pop().unwrap();
         let mut upper_deficit_now = game.upper_bonus_deficit ;
 
@@ -268,6 +269,7 @@ fn best_slot_ev(game:&GameState, app: &AppState) -> (usize,f32) {
         total += head_ev as f32;
 
         if ! slot_sequence.is_empty() { // proceed to add in scores for any for remaining slots
+            slot_sequence.sort_unstable(); // we sort here because we permutate and find max on the inside before caching the max under the sorted version as key
             let newstate= GameState{
                 yahtzee_is_wild: if top_slot==YAHTZEE && yahtzee_rolled {true} else {game.yahtzee_is_wild},
                 sorted_open_slots: slot_sequence, 
@@ -288,12 +290,14 @@ fn best_slot_ev(game:&GameState, app: &AppState) -> (usize,f32) {
 }
 
 /// returns the best selection of dice and corresponding ev, given slot possibilities and any existing dice and other relevant state 
-fn best_dice_ev(s:&GameState, app: &AppState) -> (ArrayVec<[usize;5]>,f32){ 
+fn best_dice_ev(game:&GameState, app: &AppState) -> (ArrayVec<[usize;5]>,f32){ 
 
     let mut die_combos:Vec<ArrayVec<[usize;5]>> = vec![];
+    let mut dievals = game.sorted_dievals;
 
-    if s.rolls_remaining==3{ //# we must select all dice on the first roll
+    if game.rolls_remaining==3{ //# we must select all dice on the first roll
         die_combos.push(array_vec![0,1,2,3,4]) ; //all dice
+        dievals = UNROLLED_DIEVALS;
     } else { //  # otherwise we must try all possible combos
         die_combos= die_index_combos(); //TODO more efficient to Arc(RwLock) or copy fully to the stack??
     }
@@ -305,16 +309,16 @@ fn best_dice_ev(s:&GameState, app: &AppState) -> (ArrayVec<[usize;5]>,f32){
         let outcomeslen = outcomes.len();
         let total:f32 = outcomes.iter().map(|outcome| -> f32 { 
             //###### HOT CODE PATH #######
-            let mut newvals=s.sorted_dievals;
+            let mut newvals=dievals;
             for (i, j) in selection.into_iter().enumerate() { 
                 newvals[j]=outcome[i];    
             }
             newvals.sort_unstable();
             let newstate= GameState{ 
-                yahtzee_is_wild: s.yahtzee_is_wild, 
-                sorted_open_slots: s.sorted_open_slots, 
-                rolls_remaining: s.rolls_remaining-1,
-                upper_bonus_deficit: s.upper_bonus_deficit,
+                yahtzee_is_wild: game.yahtzee_is_wild, 
+                sorted_open_slots: game.sorted_open_slots, 
+                rolls_remaining: game.rolls_remaining-1,
+                upper_bonus_deficit: game.upper_bonus_deficit,
                 sorted_dievals: newvals, 
             };
             ev_for_state(&newstate,app)
@@ -345,7 +349,7 @@ fn ev_for_state(game:&GameState, app:&AppState) -> f32 {
 
     // console_log(game,app,ev);
 
-    if game.rolls_remaining==3{ // periodically update progress and save
+    if game.rolls_remaining==0{ // periodically update progress and save
         let is_done = {app.done.contains(&game.sorted_open_slots)} ;
         if ! is_done  {
             app.done.insert(game.sorted_open_slots);
@@ -361,7 +365,7 @@ fn ev_for_state(game:&GameState, app:&AppState) -> f32 {
 #[inline(always)]
 fn console_log(game:&GameState, app:&AppState, ev:f32){
     app.progress_bar.read().unwrap().println (
-        format!("{}\t_\t{:>.0}\t{:?}\t{}\t{}\t{:?}", 
+        format!("{}\t_\t{:>.2}\t{:?}\t{}\t{}\t{:?}", 
             game.rolls_remaining, ev, game.sorted_dievals, game.upper_bonus_deficit, game.yahtzee_is_wild, game.sorted_open_slots
         )
     );
