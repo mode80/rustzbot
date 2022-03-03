@@ -19,17 +19,16 @@ use rayon::prelude::*;
 mod tests {
     use super::*;
     use test::Bencher;
-    use SlotType::*;
 
     // #[test]
     fn score_slot_test() {
-        assert_eq!(15, score_slot(Fives,[1,2,5,5,5]));
+        assert_eq!(15, score_slot(FIVES,[1,2,5,5,5]));
     }
 
     #[test]
     fn best_dice_ev_test() {
-        let slots= array_vec!([SlotType;13] => FullHouse,Yahtzee,Chance);
-        // let slots= array_vec!([SlotType;13] => Aces,Twos,Threes,Fours,Fives,Sixes,ThreeOfAKind,FourOfAKind,SmStraight,LgStraight,FullHouse,Yahtzee,Chance);
+        let slots= array_vec!([usize;13] => FULL_HOUSE,YAHTZEE,CHANCE);
+        // let slots= array_vec!([usize;13] => 1,2,3,4,5,6,7,8,9,10,11,12,13);
         let game_state = &GameState{
             sorted_open_slots: slots,
             sorted_dievals: UNROLLED_DIEVALS,
@@ -56,11 +55,10 @@ mod tests {
 }
 
 fn main() {
-    use SlotType::*;
 
     /* setup game state */
     let game_state = &GameState{
-            sorted_open_slots: ArrayVec::from([Aces,Twos,Threes,Fours,Fives,Sixes,ThreeOfAKind,FourOfAKind,SmStraight,LgStraight,FullHouse,Yahtzee,Chance]),
+            sorted_open_slots: ArrayVec::from([ACES,TWOS,THREES,FOURS,FIVES,SIXES,THREE_OF_A_KIND,FOUR_OF_A_KIND,SM_STRAIGHT,LG_STRAIGHT,FULL_HOUSE,YAHTZEE,CHANCE]),
             sorted_dievals: UNROLLED_DIEVALS,
             rolls_remaining: 3,
             upper_bonus_deficit: INIT_DEFICIT,
@@ -88,52 +86,30 @@ struct GameState{
     rolls_remaining:u8, 
     upper_bonus_deficit:u8, 
     yahtzee_is_wild:bool,
-    sorted_open_slots:ArrayVec<[SlotType;13]>, 
+    sorted_open_slots:ArrayVec<[usize;13]>, 
 }
 
 struct AppState{
     progress_bar:Arc<RwLock<ProgressBar>>, 
-    done:Arc<DashSet<ArrayVec<[SlotType;13]>>>, 
+    done:Arc<DashSet<ArrayVec<[usize;13]>>>, 
     ev_cache:Arc<DashMap<GameState,f32>>,
     // log, 
 }
 
-#[derive(Debug, PartialEq, Eq, Ord, PartialOrd, Hash, Clone, Copy)]
-enum SlotType {
-    Stub=0,
-    Aces=1, 
-    Twos=2, 
-    Threes=3, 
-    Fours=4, 
-    Fives=5, 
-    Sixes=6,
-    ThreeOfAKind=7, 
-    FourOfAKind=8, 
-    SmStraight=9, 
-    LgStraight=10, 
-    FullHouse=11, 
-    Yahtzee=12, 
-    Chance=13, 
-}
-// impl ToString for SlotType{
-//     fn to_string(&self)->String{
-//         (*self as u8).to_string()
-//     }
-// }
-impl Default for SlotType {
-    fn default() -> SlotType {
-        SlotType::Stub
-    }
-}
-impl Display for SlotType {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        // write!(f, "({}, {})", self.longitude, self.latitude)
-        write!(f, "{}", *self as u8)
-    }
-}
-
-
-
+const STUB:usize=0;
+const ACES:usize=1; 
+const TWOS:usize=2; 
+const THREES:usize=3; 
+const FOURS:usize=4; 
+const FIVES:usize=5; 
+const SIXES:usize=6;
+const THREE_OF_A_KIND:usize=7; 
+const FOUR_OF_A_KIND:usize=8; 
+const SM_STRAIGHT:usize=9; 
+const LG_STRAIGHT:usize=10; 
+const FULL_HOUSE:usize=11; 
+const YAHTZEE:usize=12; 
+const CHANCE:usize=13; 
  
 const UNROLLED_DIEVALS:[u8;5] = [0,0,0,0,0];
 const SIDES:u8 = 6;
@@ -285,21 +261,20 @@ fn score_yahtzee(sorted_dievals:[u8;5])->u8 {
 
 /// reports the score for a set of dice in a given slot w/o regard for exogenous gamestate (bonuses, yahtzee wildcards etc)
 #[cached]
-fn score_slot(slot:SlotType, sorted_dievals:[u8;5])->u8{
+fn score_slot(slot:usize, sorted_dievals:[u8;5])->u8{
     SCORE_FNS[slot as usize](sorted_dievals) 
 }
 
 
 /// returns the best slot and corresponding ev for final dice, given the slot possibilities and other relevant state 
-fn best_slot_ev(game:&GameState, app: &AppState) -> (SlotType,f32) {
+fn best_slot_ev(game:&GameState, app: &AppState) -> (usize,f32) {
 
-    use SlotType::*;
     let slot_sequences = game.sorted_open_slots.into_iter().permutations(game.sorted_open_slots.len()); // TODO a version of this that doesn't allocate with vecs
     let mut best_ev = 0.0; 
-    let mut best_slot=Stub; 
+    let mut best_slot=STUB; 
     for slot_sequence_vec in slot_sequences {
         let mut total:f32 = 0.0;
-        let mut slot_sequence = ArrayVec::<[SlotType;13]>::new();
+        let mut slot_sequence = ArrayVec::<[usize;13]>::new();
         slot_sequence_vec.into_iter().for_each(|x| slot_sequence.push(x));
         let top_slot = slot_sequence.pop().unwrap();
         let mut upper_deficit_now = game.upper_bonus_deficit ;
@@ -307,12 +282,12 @@ fn best_slot_ev(game:&GameState, app: &AppState) -> (SlotType,f32) {
         let mut head_ev = score_slot(top_slot, game.sorted_dievals); // score slot itself w/o regard to game state adjustments
         let yahtzee_rolled = game.sorted_dievals[0]==game.sorted_dievals[4]; // go on to adjust the raw ev for exogenous game state factors
         if yahtzee_rolled && game.yahtzee_is_wild { 
-            if top_slot==SmStraight {head_ev=30}; // extra yahtzees are valid in any lower slot per wildcard rules
-            if top_slot==LgStraight {head_ev=40}; 
-            if top_slot==FullHouse  {head_ev=25}; 
+            if top_slot==SM_STRAIGHT {head_ev=30}; // extra yahtzees are valid in any lower slot per wildcard rules
+            if top_slot==LG_STRAIGHT {head_ev=40}; 
+            if top_slot==FULL_HOUSE  {head_ev=25}; 
             head_ev+=100; // extra yahtzee bonus per rules
         }
-        if top_slot <= SlotType::Sixes && upper_deficit_now>0 && head_ev>0 { 
+        if top_slot <= SIXES && upper_deficit_now>0 && head_ev>0 { 
             if head_ev >= upper_deficit_now {head_ev+=35}; // add upper bonus when needed total is reached
             upper_deficit_now = upper_deficit_now.saturating_sub(head_ev) ;
         }
@@ -320,7 +295,7 @@ fn best_slot_ev(game:&GameState, app: &AppState) -> (SlotType,f32) {
 
         if ! slot_sequence.is_empty() { // proceed to add in scores for any for remaining slots
             let newstate= GameState{
-                yahtzee_is_wild: if top_slot==Yahtzee && yahtzee_rolled {true} else {game.yahtzee_is_wild},
+                yahtzee_is_wild: if top_slot==YAHTZEE && yahtzee_rolled {true} else {game.yahtzee_is_wild},
                 sorted_open_slots: slot_sequence, 
                 rolls_remaining: 3,
                 upper_bonus_deficit: upper_deficit_now,
