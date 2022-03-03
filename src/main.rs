@@ -21,29 +21,31 @@ mod tests {
     use test::Bencher;
     use SlotType::*;
 
-    #[test]
+    // #[test]
     fn score_slot_test() {
         assert_eq!(15, score_slot(Fives,[1,2,5,5,5]));
     }
 
-    // #[test]
+    #[test]
     fn best_dice_ev_test() {
-        let mut slots:ArrayVec<[SlotType;13]> = array_vec![]; 
-        slots.push(FourOfAKind);
-        slots.push(Chance);
+        let slots= array_vec!([SlotType;13] => FullHouse,Yahtzee,Chance);
+        // let slots= array_vec!([SlotType;13] => Aces,Twos,Threes,Fours,Fives,Sixes,ThreeOfAKind,FourOfAKind,SmStraight,LgStraight,FullHouse,Yahtzee,Chance);
         let game_state = &GameState{
             sorted_open_slots: slots,
-            sorted_dievals: [1,2,5,5,5],
+            sorted_dievals: UNROLLED_DIEVALS,
             rolls_remaining: 1,
             upper_bonus_deficit: INIT_DEFICIT,
             yahtzee_is_wild: false,
         };
+        let slot_count=game_state.sorted_open_slots.len();
+        let combo_count = (0..=slot_count).map(|r| n_take_r(slot_count as u128, r as u128 ,false,false) as u64 ).sum() ;
         let app_state = & mut AppState{
-            progress_bar : Arc::new(RwLock::new(ProgressBar::new(2))), 
+            progress_bar : Arc::new(RwLock::new(ProgressBar::new(combo_count))), 
             done : Arc::new(DashSet::new()) ,  
             ev_cache : Arc::new(DashMap::new()),
         };
-        assert_eq!(18.35108, best_dice_ev(game_state,app_state).1);
+        // assert_eq!(18.35108, best_dice_ev(game_state,app_state).1);
+        ev_for_state(game_state,app_state);
     }
 
 
@@ -67,8 +69,7 @@ fn main() {
     
     /* setup app state */
     let slot_count=game_state.sorted_open_slots.len();
-    // let combo_count = (1..=slot_count).reduce(|accum,r| accum+n_take_r(slot_count as u128, r as u128 ,false,false) as usize).unwrap() ;
-    let combo_count = (1..=slot_count).map(|r| n_take_r(slot_count as u128, r as u128 ,false,false) as u64 ).sum() ;
+    let combo_count = (0..=slot_count).map(|r| n_take_r(slot_count as u128, r as u128 ,false,false) as u64 ).sum() ;
     let app_state = & mut AppState{
         progress_bar : Arc::new(RwLock::new(ProgressBar::new(combo_count))), 
         done : Arc::new(DashSet::new()) ,  
@@ -192,7 +193,7 @@ fn n_take_r(n:u128, r:u128, ordered:bool, with_replacement:bool)->u128{
 
 
 /// the set of all ways to roll different dice, as represented by a collection of indice vecs 
-// #[cached]
+#[cached]
 fn die_index_combos() ->Vec<ArrayVec<[usize;5]>>  { 
     let mut them:Vec<ArrayVec<[usize;5]>> = vec![]; 
     for combo in (0..=4).combinations(0){ them.push(ArrayVec::<[usize;5]>::new().fill(combo.into_iter()).collect()); }
