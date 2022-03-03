@@ -1,9 +1,8 @@
 #![allow(dead_code)]
 //#![allow(unused_variables)]
 #![allow(unused_imports)]
-#![feature(test)]
-
-extern crate test;
+// #![feature(test)]
+// extern crate test;
 
 use std::{vec, cmp::max, sync::{Arc, RwLock}};
 use counter::Counter;
@@ -18,7 +17,7 @@ use rayon::prelude::*;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use test::Bencher;
+    // use test::Bencher;
 
     // #[test]
     fn score_slot_test() {
@@ -47,10 +46,10 @@ mod tests {
     }
 
 
-    // #[bench]
-    fn score_slot_bench(b: &mut Bencher) {
-        b.iter(best_dice_ev_test);
-    }
+    // // #[bench]
+    // fn score_slot_bench(b: &mut Bencher) {
+    //     b.iter(best_dice_ev_test);
+    // }
 }
 
 fn main() {
