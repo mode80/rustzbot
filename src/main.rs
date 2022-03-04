@@ -157,23 +157,23 @@ fn die_index_combos() ->Vec<ArrayVec<[usize;5]>>  {
 }
 
 
-#[cached]
-fn all_outcomes_for_rolling_n_dice(n:u8) -> Vec<Vec<u8>> {
+// #[cached]
+fn all_outcomes_for_rolling_n_dice(n:u8) -> Vec<ArrayVec<[u8;5]>> {
 
     assert!(n<=5);
 
     let mut them = vec![]; 
-    if n==0 {them.push(vec![]) } else {
+    if n==0 {them.push({let mut it = ArrayVec::new(); it.extend_from_slice(&[]); it}) } else {
     for i in 1..=6 {
-        if n==1 {them.push(vec![i])} else {
+        if n==1 {them.push({let mut it = ArrayVec::new(); it.extend_from_slice(&[i]); it}) } else {//
         for ii in 1..=6 {
-            if n==2 {them.push(vec![i,ii])} else {
+            if n==2 {them.push({let mut it = ArrayVec::new(); it.extend_from_slice(&[i,ii]); it})} else {
             for iii in 1..=6 {
-                if n==3 {them.push(vec![i,ii,iii])} else {
+                if n==3 {them.push({let mut it = ArrayVec::new(); it.extend_from_slice(&[i,ii,iii]); it})} else {
                 for iv in 1..=6 {
-                    if n==4 {them.push(vec![i,ii,iii,iv])} else {
+                    if n==4 {them.push({let mut it = ArrayVec::new(); it.extend_from_slice(&[i,ii,iii,iv]); it})} else {
                     for v in 1..=6 {
-                        if n==5 {them.push(vec![i,ii,iii,iv,v])} 
+                        if n==5 {them.push({let mut it = ArrayVec::new(); it.extend_from_slice(&[i,ii,iii,iv,v]); it})} 
                     }}
                 }}
             }}
