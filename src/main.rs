@@ -43,6 +43,7 @@ fn main() {
 
     /* do it */
     let it = ev_for_state(game_state, app_state);
+    // console_log(game_state, app_state, it);
    
     println!("{:?}", it);
 }
@@ -232,29 +233,14 @@ fn best_slot_ev(game:&GameState, app: &AppState) -> (u8,f32) {
     for slot_sequence_vec in slot_sequences {
 
         // prep vars
-            let mut lower_ev = 0.0;
+            let mut tail_ev = 0.0;
             let mut slot_sequence = ArrayVec::<[u8;13]>::new();
             slot_sequence.extend_from_slice(&slot_sequence_vec);
             let top_slot = slot_sequence.pop().unwrap();
             let mut upper_deficit_now = game.upper_bonus_deficit ;
+            let mut yahtzee_wild_now:bool = game.yahtzee_is_wild;
 
-        // score slot itself w/o regard to game state 
-            let mut upper_ev = score_slot(top_slot, game.sorted_dievals); 
-
-        // add upper bonus when needed total is reached
-            if top_slot <= SIXES && upper_deficit_now>0 && upper_ev>0 { 
-                if upper_ev >= upper_deficit_now {upper_ev += 35}; 
-                upper_deficit_now = upper_deficit_now.saturating_sub(upper_ev) ;
-            } 
-
-        // special handling of "extra yahtzees" 
-            let yahtzee_rolled = game.sorted_dievals[0]==game.sorted_dievals[4]; 
-            if yahtzee_rolled && game.yahtzee_is_wild { 
-                if top_slot==SM_STRAIGHT {upper_ev=30}; // extra yahtzees are valid in any lower slot, per wildcard rules
-                if top_slot==LG_STRAIGHT {upper_ev=40}; 
-                if top_slot==FULL_HOUSE  {upper_ev=25}; 
-                upper_ev+=100; // extra yahtzee bonus per rules
-            }
+        let head_ev = leaf_calcs(game, top_slot, & mut upper_deficit_now, & mut yahtzee_wild_now);
 
         if ! slot_sequence.is_empty() { // proceed to include all the ev of remaining slots in this slot_sequence
             
@@ -271,22 +257,50 @@ fn best_slot_ev(game:&GameState, app: &AppState) -> (u8,f32) {
 
             // gather the collective ev for the remaining slots recursively
                 let newstate= GameState{
-                    yahtzee_is_wild: if top_slot==YAHTZEE && yahtzee_rolled {true} else {game.yahtzee_is_wild},
+                    yahtzee_is_wild: yahtzee_wild_now,
                     sorted_open_slots: slot_sequence, 
                     rolls_remaining: 3,
                     upper_bonus_deficit: upper_deficit_now,
                     sorted_dievals: game.sorted_dievals, 
                 };
-                lower_ev = ev_for_state(&newstate,app); // <---------
+                tail_ev = ev_for_state(&newstate,app); // <---------
+                // console_log(game, app, tail_ev);
+  
         }
 
-        let ev = lower_ev + upper_ev as f32 ; 
+        let ev = tail_ev + head_ev as f32 ; 
         if ev >= best_ev { best_ev = ev; best_slot = top_slot ; }
 
     } // end "for slot_sequence_vec in slot_sequences"
 
     (best_slot, best_ev)
 }
+
+fn leaf_calcs(game:&GameState, top_slot:u8,  upper_deficit_now:&mut u8, yahtzee_wild_now:&mut bool) -> u8 {
+
+        // score slot itself w/o regard to game state 
+            let mut score = score_slot(top_slot, game.sorted_dievals); 
+
+        // add upper bonus when needed total is reached
+            if top_slot <= SIXES && *upper_deficit_now>0 && score>0 { 
+                if score >= *upper_deficit_now {score += 35}; 
+                *upper_deficit_now = (*upper_deficit_now).saturating_sub(score) ;
+            } 
+
+        // special handling of "extra yahtzees" 
+            let yahtzee_rolled = game.sorted_dievals[0]==game.sorted_dievals[4]; 
+            if yahtzee_rolled && game.yahtzee_is_wild { // extra yahtzee situation
+                if top_slot==SM_STRAIGHT {score=30}; // extra yahtzees are valid in any lower slot, per wildcard rules
+                if top_slot==LG_STRAIGHT {score=40}; 
+                if top_slot==FULL_HOUSE  {score=25}; 
+                score+=100; // extra yahtzee bonus per rules
+            }
+
+        if top_slot==YAHTZEE && yahtzee_rolled {*yahtzee_wild_now = true} ;
+
+        score
+}
+
 
 /// returns the best selection of dice and corresponding ev, given slots left, existing dice, and other relevant state 
 fn best_dice_ev(game:&GameState, app: &AppState) -> (ArrayVec<[u8;5]>,f32){ 
@@ -328,7 +342,9 @@ fn avg_ev_for_selection(game:&GameState, app: &AppState, selection:ArrayVec::<[u
             upper_bonus_deficit: game.upper_bonus_deficit,
             sorted_dievals: newvals, 
         };
-        total += ev_for_state(&newstate,app)
+        let next_ev = ev_for_state(&newstate,app);
+        // console_log(game, app, next_ev);
+        total += next_ev 
         //############################
     }
     total/outcomes_count as f32
