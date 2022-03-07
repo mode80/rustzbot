@@ -27,12 +27,12 @@ use once_cell::sync::Lazy;
 
     #[test]
     fn best_dice_ev_test() {
-        let slots= array_vec!([u8;13] => 1,6,12,13);
+        let slots= array_vec!([u8;13] => 7,13);
         // let slots= array_vec!([u8;13] => 1,2,3,4,5,6,7,8,9,10,11,12,13);
         let game_state = &GameState{
             sorted_open_slots: slots,
-            sorted_dievals: [1,1,1,1,1],
-            rolls_remaining: 3,
+            sorted_dievals: [1,2,5,5,5],
+            rolls_remaining: 1,
             upper_bonus_deficit: INIT_DEFICIT,
             yahtzee_is_wild: false,
         };
@@ -378,14 +378,14 @@ fn ev_for_state(game:&GameState, app:&AppState) -> f32 {
         best_dice_ev(game,app).1  // <-----------------
     };
 
-    // console_log(game,app,ev);
+    console_log(game,app,ev);
 
-    if game.rolls_remaining==3 { // periodically update progress and save
+    if game.rolls_remaining==0 { // periodically update progress and save
         let is_done = {app.done.contains(&game.sorted_open_slots)} ;
         if ! is_done  {
             app.done.insert(game.sorted_open_slots);
             {app.progress_bar.write().unwrap().inc(1);}
-            console_log(game,app,ev);
+            // console_log(game,app,ev);
         }
     }
     ev 
