@@ -2,12 +2,12 @@
 //#![allow(unused_variables)]
 #![allow(unused_imports)]
 
-use std::{vec, cmp::max, sync::{Arc, RwLock}};//, collections::{HashMap, HashSet}};
+use std::{vec, cmp::max, sync::{Arc, RwLock}, hash::{BuildHasherDefault, BuildHasher}, collections::HashMap};//, collections::{HashMap, HashSet}};
 use counter::Counter;
 // use cached::proc_macro::cached;
 use itertools::Itertools;
 use indicatif::ProgressBar;
-use rustc_hash::{FxHashSet, FxHashMap};
+use rustc_hash::{FxHashSet, FxHashMap, FxHasher};
 use std::fmt::{Formatter, Display, Result};
 use tinyvec::*;
 use rayon::prelude::*; 
@@ -51,9 +51,10 @@ impl AppState{
     fn new(game: &GameState) -> Self{
         let slot_count=game.sorted_open_slots.len();
         let combo_count = (1..=slot_count).map(|r| n_take_r(slot_count as u128, r as u128,false,false) as u64 ).sum() ;
+        let init_capacity = combo_count as usize * 252 * 64 * 2 * 2; // roughly: slotcombos * diecombos * deficits * wilds * rolls
         Self{   progress_bar : Arc::new(RwLock::new(ProgressBar::new(combo_count))), 
                 done : Arc::new(RwLock::new(FxHashSet::default())) ,  
-                ev_cache : Arc::new(RwLock::new(FxHashMap::default())), 
+                ev_cache : Arc::new(RwLock::new( FxHashMap::with_capacity_and_hasher(init_capacity,Default::default()))),
         }
     }
 }
