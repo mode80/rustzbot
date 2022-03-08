@@ -1,14 +1,13 @@
 #![allow(dead_code)]
 //#![allow(unused_variables)]
 #![allow(unused_imports)]
-// #![feature(test)]
-// extern crate test;
 
-use std::{vec, cmp::max, sync::{Arc, RwLock}, collections::{HashMap, HashSet}};
+use std::{vec, cmp::max, sync::{Arc, RwLock}};//, collections::{HashMap, HashSet}};
 use counter::Counter;
 // use cached::proc_macro::cached;
 use itertools::Itertools;
 use indicatif::ProgressBar;
+use rustc_hash::{FxHashSet, FxHashMap};
 use std::fmt::{Formatter, Display, Result};
 use tinyvec::*;
 use rayon::prelude::*; 
@@ -22,25 +21,12 @@ mod tests;
 
 fn main() {
 
-    /* setup game state */
     let game_state = &GameState{
-            sorted_open_slots: ArrayVec::from([ACES,TWOS,THREES,FOURS,FIVES,SIXES,THREE_OF_A_KIND,FOUR_OF_A_KIND,SM_STRAIGHT,LG_STRAIGHT,FULL_HOUSE,YAHTZEE,CHANCE]),
-            sorted_dievals: UNROLLED_DIEVALS,
-            rolls_remaining: 3,
-            upper_bonus_deficit: INIT_DEFICIT,
-            yahtzee_is_wild: false,
-        };
-    
-    /* setup app state */
-    let slot_count=game_state.sorted_open_slots.len();
-    let combo_count = (0..=slot_count).map(|r| n_take_r(slot_count as u128, r as u128 ,false,false) as u64 ).sum() ;
-    let app_state = & mut AppState{
-        progress_bar : Arc::new(RwLock::new(ProgressBar::new(combo_count))), 
-        done : Arc::new(RwLock::new(HashSet::new())) ,  
-        ev_cache : Arc::new(RwLock::new(HashMap::new())),
+        sorted_open_slots: ArrayVec::from([ACES,TWOS,THREES,FOURS,FIVES,SIXES,THREE_OF_A_KIND,FOUR_OF_A_KIND,SM_STRAIGHT,LG_STRAIGHT,FULL_HOUSE,YAHTZEE,CHANCE]),
+        sorted_dievals: UNROLLED_DIEVALS, rolls_remaining: 3, upper_bonus_deficit: INIT_DEFICIT, yahtzee_is_wild: false,
     };
+    let app_state = & mut AppState::new(game_state);
 
-    /* do it */
     let (_choice, _ev) = best_choice_ev(game_state, app_state);
    
 }
@@ -57,8 +43,8 @@ struct GameState{
 
 struct AppState{
     progress_bar:Arc<RwLock<ProgressBar>>, 
-    done:Arc<RwLock<HashSet<ArrayVec<[u8;13]>>>>, 
-    ev_cache:Arc<RwLock<HashMap<GameState,(Choice,f32)>>>,
+    done:Arc<RwLock<FxHashSet<ArrayVec<[u8;13]>>>>, 
+    ev_cache:Arc<RwLock<FxHashMap<GameState,(Choice,f32)>>>,
     // log, 
 }
 impl AppState{
@@ -66,8 +52,8 @@ impl AppState{
         let slot_count=game.sorted_open_slots.len();
         let combo_count = (1..=slot_count).map(|r| n_take_r(slot_count as u128, r as u128,false,false) as u64 ).sum() ;
         Self{   progress_bar : Arc::new(RwLock::new(ProgressBar::new(combo_count))), 
-                done : Arc::new(RwLock::new(HashSet::new())) ,  
-                ev_cache : Arc::new(RwLock::new(HashMap::new())), 
+                done : Arc::new(RwLock::new(FxHashSet::default())) ,  
+                ev_cache : Arc::new(RwLock::new(FxHashMap::default())), 
         }
     }
 }
