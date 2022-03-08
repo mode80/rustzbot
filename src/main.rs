@@ -62,6 +62,13 @@ struct AppState{
     ev_cache:Arc<DashMap<GameState,f32>>,
     // log, 
 }
+impl AppState{
+    fn new(game: &GameState) -> Self{
+        let slot_count=game.sorted_open_slots.len();
+        let combo_count = (1..=slot_count).map(|r| n_take_r(slot_count as u128, r as u128,false,false) as u64 ).sum() ;
+        Self{ progress_bar : Arc::new(RwLock::new(ProgressBar::new(combo_count))), done : Arc::new(DashSet::new()) ,  ev_cache : Arc::new(DashMap::new()), }
+    }
+}
 
 const STUB:u8=0;
 const ACES:u8=1; 
