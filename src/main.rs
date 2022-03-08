@@ -138,12 +138,8 @@ fn die_index_combos() ->[ArrayVec<[u8;5]>;32]  {
     for combo in (0..=4).combinations(2){ them[i]= {let mut it=ArrayVec::<[u8;5]>::new(); it.extend_from_slice(&combo); i+=1; it} } 
     for combo in (0..=4).combinations(3){ them[i]= {let mut it=ArrayVec::<[u8;5]>::new(); it.extend_from_slice(&combo); i+=1; it} } 
     for combo in (0..=4).combinations(4){ them[i]= {let mut it=ArrayVec::<[u8;5]>::new(); it.extend_from_slice(&combo); i+=1; it} } 
-    for combo in (0..=4).combinations(5){ 
-        them[i]= {
-            let mut it=ArrayVec::<[u8;5]>::new(); 
-            it.extend_from_slice(&combo); 
-            i+=1; 
-        it} } 
+    for combo in (0..=4).combinations(5){ them[i]= {let mut it=ArrayVec::<[u8;5]>::new(); it.extend_from_slice(&combo); i+=1; it} } 
+    them.sort_unstable();
     them
 }
 
@@ -230,36 +226,35 @@ fn best_slot_ev(game:&GameState, app: &AppState) -> (Choice,f32) {
 
     for slot_sequence_vec in slot_sequences {
 
-        // prep vars
-            let mut tail_ev = 0.0;
-            let mut slot_sequence = ArrayVec::<[u8;13]>::new();
-            slot_sequence.extend_from_slice(&slot_sequence_vec);
-            let top_slot = slot_sequence.pop().unwrap();
-            let mut _choice:Choice = Choice::Slot(top_slot);
-            let mut upper_deficit_now = game.upper_bonus_deficit ;
-            let mut yahtzee_wild_now:bool = game.yahtzee_is_wild;
+        // LEAF CALCS 
+            // prep vars
+                let mut tail_ev = 0.0;
+                let mut slot_sequence = ArrayVec::<[u8;13]>::new();
+                slot_sequence.extend_from_slice(&slot_sequence_vec);
+                let top_slot = slot_sequence.pop().unwrap();
+                let mut _choice:Choice = Choice::Slot(top_slot);
+                let mut upper_deficit_now = game.upper_bonus_deficit ;
+                let mut yahtzee_wild_now:bool = game.yahtzee_is_wild;
 
-        // score slot itself w/o regard to game state 
-            let mut head_ev = score_slot(top_slot, game.sorted_dievals); 
+            // score slot itself w/o regard to game state 
+                let mut head_ev = score_slot(top_slot, game.sorted_dievals); 
 
-        // add upper bonus when needed total is reached
-            if top_slot <= SIXES && upper_deficit_now>0 && head_ev>0 { 
-                if head_ev >= upper_deficit_now {head_ev += 35}; 
-                upper_deficit_now = upper_deficit_now.saturating_sub(head_ev) ;
-            } 
+            // add upper bonus when needed total is reached
+                if top_slot <= SIXES && upper_deficit_now>0 && head_ev>0 { 
+                    if head_ev >= upper_deficit_now {head_ev += 35}; 
+                    upper_deficit_now = upper_deficit_now.saturating_sub(head_ev) ;
+                } 
 
-        // special handling of "extra yahtzees" 
-            let yahtzee_rolled = game.sorted_dievals[0]==game.sorted_dievals[4]; 
-            if yahtzee_rolled && game.yahtzee_is_wild { // extra yahtzee situation
-                if top_slot==SM_STRAIGHT {head_ev=30}; // extra yahtzees are valid in any lower slot, per wildcard rules
-                if top_slot==LG_STRAIGHT {head_ev=40}; 
-                if top_slot==FULL_HOUSE  {head_ev=25}; 
-                head_ev+=100; // extra yahtzee bonus per rules
-            }
-            if top_slot==YAHTZEE && yahtzee_rolled {yahtzee_wild_now = true} ;
+            // special handling of "extra yahtzees" 
+                let yahtzee_rolled = game.sorted_dievals[0]==game.sorted_dievals[4]; 
+                if yahtzee_rolled && game.yahtzee_is_wild { // extra yahtzee situation
+                    if top_slot==SM_STRAIGHT {head_ev=30}; // extra yahtzees are valid in any lower slot, per wildcard rules
+                    if top_slot==LG_STRAIGHT {head_ev=40}; 
+                    if top_slot==FULL_HOUSE  {head_ev=25}; 
+                    head_ev+=100; // extra yahtzee bonus per rules
+                }
+                if top_slot==YAHTZEE && yahtzee_rolled {yahtzee_wild_now = true} ;
 
-
-        // let head_ev = leaf_calcs(game, top_slot, & mut upper_deficit_now, & mut yahtzee_wild_now);
 
         if ! slot_sequence.is_empty() { // proceed to include all the ev of remaining slots in this slot_sequence
 
@@ -293,32 +288,6 @@ fn best_slot_ev(game:&GameState, app: &AppState) -> (Choice,f32) {
     // console_log(game, app, Choice::Slot(best_slot), best_ev );
     (Choice::Slot(best_slot), best_ev)
 }
-
-fn leaf_calcs(game:&GameState, top_slot:u8,  upper_deficit_now:&mut u8, yahtzee_wild_now:&mut bool) -> u8 {
-
-        // score slot itself w/o regard to game state 
-            let mut score = score_slot(top_slot, game.sorted_dievals); 
-
-        // add upper bonus when needed total is reached
-            if top_slot <= SIXES && *upper_deficit_now>0 && score>0 { 
-                if score >= *upper_deficit_now {score += 35}; 
-                *upper_deficit_now = (*upper_deficit_now).saturating_sub(score) ;
-            } 
-
-        // special handling of "extra yahtzees" 
-            let yahtzee_rolled = game.sorted_dievals[0]==game.sorted_dievals[4]; 
-            if yahtzee_rolled && game.yahtzee_is_wild { // extra yahtzee situation
-                if top_slot==SM_STRAIGHT {score=30}; // extra yahtzees are valid in any lower slot, per wildcard rules
-                if top_slot==LG_STRAIGHT {score=40}; 
-                if top_slot==FULL_HOUSE  {score=25}; 
-                score+=100; // extra yahtzee bonus per rules
-            }
-
-        if top_slot==YAHTZEE && yahtzee_rolled {*yahtzee_wild_now = true} ;
-
-        score
-}
-
 
 /// returns the best selection of dice and corresponding ev, given slots left, existing dice, and other relevant state 
 fn best_dice_ev(game:&GameState, app: &AppState) -> (Choice,f32){ 
@@ -385,14 +354,14 @@ fn best_choice_ev(game:&GameState,app: &AppState) -> (Choice,f32) {
         best_dice_ev(game,app)  // <-----------------
     };
 
-    // console_log(game,app,result.0,result.1);
+    console_log(game,app,result.0,result.1);
 
-    if game.rolls_remaining==3 { // periodically update progress and save
+    if game.rolls_remaining==0 { // periodically update progress and save
         let e = {app.done.contains(&game.sorted_open_slots)} ;
         if ! e  {
             app.done.insert(game.sorted_open_slots);
             {app.progress_bar.write().unwrap().inc(1);}
-            console_log(game,app,result.0,result.1);
+            // console_log(game,app,result.0,result.1);
         }
     }
     result 
