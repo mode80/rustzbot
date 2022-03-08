@@ -42,10 +42,9 @@ fn main() {
     };
 
     /* do it */
-    let it = ev_for_state(game_state, app_state);
-    // console_log(game_state, app_state, it);
+    let (_choice, _ev) = best_choice_ev(game_state, app_state);
+    // console_log(game_state, app_state, _choice, _ev);
    
-    println!("{:?}", it);
 }
 /*-------------------------------------------------------------*/
 
@@ -122,10 +121,10 @@ fn n_take_r(n:u128, r:u128, ordered:bool, with_replacement:bool)->u128{
     }
 }
 
-fn console_log(game:&GameState, app:&AppState, ev:f32){
+fn console_log(game:&GameState, app:&AppState, choice:Choice, ev:f32 ){
     app.progress_bar.read().unwrap().println (
-        format!("{}\t_\t{:>.2}\t{:?}\t{}\t{}\t{:?}", 
-            game.rolls_remaining, ev, game.sorted_dievals, game.upper_bonus_deficit, game.yahtzee_is_wild, game.sorted_open_slots
+        format!("{:>}\t{}\t{:>4}\t{:>4.2}\t{:?}\t{:?}\t{:?}", 
+            game.rolls_remaining, game.yahtzee_is_wild, game.upper_bonus_deficit, ev, game.sorted_dievals, game.sorted_open_slots, choice 
         )
     );
 }
@@ -224,7 +223,7 @@ fn score_slot(slot:u8, sorted_dievals:[u8;5])->u8{
 /*-------------------------------------------------------------*/
 
 /// returns the best slot and corresponding ev for final dice, given the slot possibilities and other relevant state 
-fn best_slot_ev(game:&GameState, app: &AppState) -> (u8,f32) {
+fn best_slot_ev(game:&GameState, app: &AppState) -> (Choice,f32) {
 
     let slot_sequences = game.sorted_open_slots.into_iter().permutations(game.sorted_open_slots.len()); // TODO make a version of this that returns ArrayVecs 
     let mut best_ev = 0.0; 
@@ -237,6 +236,7 @@ fn best_slot_ev(game:&GameState, app: &AppState) -> (u8,f32) {
             let mut slot_sequence = ArrayVec::<[u8;13]>::new();
             slot_sequence.extend_from_slice(&slot_sequence_vec);
             let top_slot = slot_sequence.pop().unwrap();
+            let mut _choice:Choice = Choice::Slot(top_slot);
             let mut upper_deficit_now = game.upper_bonus_deficit ;
             let mut yahtzee_wild_now:bool = game.yahtzee_is_wild;
 
@@ -263,17 +263,16 @@ fn best_slot_ev(game:&GameState, app: &AppState) -> (u8,f32) {
                     upper_bonus_deficit: upper_deficit_now,
                     sorted_dievals: game.sorted_dievals, 
                 };
-                tail_ev = ev_for_state(&newstate,app); // <---------
-                // console_log(game, app, tail_ev);
-  
+                (_choice, tail_ev) = best_choice_ev(&newstate,app); // <---------
         }
 
         let ev = tail_ev + head_ev as f32 ; 
         if ev >= best_ev { best_ev = ev; best_slot = top_slot ; }
+        // console_log(game, app, _choice, ev );
 
     } // end "for slot_sequence_vec in slot_sequences"
 
-    (best_slot, best_ev)
+    (Choice::Slot(best_slot), best_ev)
 }
 
 fn leaf_calcs(game:&GameState, top_slot:u8,  upper_deficit_now:&mut u8, yahtzee_wild_now:&mut bool) -> u8 {
@@ -303,20 +302,20 @@ fn leaf_calcs(game:&GameState, top_slot:u8,  upper_deficit_now:&mut u8, yahtzee_
 
 
 /// returns the best selection of dice and corresponding ev, given slots left, existing dice, and other relevant state 
-fn best_dice_ev(game:&GameState, app: &AppState) -> (ArrayVec<[u8;5]>,f32){ 
+fn best_dice_ev(game:&GameState, app: &AppState) -> (Choice,f32){ 
 
     let mut best_selection = array_vec![0,1,2,3,4]; // default selection is "all dice"
     let mut best_ev = 0.0; 
     if game.rolls_remaining==3 {// special case .. we always roll all dice on initial roll
         best_ev = avg_ev_for_selection(game,app,best_selection);
-        return (best_selection, best_ev)
+        return (Choice::Dice(best_selection), best_ev)
     } else { // iterate over all the possible ways to select dice and take the best outcome 
         for selection in SELECTIONS.into_iter() {
             let avg_ev = avg_ev_for_selection(game,app,selection);
             if avg_ev > best_ev {best_ev = avg_ev; best_selection = selection; }
         }
     }
-    (best_selection, best_ev)
+    (Choice::Dice(best_selection), best_ev)
 }
 
 /// returns the average of all the expected values for rolling a selection of dice, given the game and app state
@@ -342,8 +341,8 @@ fn avg_ev_for_selection(game:&GameState, app: &AppState, selection:ArrayVec::<[u
             upper_bonus_deficit: game.upper_bonus_deficit,
             sorted_dievals: newvals, 
         };
-        let next_ev = ev_for_state(&newstate,app);
-        // console_log(game, app, next_ev);
+        let (_choice, next_ev) = best_choice_ev(&newstate,app);
+        // console_log(game, app, _choice, next_ev );
         total += next_ev 
         //############################
     }
@@ -351,26 +350,32 @@ fn avg_ev_for_selection(game:&GameState, app: &AppState, selection:ArrayVec::<[u
 }
 
 
-/// returns the additional expected value to come, given relevant game state.
-#[cached(key = "GameState", convert = r#"{ *game }"#)] //TODO implement this manually for better control/debugging
-fn ev_for_state(game:&GameState, app:&AppState) -> f32 { 
+#[derive(Debug,Clone,Copy)]
+enum Choice{
+    Slot(u8),
+    Dice(ArrayVec<[u8;5]>)
+}
 
-    let ev = if game.rolls_remaining == 0 {
-        best_slot_ev(game,app).1  // <-----------------
+/// returns the best game Choice along with its expected value, given relevant game state.
+#[cached(key = "GameState", convert = r#"{ *game }"#)] //TODO implement this manually for better control/debugging
+fn best_choice_ev(game:&GameState,app: &AppState) -> (Choice,f32) { 
+
+    let result = if game.rolls_remaining == 0 {
+        best_slot_ev(game,app)  // <-----------------
     } else { 
-        best_dice_ev(game,app).1  // <-----------------
+        best_dice_ev(game,app)  // <-----------------
     };
 
-    console_log(game,app,ev);
+    console_log(game,app,result.0,result.1);
 
     if game.rolls_remaining==0 { // periodically update progress and save
-        let is_done = {app.done.contains(&game.sorted_open_slots)} ;
-        if ! is_done  {
+        let e = {app.done.contains(&game.sorted_open_slots)} ;
+        if ! e  {
             app.done.insert(game.sorted_open_slots);
             {app.progress_bar.write().unwrap().inc(1);}
-            // console_log(game,app,ev);
+            // console_log(game,app,result.0,result.1);
         }
     }
-    ev 
+    result 
 }
 
