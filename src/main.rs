@@ -252,14 +252,13 @@ fn best_slot_ev(game:GameState, app: &AppState) -> (Choice,f32) {
                 slot_sequence.sort_unstable(); 
 
             // gather the collective ev for the remaining slots recursively
-                let newstate= GameState{
-                yahtzee_is_wild: yahtzee_wild_now,
+                (_choice, tail_ev) = best_choice_ev( GameState{
+                    yahtzee_is_wild: yahtzee_wild_now,
                     sorted_open_slots: slot_sequence, 
                     rolls_remaining: 3,
                     upper_bonus_deficit: upper_deficit_now,
                     sorted_dievals: game.sorted_dievals, 
-                };
-                (_choice, tail_ev) = best_choice_ev(newstate,app);//TODO linine struct init into func // <---------
+                },app);
         }
 
         let ev = tail_ev + head_ev as f32 ; 
