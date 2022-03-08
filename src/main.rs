@@ -291,7 +291,7 @@ fn best_dice_ev(game:&GameState, app: &AppState) -> (Choice,f32){
 
 /// returns the average of all the expected values for rolling a selection of dice, given the game and app state
 /// "selection" is the set of dice to roll, as represented their indexes in a 5-length array
-#[inline(always)] // ~6% speedup vs no-inlining
+#[inline(always)] // ~6% speedup 
 fn avg_ev_for_selection(game:&GameState, app: &AppState, selection:ArrayVec::<[u8;5]>) -> f32 {
     let selection_len = selection.len(); // this is how many dice we're selecting to roll
     // optimization: we'll always iterate over (some amount) of the outcomes of rolling 5 dice . This works because
@@ -299,21 +299,21 @@ fn avg_ev_for_selection(game:&GameState, app: &AppState, selection:ArrayVec::<[u
     let idx_offset = 5-selection_len; // this will be the offset into the corrrect position when 'n' diced are selected. 
     let outcomes_count = [1,6,36,216,1296,7776][selection_len]; // we've pre-calcuated how many outcomes we need to iterate over
     let mut total = 0.0;
+    let mut newvals:[u8;5]; 
     for outcome in OUTCOMES.iter().take(outcomes_count) { 
         //###### HOT CODE PATH #######
-        let mut newvals=game.sorted_dievals;
+        newvals=game.sorted_dievals;
         for (i, j) in selection.into_iter().enumerate() { // TODO bitmask math as an optimization 
             newvals[j as usize]=outcome[i+idx_offset];    
         }
         newvals.sort_unstable();
-        let newstate= GameState{ 
+        let (_choice, next_ev) = best_choice_ev( &GameState{ 
             yahtzee_is_wild: game.yahtzee_is_wild, 
             sorted_open_slots: game.sorted_open_slots, 
             rolls_remaining: game.rolls_remaining-1,
             upper_bonus_deficit: game.upper_bonus_deficit,
             sorted_dievals: newvals, 
-        };
-        let (_choice, next_ev) = best_choice_ev(&newstate,app);
+        }, app);
         total += next_ev 
         //############################
     }
