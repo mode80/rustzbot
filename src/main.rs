@@ -4,7 +4,7 @@
 // #![feature(test)]
 // extern crate test;
 
-use std::{vec, cmp::max, sync::{Arc, RwLock}};
+use std::{vec, cmp::max, sync::{Arc, RwLock}, collections::HashMap};
 use counter::Counter;
 use cached::proc_macro::cached;
 use dashmap::{DashMap, DashSet, Map};
@@ -38,7 +38,7 @@ fn main() {
     let app_state = & mut AppState{
         progress_bar : Arc::new(RwLock::new(ProgressBar::new(combo_count))), 
         done : Arc::new(DashSet::new()) ,  
-        ev_cache : Arc::new(DashMap::new()),
+        ev_cache : Arc::new(RwLock::new(HashMap::new())),
     };
 
     /* do it */
@@ -59,14 +59,14 @@ struct GameState{
 struct AppState{
     progress_bar:Arc<RwLock<ProgressBar>>, 
     done:Arc<DashSet<ArrayVec<[u8;13]>>>, 
-    ev_cache:Arc<DashMap<GameState,(Choice,f32)>>,
+    ev_cache:Arc<RwLock<HashMap<GameState,(Choice,f32)>>>,
     // log, 
 }
 impl AppState{
     fn new(game: &GameState) -> Self{
         let slot_count=game.sorted_open_slots.len();
         let combo_count = (1..=slot_count).map(|r| n_take_r(slot_count as u128, r as u128,false,false) as u64 ).sum() ;
-        Self{ progress_bar : Arc::new(RwLock::new(ProgressBar::new(combo_count))), done : Arc::new(DashSet::new()) ,  ev_cache : Arc::new(DashMap::new()), }
+        Self{ progress_bar : Arc::new(RwLock::new(ProgressBar::new(combo_count))), done : Arc::new(DashSet::new()) ,  ev_cache : Arc::new(RwLock::new(HashMap::new())), }
     }
 }
 
@@ -339,10 +339,10 @@ enum Choice{
 }
 
 /// returns the best game Choice along with its expected value, given relevant game state.
-#[cached(key = "GameState", convert = r#"{ *game }"#)] //TODO implement this manually for better control/debugging
+//  #[cached(key = "GameState", convert = r#"{ *game }"#)] //TODO implement this manually for better control/debugging
 fn best_choice_ev(game:&GameState,app: &AppState) -> (Choice,f32) { 
 
-    // if let Some(result) = app.ev_cache.get(game) { return *result}; // return cached result if we have one 
+    if let Some(result) = app.ev_cache.read().unwrap().get(game) { return *result}; // return cached result if we have one 
 
     let result = if game.rolls_remaining == 0 {
         best_slot_ev(game,app)  // <-----------------
@@ -360,6 +360,8 @@ fn best_choice_ev(game:&GameState,app: &AppState) -> (Choice,f32) {
             // console_log(game,app,result.0,result.1);
         }
     }
+    
+    app.ev_cache.write().unwrap().insert(*game, result);
     result 
 }
 
