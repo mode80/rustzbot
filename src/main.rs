@@ -4,10 +4,9 @@
 // #![feature(test)]
 // extern crate test;
 
-use std::{vec, cmp::max, sync::{Arc, RwLock}, collections::HashMap};
+use std::{vec, cmp::max, sync::{Arc, RwLock}, collections::{HashMap, HashSet}};
 use counter::Counter;
-use cached::proc_macro::cached;
-use dashmap::{DashMap, DashSet, Map};
+// use cached::proc_macro::cached;
 use itertools::Itertools;
 use indicatif::ProgressBar;
 use std::fmt::{Formatter, Display, Result};
@@ -37,7 +36,7 @@ fn main() {
     let combo_count = (0..=slot_count).map(|r| n_take_r(slot_count as u128, r as u128 ,false,false) as u64 ).sum() ;
     let app_state = & mut AppState{
         progress_bar : Arc::new(RwLock::new(ProgressBar::new(combo_count))), 
-        done : Arc::new(DashSet::new()) ,  
+        done : Arc::new(RwLock::new(HashSet::new())) ,  
         ev_cache : Arc::new(RwLock::new(HashMap::new())),
     };
 
@@ -58,7 +57,7 @@ struct GameState{
 
 struct AppState{
     progress_bar:Arc<RwLock<ProgressBar>>, 
-    done:Arc<DashSet<ArrayVec<[u8;13]>>>, 
+    done:Arc<RwLock<HashSet<ArrayVec<[u8;13]>>>>, 
     ev_cache:Arc<RwLock<HashMap<GameState,(Choice,f32)>>>,
     // log, 
 }
@@ -66,7 +65,10 @@ impl AppState{
     fn new(game: &GameState) -> Self{
         let slot_count=game.sorted_open_slots.len();
         let combo_count = (1..=slot_count).map(|r| n_take_r(slot_count as u128, r as u128,false,false) as u64 ).sum() ;
-        Self{ progress_bar : Arc::new(RwLock::new(ProgressBar::new(combo_count))), done : Arc::new(DashSet::new()) ,  ev_cache : Arc::new(RwLock::new(HashMap::new())), }
+        Self{   progress_bar : Arc::new(RwLock::new(ProgressBar::new(combo_count))), 
+                done : Arc::new(RwLock::new(HashSet::new())) ,  
+                ev_cache : Arc::new(RwLock::new(HashMap::new())), 
+        }
     }
 }
 
@@ -205,7 +207,6 @@ fn score_yahtzee(sorted_dievals:[u8;5])->u8 {
 }
 
 /// reports the score for a set of dice in a given slot w/o regard for exogenous gamestate (bonuses, yahtzee wildcards etc)
-#[cached]
 fn score_slot(slot:u8, sorted_dievals:[u8;5])->u8{
     SCORE_FNS[slot as usize](sorted_dievals) 
 }
@@ -353,9 +354,9 @@ fn best_choice_ev(game:&GameState,app: &AppState) -> (Choice,f32) {
     console_log(game,app,result.0,result.1);
 
     if game.rolls_remaining==0 { // periodically update progress and save
-        let e = {app.done.contains(&game.sorted_open_slots)} ;
+        let e = {app.done.read().unwrap().contains(&game.sorted_open_slots)} ;
         if ! e  {
-            app.done.insert(game.sorted_open_slots);
+            app.done.write().unwrap().insert(game.sorted_open_slots);
             {app.progress_bar.write().unwrap().inc(1);}
             // console_log(game,app,result.0,result.1);
         }
