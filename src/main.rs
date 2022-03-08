@@ -21,11 +21,11 @@ mod tests;
 
 fn main() {
 
-    let game_state = &GameState{
+    let game_state = GameState{
         sorted_open_slots: ArrayVec::from([ACES,TWOS,THREES,FOURS,FIVES,SIXES,THREE_OF_A_KIND,FOUR_OF_A_KIND,SM_STRAIGHT,LG_STRAIGHT,FULL_HOUSE,YAHTZEE,CHANCE]),
         sorted_dievals: UNROLLED_DIEVALS, rolls_remaining: 3, upper_bonus_deficit: INIT_DEFICIT, yahtzee_is_wild: false,
     };
-    let app_state = & mut AppState::new(game_state);
+    let app_state = & mut AppState::new(&game_state);
 
     let (_choice, _ev) = best_choice_ev(game_state, app_state);
    
@@ -200,7 +200,7 @@ fn score_slot(slot:u8, sorted_dievals:[u8;5])->u8{
 /*-------------------------------------------------------------*/
 
 /// returns the best slot and corresponding ev for final dice, given the slot possibilities and other relevant state 
-fn best_slot_ev(game:&GameState, app: &AppState) -> (Choice,f32) {
+fn best_slot_ev(game:GameState, app: &AppState) -> (Choice,f32) {
 
     let slot_sequences = game.sorted_open_slots.into_iter().permutations(game.sorted_open_slots.len()); // TODO make a version of this that returns ArrayVecs 
     let mut best_ev = 0.0; 
@@ -253,13 +253,13 @@ fn best_slot_ev(game:&GameState, app: &AppState) -> (Choice,f32) {
 
             // gather the collective ev for the remaining slots recursively
                 let newstate= GameState{
-                    yahtzee_is_wild: yahtzee_wild_now,
+                yahtzee_is_wild: yahtzee_wild_now,
                     sorted_open_slots: slot_sequence, 
                     rolls_remaining: 3,
                     upper_bonus_deficit: upper_deficit_now,
                     sorted_dievals: game.sorted_dievals, 
                 };
-                (_choice, tail_ev) = best_choice_ev(&newstate,app); // <---------
+                (_choice, tail_ev) = best_choice_ev(newstate,app);//TODO linine struct init into func // <---------
         }
 
         let ev = tail_ev + head_ev as f32 ; 
@@ -272,7 +272,7 @@ fn best_slot_ev(game:&GameState, app: &AppState) -> (Choice,f32) {
 }
 
 /// returns the best selection of dice and corresponding ev, given slots left, existing dice, and other relevant state 
-fn best_dice_ev(game:&GameState, app: &AppState) -> (Choice,f32){ 
+fn best_dice_ev(game:GameState, app: &AppState) -> (Choice,f32){ 
 
     let mut best_selection = array_vec![0,1,2,3,4]; // default selection is "all dice"
     let mut best_ev = 0.0; 
@@ -292,7 +292,7 @@ fn best_dice_ev(game:&GameState, app: &AppState) -> (Choice,f32){
 /// returns the average of all the expected values for rolling a selection of dice, given the game and app state
 /// "selection" is the set of dice to roll, as represented their indexes in a 5-length array
 #[inline(always)] // ~6% speedup 
-fn avg_ev_for_selection(game:&GameState, app: &AppState, selection:ArrayVec::<[u8;5]>) -> f32 {
+fn avg_ev_for_selection(game:GameState, app: &AppState, selection:ArrayVec::<[u8;5]>) -> f32 {
     let selection_len = selection.len(); // this is how many dice we're selecting to roll
     // optimization: we'll always iterate over (some amount) of the outcomes of rolling 5 dice . This works because
     // the trailing 'n' dice from this set amount to the same set outcomes for when 'n' diced are selected 
@@ -307,7 +307,7 @@ fn avg_ev_for_selection(game:&GameState, app: &AppState, selection:ArrayVec::<[u
             newvals[j as usize]=outcome[i+idx_offset];    
         }
         newvals.sort_unstable();
-        let (_choice, next_ev) = best_choice_ev( &GameState{ 
+        let (_choice, next_ev) = best_choice_ev( GameState{ 
             yahtzee_is_wild: game.yahtzee_is_wild, 
             sorted_open_slots: game.sorted_open_slots, 
             rolls_remaining: game.rolls_remaining-1,
@@ -329,9 +329,9 @@ enum Choice{
 
 /// returns the best game Choice along with its expected value, given relevant game state.
 //  #[cached(key = "GameState", convert = r#"{ *game }"#)] //TODO implement this manually for better control/debugging
-fn best_choice_ev(game:&GameState,app: &AppState) -> (Choice,f32) { 
+fn best_choice_ev(game:GameState,app: &AppState) -> (Choice,f32) { 
 
-    if let Some(result) = app.ev_cache.read().unwrap().get(game) { return *result}; // return cached result if we have one 
+    if let Some(result) = app.ev_cache.read().unwrap().get(&game) { return *result}; // return cached result if we have one 
 
     let result = if game.rolls_remaining == 0 {
         best_slot_ev(game,app)  // <-----------------
@@ -339,7 +339,7 @@ fn best_choice_ev(game:&GameState,app: &AppState) -> (Choice,f32) {
         best_dice_ev(game,app)  // <-----------------
     };
 
-    console_log(game,app,result.0,result.1);
+    console_log(&game,app,result.0,result.1);
 
     if game.rolls_remaining==0 { // periodically update progress and save
         let e = {app.done.read().unwrap().contains(&game.sorted_open_slots)} ;
@@ -350,7 +350,7 @@ fn best_choice_ev(game:&GameState,app: &AppState) -> (Choice,f32) {
         }
     }
     
-    app.ev_cache.write().unwrap().insert(*game, result);
+    app.ev_cache.write().unwrap().insert(game, result);
     result 
 }
 
