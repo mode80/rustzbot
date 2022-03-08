@@ -290,6 +290,7 @@ fn best_dice_ev(game:&GameState, app: &AppState) -> (Choice,f32){
 
 /// returns the average of all the expected values for rolling a selection of dice, given the game and app state
 /// "selection" is the set of dice to roll, as represented their indexes in a 5-length array
+#[inline(always)] // ~6% speedup vs no-inlining
 fn avg_ev_for_selection(game:&GameState, app: &AppState, selection:ArrayVec::<[u8;5]>) -> f32 {
     let selection_len = selection.len(); // this is how many dice we're selecting to roll
     // optimization: we'll always iterate over (some amount) of the outcomes of rolling 5 dice . This works because
