@@ -43,7 +43,6 @@ fn main() {
 
     /* do it */
     let (_choice, _ev) = best_choice_ev(game_state, app_state);
-    // console_log(game_state, app_state, _choice, _ev);
    
 }
 /*-------------------------------------------------------------*/
@@ -240,10 +239,30 @@ fn best_slot_ev(game:&GameState, app: &AppState) -> (Choice,f32) {
             let mut upper_deficit_now = game.upper_bonus_deficit ;
             let mut yahtzee_wild_now:bool = game.yahtzee_is_wild;
 
-        let head_ev = leaf_calcs(game, top_slot, & mut upper_deficit_now, & mut yahtzee_wild_now);
+        // score slot itself w/o regard to game state 
+            let mut head_ev = score_slot(top_slot, game.sorted_dievals); 
+
+        // add upper bonus when needed total is reached
+            if top_slot <= SIXES && upper_deficit_now>0 && head_ev>0 { 
+                if head_ev >= upper_deficit_now {head_ev += 35}; 
+                upper_deficit_now = upper_deficit_now.saturating_sub(head_ev) ;
+            } 
+
+        // special handling of "extra yahtzees" 
+            let yahtzee_rolled = game.sorted_dievals[0]==game.sorted_dievals[4]; 
+            if yahtzee_rolled && game.yahtzee_is_wild { // extra yahtzee situation
+                if top_slot==SM_STRAIGHT {head_ev=30}; // extra yahtzees are valid in any lower slot, per wildcard rules
+                if top_slot==LG_STRAIGHT {head_ev=40}; 
+                if top_slot==FULL_HOUSE  {head_ev=25}; 
+                head_ev+=100; // extra yahtzee bonus per rules
+            }
+            if top_slot==YAHTZEE && yahtzee_rolled {yahtzee_wild_now = true} ;
+
+
+        // let head_ev = leaf_calcs(game, top_slot, & mut upper_deficit_now, & mut yahtzee_wild_now);
 
         if ! slot_sequence.is_empty() { // proceed to include all the ev of remaining slots in this slot_sequence
-            
+
             //prune unneeded state duplication when there's no chance of reaching upper bonus
                 let mut best_deficit = upper_deficit_now;
                 for upper_slot in slot_sequence{ 
@@ -268,10 +287,10 @@ fn best_slot_ev(game:&GameState, app: &AppState) -> (Choice,f32) {
 
         let ev = tail_ev + head_ev as f32 ; 
         if ev >= best_ev { best_ev = ev; best_slot = top_slot ; }
-        // console_log(game, app, _choice, ev );
 
-    } // end "for slot_sequence_vec in slot_sequences"
+    } // end for slot_sequence...
 
+    // console_log(game, app, Choice::Slot(best_slot), best_ev );
     (Choice::Slot(best_slot), best_ev)
 }
 
@@ -315,6 +334,7 @@ fn best_dice_ev(game:&GameState, app: &AppState) -> (Choice,f32){
             if avg_ev > best_ev {best_ev = avg_ev; best_selection = selection; }
         }
     }
+    // console_log(game, app, Choice::Dice(best_selection), best_ev );
     (Choice::Dice(best_selection), best_ev)
 }
 
@@ -342,7 +362,6 @@ fn avg_ev_for_selection(game:&GameState, app: &AppState, selection:ArrayVec::<[u
             sorted_dievals: newvals, 
         };
         let (_choice, next_ev) = best_choice_ev(&newstate,app);
-        // console_log(game, app, _choice, next_ev );
         total += next_ev 
         //############################
     }
@@ -366,14 +385,14 @@ fn best_choice_ev(game:&GameState,app: &AppState) -> (Choice,f32) {
         best_dice_ev(game,app)  // <-----------------
     };
 
-    console_log(game,app,result.0,result.1);
+    // console_log(game,app,result.0,result.1);
 
-    if game.rolls_remaining==0 { // periodically update progress and save
+    if game.rolls_remaining==3 { // periodically update progress and save
         let e = {app.done.contains(&game.sorted_open_slots)} ;
         if ! e  {
             app.done.insert(game.sorted_open_slots);
             {app.progress_bar.write().unwrap().inc(1);}
-            // console_log(game,app,result.0,result.1);
+            console_log(game,app,result.0,result.1);
         }
     }
     result 
