@@ -7,7 +7,7 @@
 use std::{vec, cmp::max, sync::{Arc, RwLock}};
 use counter::Counter;
 use cached::proc_macro::cached;
-use dashmap::{DashMap, DashSet};
+use dashmap::{DashMap, DashSet, Map};
 use itertools::Itertools;
 use indicatif::ProgressBar;
 use std::fmt::{Formatter, Display, Result};
@@ -59,7 +59,7 @@ struct GameState{
 struct AppState{
     progress_bar:Arc<RwLock<ProgressBar>>, 
     done:Arc<DashSet<ArrayVec<[u8;13]>>>, 
-    ev_cache:Arc<DashMap<GameState,f32>>,
+    ev_cache:Arc<DashMap<GameState,(Choice,f32)>>,
     // log, 
 }
 impl AppState{
@@ -341,6 +341,8 @@ enum Choice{
 /// returns the best game Choice along with its expected value, given relevant game state.
 #[cached(key = "GameState", convert = r#"{ *game }"#)] //TODO implement this manually for better control/debugging
 fn best_choice_ev(game:&GameState,app: &AppState) -> (Choice,f32) { 
+
+    // if let Some(result) = app.ev_cache.get(game) { return *result}; // return cached result if we have one 
 
     let result = if game.rolls_remaining == 0 {
         best_slot_ev(game,app)  // <-----------------
