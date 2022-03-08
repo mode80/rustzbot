@@ -6,7 +6,7 @@ edition = "2021"
 # [profile.release]
 # lto = "thin" # doesn't seem to help
 # lto = true # neither this 
-debug = 1 # this includes source line-debug info for profilers e.g Scalene
+# debug = 1 # this includes source line-debug info for profilers e.g Scalene
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

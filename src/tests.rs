@@ -9,9 +9,11 @@ fn score_slot_test() {
 #[test]
 fn bench_test() {
     // let slots= array_vec!([u8;13] => 1,2,3,4,5,6,7,8,9,10,11,12,13);
-    let game = GameState{   rolls_remaining: 3, 
-                            sorted_open_slots: array_vec!([u8;13] => 6,12 ), 
-                            sorted_dievals: [1,1,1,1,1], upper_bonus_deficit: 63, yahtzee_is_wild: false, };
+    let game = GameState{   rolls_remaining: 0, 
+                            sorted_open_slots: array_vec!([u8;13] => 6,8,12 ), 
+                            sorted_dievals: [6,6,6,6,6], 
+                            upper_bonus_deficit: 30, 
+                            yahtzee_is_wild: false, };
     let _result = best_choice_ev(&game,&AppState::new(&game));
 }
 
