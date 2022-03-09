@@ -2,43 +2,61 @@
 //#![allow(unused_variables)]
 #![allow(unused_imports)]
 
-use std::{vec, cmp::max, sync::{Arc, RwLock}, hash::{BuildHasherDefault, BuildHasher}, collections::HashMap};//, collections::{HashMap, HashSet}};
+use std::{cmp::max, sync::{Arc, RwLock}, error::{self, Error}};
 use counter::Counter;
 // use cached::proc_macro::cached;
 use itertools::Itertools;
 use indicatif::ProgressBar;
-use rustc_hash::{FxHashSet, FxHashMap, FxHasher};
-use std::fmt::{Formatter, Display, Result};
+use rustc_hash::{FxHashSet, FxHashMap};
 use tinyvec::*;
 use rayon::prelude::*; 
 use once_cell::sync::Lazy;
+use std::fs::File;
+use std::io::Write; 
+
+#[macro_use] extern crate serde_derive;
+extern crate serde_json;
+
 #[cfg(test)] 
 #[path = "./tests.rs"]
 mod tests;
+//-------------------------------------------------------------*/
 
-
-/*-------------------------------------------------------------*/
-
-fn main() {
-
+fn main() -> Result<(), Box<dyn Error>>{
+    
     let game_state = GameState{
         sorted_open_slots: ArrayVec::from([ACES,TWOS,THREES,FOURS,FIVES,SIXES,THREE_OF_A_KIND,FOUR_OF_A_KIND,SM_STRAIGHT,LG_STRAIGHT,FULL_HOUSE,YAHTZEE,CHANCE]),
         sorted_dievals: UNROLLED_DIEVALS, rolls_remaining: 3, upper_bonus_deficit: INIT_DEFICIT, yahtzee_is_wild: false,
     };
+
     let app_state = & mut AppState::new(&game_state);
 
+    if let Ok(f) = File::open("evs.json"){
+        if let Ok(evs) = ::serde_json::from_reader(f){
+            app_state.ev_cache = Arc::new(RwLock::new(evs));
+        }
+    }
+
     let (_choice, _ev) = best_choice_ev(game_state, app_state);
+   
+    Ok(())
    
 }
 /*-------------------------------------------------------------*/
 
-#[derive(Debug, PartialEq, Eq, Ord, PartialOrd, Hash, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Ord, PartialOrd, Hash, Clone, Copy, Serialize, Deserialize)]
 struct GameState{
     sorted_dievals:[u8;5], 
     rolls_remaining:u8, 
     upper_bonus_deficit:u8, 
     yahtzee_is_wild:bool,
     sorted_open_slots:ArrayVec<[u8;13]>, 
+}
+
+#[derive(Debug,Clone,Copy,Serialize,Deserialize)]
+enum Choice{
+    Slot(u8),
+    Dice(ArrayVec<[u8;5]>)
 }
 
 struct AppState{
@@ -320,12 +338,6 @@ fn avg_ev_for_selection(game:GameState, app: &AppState, selection:ArrayVec::<[u8
 }
 
 
-#[derive(Debug,Clone,Copy)]
-enum Choice{
-    Slot(u8),
-    Dice(ArrayVec<[u8;5]>)
-}
-
 /// returns the best game Choice along with its expected value, given relevant game state.
 //  #[cached(key = "GameState", convert = r#"{ *game }"#)] //TODO implement this manually for better control/debugging
 fn best_choice_ev(game:GameState,app: &AppState) -> (Choice,f32) { 
@@ -338,14 +350,17 @@ fn best_choice_ev(game:GameState,app: &AppState) -> (Choice,f32) {
         best_dice_ev(game,app)  // <-----------------
     };
 
-    console_log(&game,app,result.0,result.1);
+    // console_log(&game,app,result.0,result.1);
 
     if game.rolls_remaining==0 { // periodically update progress and save
         let e = {app.done.read().unwrap().contains(&game.sorted_open_slots)} ;
         if ! e  {
             app.done.write().unwrap().insert(game.sorted_open_slots);
-            {app.progress_bar.write().unwrap().inc(1);}
-            // console_log(game,app,result.0,result.1);
+            app.progress_bar.write().unwrap().inc(1);
+            console_log(&game,app,result.0,result.1);
+            let evs = &*app.ev_cache.read().unwrap(); // the "*" derefs the Arc smart pointer, while "&" makes it into the borrow we need 
+            let f = &File::create("evs.json").unwrap();
+            ::serde_json::to_writer(f, evs);
         }
     }
     
