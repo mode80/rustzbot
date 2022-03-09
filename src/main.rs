@@ -2,7 +2,7 @@
 //#![allow(unused_variables)]
 #![allow(unused_imports)]
 
-use std::{cmp::max, sync::{Arc, RwLock}, error::{self, Error}};
+use std::{cmp::max, sync::{Arc, RwLock}, error::{self, Error}, fs::{self, File}, time::Duration};
 use counter::Counter;
 // use cached::proc_macro::cached;
 use itertools::Itertools;
@@ -11,11 +11,10 @@ use rustc_hash::{FxHashSet, FxHashMap};
 use tinyvec::*;
 use rayon::prelude::*; 
 use once_cell::sync::Lazy;
-use std::fs::File;
 use std::io::Write; 
 
 #[macro_use] extern crate serde_derive;
-extern crate serde_json;
+extern crate bincode;
 
 #[cfg(test)] 
 #[path = "./tests.rs"]
@@ -24,20 +23,14 @@ mod tests;
 
 fn main() -> Result<(), Box<dyn Error>>{
     
-    let game_state = GameState{
+    let game = GameState{
         sorted_open_slots: ArrayVec::from([ACES,TWOS,THREES,FOURS,FIVES,SIXES,THREE_OF_A_KIND,FOUR_OF_A_KIND,SM_STRAIGHT,LG_STRAIGHT,FULL_HOUSE,YAHTZEE,CHANCE]),
         sorted_dievals: UNROLLED_DIEVALS, rolls_remaining: 3, upper_bonus_deficit: INIT_DEFICIT, yahtzee_is_wild: false,
     };
 
-    let app_state = & mut AppState::new(&game_state);
+    let app = & mut AppState::new(&game);
 
-    if let Ok(f) = File::open("evs.json"){
-        if let Ok(evs) = ::serde_json::from_reader(f){
-            app_state.ev_cache = Arc::new(RwLock::new(evs));
-        }
-    }
-
-    let (_choice, _ev) = best_choice_ev(game_state, app_state);
+    let (_choice, _ev) = best_choice_ev(game, app);
    
     Ok(())
    
@@ -53,7 +46,7 @@ struct GameState{
     sorted_open_slots:ArrayVec<[u8;13]>, 
 }
 
-#[derive(Debug,Clone,Copy,Serialize,Deserialize)]
+#[derive(Debug,Clone,Copy,Serialize,Deserialize,PartialEq)]
 enum Choice{
     Slot(u8),
     Dice(ArrayVec<[u8;5]>)
@@ -63,6 +56,7 @@ struct AppState{
     progress_bar:Arc<RwLock<ProgressBar>>, 
     done:Arc<RwLock<FxHashSet<ArrayVec<[u8;13]>>>>, 
     ev_cache:Arc<RwLock<FxHashMap<GameState,(Choice,f32)>>>,
+    checkpoint: Arc<RwLock<Duration>>,
     // log, 
 }
 impl AppState{
@@ -70,9 +64,15 @@ impl AppState{
         let slot_count=game.sorted_open_slots.len();
         let combo_count = (1..=slot_count).map(|r| n_take_r(slot_count as u128, r as u128,false,false) as u64 ).sum() ;
         let init_capacity = combo_count as usize * 252 * 64 * 2 * 2; // roughly: slotcombos * diecombos * deficits * wilds * rolls
+        let cachemap = if let Ok(bytes) = fs::read("ev_cache") { 
+            ::bincode::deserialize(&bytes).unwrap() 
+        } else {
+            FxHashMap::with_capacity_and_hasher(init_capacity,Default::default())
+        };
         Self{   progress_bar : Arc::new(RwLock::new(ProgressBar::new(combo_count))), 
                 done : Arc::new(RwLock::new(FxHashSet::default())) ,  
-                ev_cache : Arc::new(RwLock::new( FxHashMap::with_capacity_and_hasher(init_capacity,Default::default()))),
+                ev_cache : Arc::new(RwLock::new(cachemap)),
+                checkpoint: Arc::new(RwLock::new(Duration::new(0,0))),
         }
     }
 }
@@ -118,6 +118,17 @@ fn n_take_r(n:u128, r:u128, ordered:bool, with_replacement:bool)->u128{
         } else { // no replacement
             fact(n) / fact(n-r)
         }
+    }
+}
+
+fn save_cache_periodically(app:&AppState, every_n_secs:u64){
+    let current_duration = app.progress_bar.read().unwrap().elapsed();
+    let last_duration = *app.checkpoint.read().unwrap();
+    if current_duration - last_duration >= Duration::new(every_n_secs,0) { 
+        let evs = &*app.ev_cache.read().unwrap(); // the "*" derefs the Arc smart pointer, while "&" makes it into the borrow we need 
+        let mut f = &File::create("ev_cache").unwrap();
+        let bytes = bincode::serialize(evs).unwrap();
+        f.write_all(&bytes).unwrap();
     }
 }
 
@@ -358,9 +369,7 @@ fn best_choice_ev(game:GameState,app: &AppState) -> (Choice,f32) {
             app.done.write().unwrap().insert(game.sorted_open_slots);
             app.progress_bar.write().unwrap().inc(1);
             console_log(&game,app,result.0,result.1);
-            let evs = &*app.ev_cache.read().unwrap(); // the "*" derefs the Arc smart pointer, while "&" makes it into the borrow we need 
-            let f = &File::create("evs.json").unwrap();
-            ::serde_json::to_writer(f, evs);
+            save_cache_periodically(app,600) ;
         }
     }
     
