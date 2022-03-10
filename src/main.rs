@@ -356,7 +356,7 @@ fn avg_ev_for_selection(game:GameState, app: &AppState, selection:ArrayVec::<[u8
 
 
 /// returns the best game Choice along with its expected value, given relevant game state.
-//  #[cached(key = "GameState", convert = r#"{ *game }"#)] //TODO implement this manually for better control/debugging
+//  #[cached(key = "GameState", convert = r#"{ *game }"#)] 
 fn best_choice_ev(game:GameState,app: &AppState) -> (Choice,f32) { 
 
     if let Some(result) = app.ev_cache.read().unwrap().get(&game) { return *result}; // return cached result if we have one 
@@ -367,14 +367,14 @@ fn best_choice_ev(game:GameState,app: &AppState) -> (Choice,f32) {
         best_dice_ev(game,app)  // <-----------------
     };
 
-    // console_log(&game,app,result.0,result.1);
+    console_log(&game,app,result.0,result.1);
 
     if game.rolls_remaining==0 { // periodically update progress and save
         let e = {app.done.read().unwrap().contains(&game.sorted_open_slots)} ;
         if ! e  {
             app.done.write().unwrap().insert(game.sorted_open_slots);
             app.progress_bar.write().unwrap().inc(1);
-            console_log(&game,app,result.0,result.1);
+            // console_log(&game,app,result.0,result.1);
             save_periodically(app,600) ;
         }
     }
