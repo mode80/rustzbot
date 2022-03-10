@@ -63,6 +63,8 @@ impl AppState{
     fn new(game: &GameState) -> Self{
         let slot_count=game.sorted_open_slots.len();
         let combo_count = (1..=slot_count).map(|r| n_take_r(slot_count as u128, r as u128,false,false) as u64 ).sum() ;
+        // let bytes = fs::read("ev_cache").unwrap();
+        // let cachemap = ::bincode::deserialize(&bytes).unwrap() ;
         let init_capacity = combo_count as usize * 252 * 64 * 2 * 2; // roughly: slotcombos * diecombos * deficits * wilds * rolls
         let cachemap = if let Ok(bytes) = fs::read("ev_cache") { 
             ::bincode::deserialize(&bytes).unwrap() 
@@ -121,17 +123,21 @@ fn n_take_r(n:u128, r:u128, ordered:bool, with_replacement:bool)->u128{
     }
 }
 
-fn save_cache_periodically(app:&AppState, every_n_secs:u64){
+fn save_periodically(app:&AppState, every_n_secs:u64){
     let current_duration = app.progress_bar.read().unwrap().elapsed();
     let last_duration = *app.checkpoint.read().unwrap();
     if current_duration - last_duration >= Duration::new(every_n_secs,0) { 
-        let evs = &*app.ev_cache.read().unwrap(); // the "*" derefs the Arc smart pointer, while "&" makes it into the borrow we need 
-        let mut f = &File::create("ev_cache").unwrap();
-        let bytes = bincode::serialize(evs).unwrap();
-        f.write_all(&bytes).unwrap();
-    }
+        save_cache(app);
+   }
 }
 
+fn save_cache(app:&AppState){
+    let evs = &*app.ev_cache.read().unwrap(); // the "*" derefs the Arc smart pointer, while "&" makes it into the borrow we need 
+    let mut f = &File::create("ev_cache").unwrap();
+    let bytes = bincode::serialize(evs).unwrap();
+    f.write_all(&bytes).unwrap();
+}
+ 
 fn console_log(game:&GameState, app:&AppState, choice:Choice, ev:f32 ){
     app.progress_bar.read().unwrap().println (
         format!("{:>}\t{}\t{:>4}\t{:>4.2}\t{:?}\t{:?}\t{:?}", 
@@ -369,7 +375,7 @@ fn best_choice_ev(game:GameState,app: &AppState) -> (Choice,f32) {
             app.done.write().unwrap().insert(game.sorted_open_slots);
             app.progress_bar.write().unwrap().inc(1);
             console_log(&game,app,result.0,result.1);
-            save_cache_periodically(app,600) ;
+            save_periodically(app,600) ;
         }
     }
     

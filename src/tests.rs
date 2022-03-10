@@ -14,6 +14,8 @@ fn bench_test() {
                             sorted_dievals: [6,6,6,6,6], 
                             upper_bonus_deficit: 30, 
                             yahtzee_is_wild: false, };
-    let _result = best_choice_ev(game,&AppState::new(&game));
+    let app = AppState::new(&game);
+    let _result = best_choice_ev(game,&app);
+    // save_cache(&app);
 }
 
