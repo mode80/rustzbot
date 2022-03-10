@@ -80,15 +80,15 @@ impl AppState{
 }
 
 const STUB:u8=0; const ACES:u8=1; const TWOS:u8=2; const THREES:u8=3; const FOURS:u8=4; const FIVES:u8=5; const SIXES:u8=6;
-const THREE_OF_A_KIND:u8=7; const FOUR_OF_A_KIND:u8=8; const SM_STRAIGHT:u8=9; const LG_STRAIGHT:u8=10; 
-const FULL_HOUSE:u8=11; const YAHTZEE:u8=12; const CHANCE:u8=13; 
+const THREE_OF_A_KIND:u8=7; const FOUR_OF_A_KIND:u8=8; const FULL_HOUSE:u8=9; const SM_STRAIGHT:u8=10; const LG_STRAIGHT:u8=11; 
+const YAHTZEE:u8=12; const CHANCE:u8=13; 
  
 const UNROLLED_DIEVALS:[u8;5] = [0,0,0,0,0]; const SIDES:u8 = 6; const INIT_DEFICIT:u8 = 63;
 
 const SCORE_FNS:[fn(sorted_dievals:[u8;5])->u8;14] = [
     score_aces, // duplicate placeholder so indices align more intuitively with categories 
     score_aces, score_twos, score_threes, score_fours, score_fives, score_sixes, 
-    score_3ofakind, score_4ofakind, score_sm_str8, score_lg_str8, score_fullhouse, score_yahtzee, score_chance, 
+    score_3ofakind, score_4ofakind, score_fullhouse, score_sm_str8, score_lg_str8, score_yahtzee, score_chance, 
 ];
 
 static OUTCOMES:Lazy<[[u8;5];7776]> = Lazy::new(all_outcomes_rolling_5_dice);
