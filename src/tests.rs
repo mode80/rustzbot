@@ -14,7 +14,7 @@ fn score_slot_test() {
     assert_eq!(15, score_slot(FIVES,[1,2,5,5,5]));
 }
 
-// #[test]
+#[test]
 fn bench_test() {
     // let slots= array_vec!([u8;13] => 1,2,3,4,5,6,7,8,9,10,11,12,13);
     let game = GameState{   rolls_remaining: 0, 

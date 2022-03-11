@@ -2,10 +2,9 @@
 //#![allow(unused_variables)]
 #![allow(unused_imports)]
 
-use std::{cmp::max, sync::{Arc, RwLock}, error::{self, Error}, fs::{self, File}, time::Duration};
-use cached::proc_macro::cached;
-use counter::Counter;
+use std::{cmp::max, sync::{Arc, RwLock, Mutex}, error::{self, Error}, fs::{self, File}, time::Duration};
 // use cached::proc_macro::cached;
+use counter::Counter;
 use itertools::Itertools;
 use indicatif::ProgressBar;
 use rustc_hash::{FxHashSet, FxHashMap};
@@ -56,7 +55,7 @@ enum Choice{
 struct AppState{
     progress_bar:Arc<RwLock<ProgressBar>>, 
     done:Arc<RwLock<FxHashSet<ArrayVec<[u8;13]>>>>, 
-    ev_cache:Arc<RwLock<FxHashMap<GameState,(Choice,f32)>>>,
+    ev_cache:Arc<Mutex<FxHashMap<GameState,(Choice,f32)>>>,
     checkpoint: Arc<RwLock<Duration>>,
     // log, 
 }
@@ -66,7 +65,8 @@ impl AppState{
         let combo_count = (1..=slot_count).map(|r| n_take_r(slot_count as u128, r as u128,false,false) as u64 ).sum() ;
         // let bytes = fs::read("ev_cache").unwrap();
         // let cachemap = ::bincode::deserialize(&bytes).unwrap() ;
-        let init_capacity = combo_count as usize * 252 * 64 * 2 * 2; // roughly: slotcombos * diecombos * deficits * wilds * rolls
+        let init_capacity = 1; // TODO experiment with larger values
+        // let init_capacity = combo_count as usize * 252 * 64 * 2 * 2; // roughly: slotcombos * diecombos * deficits * wilds * rolls
         let cachemap = if let Ok(bytes) = fs::read("ev_cache") { 
             ::bincode::deserialize(&bytes).unwrap() 
         } else {
@@ -74,7 +74,7 @@ impl AppState{
         };
         Self{   progress_bar : Arc::new(RwLock::new(ProgressBar::new(combo_count))), 
                 done : Arc::new(RwLock::new(FxHashSet::default())) ,  
-                ev_cache : Arc::new(RwLock::new(cachemap)),
+                ev_cache : Arc::new(Mutex::new(cachemap)),
                 checkpoint: Arc::new(RwLock::new(Duration::new(0,0))),
         }
     }
@@ -133,7 +133,7 @@ fn save_periodically(app:&AppState, every_n_secs:u64){
 }
 
 fn save_cache(app:&AppState){
-    let evs = &*app.ev_cache.read().unwrap(); // the "*" derefs the Arc smart pointer, while "&" makes it into the borrow we need 
+    let evs = &*app.ev_cache.lock().unwrap(); // the "*" derefs the Arc smart pointer, while "&" makes it into the borrow we need 
     let mut f = &File::create("ev_cache").unwrap();
     let bytes = bincode::serialize(evs).unwrap();
     f.write_all(&bytes).unwrap();
@@ -358,10 +358,10 @@ fn avg_ev_for_selection(game:GameState, app: &AppState, selection:ArrayVec::<[u8
 
 
 /// returns the best game Choice along with its expected value, given relevant game state.
-#[cached(key = "GameState", convert = r#"{ game }"#)] 
+// #[cached(key = "GameState", convert = r#"{ game }"#)] 
 fn best_choice_ev(game:GameState,app: &AppState) -> (Choice,f32) { 
 
-    // if let Some(result) = app.ev_cache.read().unwrap().get(&game) { return *result}; // return cached result if we have one 
+    if let Some(result) = app.ev_cache.lock().unwrap().get(&game) { return *result}; // return cached result if we have one 
 
     let result = if game.rolls_remaining == 0 {
         best_slot_ev(game,app)  // <-----------------
@@ -377,11 +377,11 @@ fn best_choice_ev(game:GameState,app: &AppState) -> (Choice,f32) {
             app.done.write().unwrap().insert(game.sorted_open_slots);
             app.progress_bar.write().unwrap().inc(1);
             console_log(&game,app,result.0,result.1);
-            // save_periodically(app,600) ;
+            save_periodically(app,600) ;
         }
     }
     
-    // app.ev_cache.write().unwrap().insert(game, result);
+    app.ev_cache.lock().unwrap().insert(game, result);
     result 
 }
 
