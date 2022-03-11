@@ -103,14 +103,14 @@ fn ev_of_lgstraight_in_1() {
     );
 }
 
-#[test]
-fn make_permutations(){
-    for n in 1_u8..=13_u8 {
-        let perms = (1_u8..=n).into_iter().permutations(n as usize).collect_vec();
-        eprintln!("{}",n);
-        let filename = "perms".to_string() + &n.to_string();
-        let mut f = &File::create(filename).unwrap();
-        let bytes = bincode::serialize(&perms).unwrap();
-        f.write_all(&bytes).unwrap();
-    }
-}
+// #[test]
+// fn make_permutations(){
+//     for n in 1_u8..=13_u8 {
+//         let perms = (1_u8..=n).into_iter().permutations(n as usize).collect_vec();
+//         eprintln!("{}",n);
+//         let filename = "perms".to_string() + &n.to_string();
+//         let mut f = &File::create(filename).unwrap();
+//         let bytes = bincode::serialize(&perms).unwrap();
+//         f.write_all(&bytes).unwrap();
+//     }
+// }

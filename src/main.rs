@@ -3,6 +3,7 @@
 #![allow(unused_imports)]
 
 use std::{cmp::max, sync::{Arc, RwLock}, error::{self, Error}, fs::{self, File}, time::Duration};
+use cached::proc_macro::cached;
 use counter::Counter;
 // use cached::proc_macro::cached;
 use itertools::Itertools;
@@ -357,10 +358,10 @@ fn avg_ev_for_selection(game:GameState, app: &AppState, selection:ArrayVec::<[u8
 
 
 /// returns the best game Choice along with its expected value, given relevant game state.
-//  #[cached(key = "GameState", convert = r#"{ *game }"#)] 
+#[cached(key = "GameState", convert = r#"{ game }"#)] 
 fn best_choice_ev(game:GameState,app: &AppState) -> (Choice,f32) { 
 
-    if let Some(result) = app.ev_cache.read().unwrap().get(&game) { return *result}; // return cached result if we have one 
+    // if let Some(result) = app.ev_cache.read().unwrap().get(&game) { return *result}; // return cached result if we have one 
 
     let result = if game.rolls_remaining == 0 {
         best_slot_ev(game,app)  // <-----------------
@@ -368,19 +369,19 @@ fn best_choice_ev(game:GameState,app: &AppState) -> (Choice,f32) {
         best_dice_ev(game,app)  // <-----------------
     };
 
-    console_log(&game,app,result.0,result.1);
+    // console_log(&game,app,result.0,result.1);
 
     if game.rolls_remaining==0 { // periodically update progress and save
         let e = {app.done.read().unwrap().contains(&game.sorted_open_slots)} ;
         if ! e  {
             app.done.write().unwrap().insert(game.sorted_open_slots);
             app.progress_bar.write().unwrap().inc(1);
-            // console_log(&game,app,result.0,result.1);
-            save_periodically(app,600) ;
+            console_log(&game,app,result.0,result.1);
+            // save_periodically(app,600) ;
         }
     }
     
-    app.ev_cache.write().unwrap().insert(game, result);
+    // app.ev_cache.write().unwrap().insert(game, result);
     result 
 }
 
