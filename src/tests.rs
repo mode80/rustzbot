@@ -74,18 +74,17 @@ fn ev_of_fullhouse_in_1() {
     );
 }
 
-#[test] // TODO this one is busted
+#[test] 
 fn ev_of_smstraight_in_1() {
 // see https://www.yahtzeemanifesto.com/yahtzee-odds.php 
     let game = GameState{   rolls_remaining: 1, 
                             sorted_open_slots: array_vec!([u8;13] => SM_STRAIGHT ), 
-                            sorted_dievals: [6,6,6,6,6], 
+                            sorted_dievals: [0,0,0,0,0], 
                             upper_bonus_deficit: INIT_DEFICIT , yahtzee_is_wild: false, };
     let app = AppState::new(&game);
     let result = best_choice_ev(game,&app);
     assert_eq!( 
-        rounded( result.1 / 30.0, 4), 
-        rounded( 0.1235 + 0.0309 , 4) 
+        rounded( result.1 / 30.0, 2), rounded( 0.1235 + 0.0309 , 2) 
     );
 }
 

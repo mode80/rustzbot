@@ -197,7 +197,8 @@ fn straight_len(sorted_dievals:[u8;5])->u8 {
     let mut maxinarow=1; 
     let mut lastval=254; // stub
     for x in sorted_dievals {
-        if x==lastval+1 {inarow+=1} else {inarow=1};
+        if x==lastval+1 {inarow+=1}
+        else if x!=lastval {inarow=1};
         maxinarow = max(inarow,maxinarow);
         lastval = x;
     } 
@@ -213,17 +214,8 @@ fn score_sixes(sorted_dievals:      [u8;5])->u8{ score_upperbox(6,sorted_dievals
 
 fn score_3ofakind(sorted_dievals:   [u8;5])->u8{ score_n_of_a_kind(3,sorted_dievals) }
 fn score_4ofakind(sorted_dievals:   [u8;5])->u8{ score_n_of_a_kind(4,sorted_dievals) }
-fn score_sm_str8(sorted_dievals:    [u8;5])->u8{ 
-    let d = sorted_dievals;
-    let front:bool  = d[4]-1==d[3] && d[3]-1==d[2] && d[2]-1==d[1];
-    let back:bool   = d[3]-1==d[2] && d[2]-1==d[1] && d[1]-1==d[0]; 
-    if front || back {30} else {0}
-    // if straight_len(sorted_dievals) >=4 {30} else {0}
-}
-fn score_lg_str8(sorted_dievals:    [u8;5])->u8{ 
-    let d = sorted_dievals;
-    if d[4]-1==d[3] && d[3]-1==d[2] && d[2]-1==d[1] && d[1]-1==d[0] {40} else {0}
-}
+fn score_sm_str8(sorted_dievals:    [u8;5])->u8{ if straight_len(sorted_dievals) >=4 {30} else {0} }
+fn score_lg_str8(sorted_dievals:    [u8;5])->u8{ if straight_len(sorted_dievals) >=5 {40} else {0} }
 
 // The official rule is that a Full House is "three of one number and two of another"
 fn score_fullhouse(sorted_dievals:[u8;5]) -> u8 { 
