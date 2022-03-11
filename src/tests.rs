@@ -18,8 +18,8 @@ fn score_slot_test() {
 fn bench_test() {
     // let slots= array_vec!([u8;13] => 1,2,3,4,5,6,7,8,9,10,11,12,13);
     let game = GameState{   rolls_remaining: 0, 
-                            sorted_open_slots: array_vec!([u8;13] => 6,8,12 ), 
-                            sorted_dievals: [6,6,6,6,6], 
+                            sorted_open_slots: array_vec!([u8;13] => SIXES,FOUR_OF_A_KIND,YAHTZEE ), 
+                            sorted_dievals: UNROLLED_DIEVALS, 
                             upper_bonus_deficit: 30, 
                             yahtzee_is_wild: false, };
     let app = AppState::new(&game);
@@ -31,8 +31,8 @@ fn bench_test() {
 fn ev_of_yahtzee_in_1_roll() {
 // see https://www.yahtzeemanifesto.com/yahtzee-odds.php 
     let game = GameState{   rolls_remaining: 1, 
-                            sorted_open_slots: array_vec!([u8;13] => 12 ), 
-                            sorted_dievals: [1,2,3,4,5], 
+                            sorted_open_slots: array_vec!([u8;13] => YAHTZEE ), 
+                            sorted_dievals: UNROLLED_DIEVALS, 
                             upper_bonus_deficit: INIT_DEFICIT , yahtzee_is_wild: false, };
     let app = AppState::new(&game);
     let _result = best_choice_ev(game,&app);
@@ -43,12 +43,12 @@ fn ev_of_yahtzee_in_1_roll() {
     );
 }
 
-//#[test]
+// #[test]
 fn ev_of_yahtzee_in_3_rolls() {
 // see https://www.yahtzeemanifesto.com/yahtzee-odds.php 
     let game = GameState{   rolls_remaining: 3, 
-                            sorted_open_slots: array_vec!([u8;13] => 12 ), 
-                            sorted_dievals: [1,2,3,4,5], 
+                            sorted_open_slots: array_vec!([u8;13] => YAHTZEE ), 
+                            sorted_dievals: UNROLLED_DIEVALS, 
                             upper_bonus_deficit: INIT_DEFICIT , yahtzee_is_wild: false, };
     let app = AppState::new(&game);
     let _result = best_choice_ev(game,&app);
@@ -59,32 +59,47 @@ fn ev_of_yahtzee_in_3_rolls() {
 }
 
 
-#[test]
+// #[test]
 fn ev_of_fullhouse_in_1() {
 // see https://www.yahtzeemanifesto.com/yahtzee-odds.php 
     let game = GameState{   rolls_remaining: 1, 
-                            sorted_open_slots: array_vec!([u8;13] => 9 ), 
-                            sorted_dievals: [1,2,3,4,5], 
+                            sorted_open_slots: array_vec!([u8;13] => FULL_HOUSE ), 
+                            sorted_dievals: UNROLLED_DIEVALS, 
                             upper_bonus_deficit: INIT_DEFICIT , yahtzee_is_wild: false, };
     let app = AppState::new(&game);
-    let _result = best_choice_ev(game,&app);
+    let result = best_choice_ev(game,&app);
     assert_eq!( 
-        rounded( _result.1, 1), 
+        rounded( result.1, 1), 
         rounded( 0.0386 * 25.0, 1) 
     );
 }
 
+#[test] // TODO this one is busted
+fn ev_of_smstraight_in_1() {
+// see https://www.yahtzeemanifesto.com/yahtzee-odds.php 
+    let game = GameState{   rolls_remaining: 1, 
+                            sorted_open_slots: array_vec!([u8;13] => SM_STRAIGHT ), 
+                            sorted_dievals: [6,6,6,6,6], 
+                            upper_bonus_deficit: INIT_DEFICIT , yahtzee_is_wild: false, };
+    let app = AppState::new(&game);
+    let result = best_choice_ev(game,&app);
+    assert_eq!( 
+        rounded( result.1 / 30.0, 4), 
+        rounded( 0.1235 + 0.0309 , 4) 
+    );
+}
+
 // #[test]
-// fn ev_of_smstraight_in_1() {
-// // see https://www.yahtzeemanifesto.com/yahtzee-odds.php 
-//     let game = GameState{   rolls_remaining: 1, 
-//                             sorted_open_slots: array_vec!([u8;13] => 10 ), 
-//                             sorted_dievals: [1,1,1,1,1], 
-//                             upper_bonus_deficit: INIT_DEFICIT , yahtzee_is_wild: false, };
-//     let app = AppState::new(&game);
-//     let _result = best_choice_ev(game,&app);
-//     assert_eq!( 
-//         rounded( _result.1, 1), 
-//         rounded( 0.1235 * 30.0, 1) 
-//     );
-// }
+fn ev_of_lgstraight_in_1() {
+// see https://www.yahtzeemanifesto.com/yahtzee-odds.php 
+    let game = GameState{   rolls_remaining: 1, 
+                            sorted_open_slots: array_vec!([u8;13] => LG_STRAIGHT ), 
+                            sorted_dievals: UNROLLED_DIEVALS, 
+                            upper_bonus_deficit: INIT_DEFICIT , yahtzee_is_wild: false, };
+    let app = AppState::new(&game);
+    let result = best_choice_ev(game,&app);
+    assert_eq!( 
+        rounded( result.1  / 40.0, 4), 
+        rounded( 0.0309, 4) 
+    );
+}
