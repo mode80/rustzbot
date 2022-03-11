@@ -83,7 +83,7 @@ const STUB:u8=0; const ACES:u8=1; const TWOS:u8=2; const THREES:u8=3; const FOUR
 const THREE_OF_A_KIND:u8=7; const FOUR_OF_A_KIND:u8=8; const FULL_HOUSE:u8=9; const SM_STRAIGHT:u8=10; const LG_STRAIGHT:u8=11; 
 const YAHTZEE:u8=12; const CHANCE:u8=13; 
  
-const UNROLLED_DIEVALS:[u8;5] = [0,0,0,0,0]; const SIDES:u8 = 6; const INIT_DEFICIT:u8 = 63;
+const UNROLLED_DIEVALS:[u8;5] = [255,245,235,225,215]; const SIDES:u8 = 6; const INIT_DEFICIT:u8 = 63;
 
 const SCORE_FNS:[fn(sorted_dievals:[u8;5])->u8;14] = [
     score_aces, // duplicate placeholder so indices align more intuitively with categories 
@@ -213,8 +213,17 @@ fn score_sixes(sorted_dievals:      [u8;5])->u8{ score_upperbox(6,sorted_dievals
 
 fn score_3ofakind(sorted_dievals:   [u8;5])->u8{ score_n_of_a_kind(3,sorted_dievals) }
 fn score_4ofakind(sorted_dievals:   [u8;5])->u8{ score_n_of_a_kind(4,sorted_dievals) }
-fn score_sm_str8(sorted_dievals:    [u8;5])->u8{ if straight_len(sorted_dievals) >= 4 {30} else {0} }
-fn score_lg_str8(sorted_dievals:    [u8;5])->u8{ if straight_len(sorted_dievals) >= 5 {40} else {0} }
+fn score_sm_str8(sorted_dievals:    [u8;5])->u8{ 
+    let d = sorted_dievals;
+    let front:bool  = d[4]-1==d[3] && d[3]-1==d[2] && d[2]-1==d[1];
+    let back:bool   = d[3]-1==d[2] && d[2]-1==d[1] && d[1]-1==d[0]; 
+    if front || back {30} else {0}
+    // if straight_len(sorted_dievals) >=4 {30} else {0}
+}
+fn score_lg_str8(sorted_dievals:    [u8;5])->u8{ 
+    let d = sorted_dievals;
+    if d[4]-1==d[3] && d[3]-1==d[2] && d[2]-1==d[1] && d[1]-1==d[0] {40} else {0}
+}
 
 // The official rule is that a Full House is "three of one number and two of another"
 fn score_fullhouse(sorted_dievals:[u8;5]) -> u8 { 
