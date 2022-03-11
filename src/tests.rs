@@ -74,7 +74,7 @@ fn ev_of_fullhouse_in_1() {
     );
 }
 
-#[test] 
+// #[test] 
 fn ev_of_smstraight_in_1() {
 // see https://www.yahtzeemanifesto.com/yahtzee-odds.php 
     let game = GameState{   rolls_remaining: 1, 
@@ -101,4 +101,16 @@ fn ev_of_lgstraight_in_1() {
         rounded( result.1  / 40.0, 4), 
         rounded( 0.0309, 4) 
     );
+}
+
+#[test]
+fn make_permutations(){
+    for n in 1_u8..=13_u8 {
+        let perms = (1_u8..=n).into_iter().permutations(n as usize).collect_vec();
+        eprintln!("{}",n);
+        let filename = "perms".to_string() + &n.to_string();
+        let mut f = &File::create(filename).unwrap();
+        let bytes = bincode::serialize(&perms).unwrap();
+        f.write_all(&bytes).unwrap();
+    }
 }
