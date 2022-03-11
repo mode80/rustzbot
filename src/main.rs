@@ -63,9 +63,9 @@ impl AppState{
     fn new(game: &GameState) -> Self{
         let slot_count=game.sorted_open_slots.len();
         let combo_count = (1..=slot_count).map(|r| n_take_r(slot_count as u128, r as u128,false,false) as u64 ).sum() ;
-        // let bytes = fs::read("ev_cache").unwrap();
+        // let bytes = fs::read("ev_cache").unwrap(); // TODO don't forget to re-enable cache load here
         // let cachemap = ::bincode::deserialize(&bytes).unwrap() ;
-        let init_capacity = 1; // TODO experiment with larger values
+        let init_capacity = 1; // TODO experiment with larger values as below
         // let init_capacity = combo_count as usize * 252 * 64 * 2 * 2; // roughly: slotcombos * diecombos * deficits * wilds * rolls
         let cachemap = if let Ok(bytes) = fs::read("ev_cache") { 
             ::bincode::deserialize(&bytes).unwrap() 
