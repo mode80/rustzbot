@@ -1,3 +1,5 @@
+use std::io::BufWriter;
+
 use ordered_float::Float;
 use assert_approx_eq::assert_approx_eq;
 
@@ -14,7 +16,7 @@ fn score_slot_test() {
     assert_eq!(15, score_slot(FIVES,[1,2,5,5,5]));
 }
 
-#[test]
+// #[test]
 fn bench_test() {
     // let slots= array_vec!([u8;13] => 1,2,3,4,5,6,7,8,9,10,11,12,13);
     let game = GameState{   rolls_remaining: 0, 
@@ -103,14 +105,27 @@ fn ev_of_lgstraight_in_1() {
     );
 }
 
-// #[test]
-// fn make_permutations(){
-//     for n in 1_u8..=13_u8 {
-//         let perms = (1_u8..=n).into_iter().permutations(n as usize).collect_vec();
-//         eprintln!("{}",n);
-//         let filename = "perms".to_string() + &n.to_string();
-//         let mut f = &File::create(filename).unwrap();
-//         let bytes = bincode::serialize(&perms).unwrap();
-//         f.write_all(&bytes).unwrap();
-//     }
-// }
+#[test]
+fn make_permutations(){
+    for n in 1_u8..=13_u8 {
+        let filename = "perms".to_string() + &n.to_string();
+        let mut f = BufWriter::with_capacity(1_000_000_000,File::create(filename).unwrap());
+        for perms in &(1_u8..=n).into_iter().permutations(n as usize).chunks(1024) {
+            bincode::serialize_into(&mut f,&perms.collect_vec()).unwrap();
+        }
+    }
+}
+// Output: 
+//             17 Mar 12 10:23 perms1
+//       65346752 Mar 12 10:23 perms10
+//      758731056 Mar 12 10:23 perms11
+//     9583774200 Mar 12 10:23 perms12
+//   130816085400 Mar 12 10:32 perms13
+//             28 Mar 12 10:23 perms2
+//             74 Mar 12 10:23 perms3
+//            296 Mar 12 10:23 perms4
+//           1568 Mar 12 10:23 perms5
+//          10088 Mar 12 10:23 perms6
+//          75640 Mar 12 10:23 perms7
+//         645440 Mar 12 10:23 perms8
+//        6171800 Mar 12 10:23 perms9
