@@ -24,7 +24,7 @@ mod tests;
 fn main() -> Result<(), Box<dyn Error>>{
     
     let game = GameState{
-        sorted_open_slots: ArrayVec::from([ACES,TWOS,THREES,FOURS,FIVES,SIXES,THREE_OF_A_KIND,FOUR_OF_A_KIND,SM_STRAIGHT,LG_STRAIGHT,FULL_HOUSE,YAHTZEE,CHANCE]),
+        sorted_open_slots: Slots::from([ACES,TWOS,THREES,FOURS,FIVES,SIXES,THREE_OF_A_KIND,FOUR_OF_A_KIND,SM_STRAIGHT,LG_STRAIGHT,FULL_HOUSE,YAHTZEE,CHANCE]),
         sorted_dievals: UNROLLED_DIEVALS, rolls_remaining: 3, upper_bonus_deficit: INIT_DEFICIT, yahtzee_is_wild: false,
     };
 
@@ -36,6 +36,8 @@ fn main() -> Result<(), Box<dyn Error>>{
    
 }
 /*-------------------------------------------------------------*/
+type Dice = ArrayVec<[u8;5]>;
+type Slots = ArrayVec<[u8;13]>;
 
 #[derive(Debug, PartialEq, Eq, Ord, PartialOrd, Hash, Clone, Copy, Serialize, Deserialize)]
 struct GameState{
@@ -43,18 +45,18 @@ struct GameState{
     rolls_remaining:u8, 
     upper_bonus_deficit:u8, 
     yahtzee_is_wild:bool,
-    sorted_open_slots:ArrayVec<[u8;13]>, 
+    sorted_open_slots:Slots, 
 }
 
 #[derive(Debug,Clone,Copy,Serialize,Deserialize,PartialEq)]
 enum Choice{
     Slot(u8),
-    Dice(ArrayVec<[u8;5]>)
+    Dice(Dice)
 }
 
 struct AppState{
     progress_bar:Arc<RwLock<ProgressBar>>, 
-    done:Arc<RwLock<FxHashSet<ArrayVec<[u8;13]>>>>, 
+    done:Arc<RwLock<FxHashSet<Slots>>>, 
     ev_cache:Arc<Mutex<FxHashMap<GameState,(Choice,f32)>>>,
     checkpoint: Arc<RwLock<Duration>>,
     // log, 
@@ -93,7 +95,7 @@ const SCORE_FNS:[fn(sorted_dievals:[u8;5])->u8;14] = [
 ];
 
 static OUTCOMES:Lazy<[[u8;5];7776]> = Lazy::new(all_outcomes_rolling_5_dice);
-static SELECTIONS:Lazy<[ArrayVec<[u8;5]>;32]> = Lazy::new(die_index_combos); 
+static SELECTIONS:Lazy<[Dice;32]> = Lazy::new(die_index_combos); 
 // [(), (0,), (0, 1), (0, 1, 2), (0, 1, 2, 3), (0, 1, 2, 3, 4), (0, 1, 2, 4), (0, 1, 3), (0, 1, 3, 4), 
 // (0, 1, 4), (0, 2), (0, 2, 3), (0, 2, 3, 4), (0, 2, 4), (0, 3), (0, 3, 4), (0, 4), (1,), (1, 2), (1, 2, 3), (1, 2, 3, 4), 
 // (1, 2, 4), (1, 3), (1, 3, 4), (1, 4), (2,), (2, 3), (2, 3, 4), (2, 4), (3,), (3, 4), (4,)]
@@ -150,14 +152,14 @@ fn console_log(game:&GameState, app:&AppState, choice:Choice, ev:f32 ){
 
 /// the set of all ways to roll different dice, as represented by a collection of indice vecs 
 #[allow(clippy::eval_order_dependence)]
-fn die_index_combos() ->[ArrayVec<[u8;5]>;32]  { 
-    let mut i=0;
-    let mut them:[ArrayVec<[u8;5]>;32] = [ArrayVec::<[u8;5]>::new() ;32]; // this is the empty selection
-    for combo in (0..=4).combinations(1){ them[i]= {let mut it=ArrayVec::<[u8;5]>::new(); it.extend_from_slice(&combo); i+=1; it} } 
-    for combo in (0..=4).combinations(2){ them[i]= {let mut it=ArrayVec::<[u8;5]>::new(); it.extend_from_slice(&combo); i+=1; it} } 
-    for combo in (0..=4).combinations(3){ them[i]= {let mut it=ArrayVec::<[u8;5]>::new(); it.extend_from_slice(&combo); i+=1; it} } 
-    for combo in (0..=4).combinations(4){ them[i]= {let mut it=ArrayVec::<[u8;5]>::new(); it.extend_from_slice(&combo); i+=1; it} } 
-    for combo in (0..=4).combinations(5){ them[i]= {let mut it=ArrayVec::<[u8;5]>::new(); it.extend_from_slice(&combo); i+=1; it} } 
+fn die_index_combos() ->[Dice;32]  { 
+    let mut i=0; 
+    let mut them:[Dice;32] = [Dice::new() ;32]; // init dice arrray 
+    for combo in (0..=4).combinations(1){ them[i]= {let mut it=Dice::new(); it.extend_from_slice(&combo); i+=1; it} } 
+    for combo in (0..=4).combinations(2){ them[i]= {let mut it=Dice::new(); it.extend_from_slice(&combo); i+=1; it} } 
+    for combo in (0..=4).combinations(3){ them[i]= {let mut it=Dice::new(); it.extend_from_slice(&combo); i+=1; it} } 
+    for combo in (0..=4).combinations(4){ them[i]= {let mut it=Dice::new(); it.extend_from_slice(&combo); i+=1; it} } 
+    for combo in (0..=4).combinations(5){ them[i]= {let mut it=Dice::new(); it.extend_from_slice(&combo); i+=1; it} } 
     them.sort_unstable();
     them
 }
@@ -248,7 +250,7 @@ fn best_slot_ev(game:GameState, app: &AppState) -> (Choice,f32) {
         // LEAF CALCS 
             // prep vars
                 let mut tail_ev = 0.0;
-                let mut slot_sequence = ArrayVec::<[u8;13]>::new();
+                let mut slot_sequence = Slots::new();
                 slot_sequence.extend_from_slice(&slot_sequence_vec);
                 let top_slot = slot_sequence.pop().unwrap();
                 let mut _choice:Choice = Choice::Slot(top_slot);
@@ -328,7 +330,7 @@ fn best_dice_ev(game:GameState, app: &AppState) -> (Choice,f32){
 /// returns the average of all the expected values for rolling a selection of dice, given the game and app state
 /// "selection" is the set of dice to roll, as represented their indexes in a 5-length array
 #[inline(always)] // ~6% speedup 
-fn avg_ev_for_selection(game:GameState, app: &AppState, selection:ArrayVec::<[u8;5]>) -> f32 {
+fn avg_ev_for_selection(game:GameState, app: &AppState, selection:Dice) -> f32 {
     let selection_len = selection.len(); // this is how many dice we're selecting to roll
     // optimization: we'll always iterate over (some amount) of the outcomes of rolling 5 dice . This works because
     // the trailing 'n' dice from this set amount to the same set outcomes for when 'n' diced are selected 
