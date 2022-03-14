@@ -16,19 +16,6 @@ fn score_slot_test() {
     assert_eq!(15, score_slot(FIVES,[1,2,5,5,5]));
 }
 
-#[test]
-fn bench_test() {
-    // let slots= array_vec!([u8;13] => 1,2,3,4,5,6,7,8,9,10,11,12,13);
-    let game = GameState{   rolls_remaining: 0, 
-                            sorted_open_slots: array_vec!([u8;13] => SIXES,FOUR_OF_A_KIND,YAHTZEE ), 
-                            sorted_dievals: UNROLLED_DIEVALS, 
-                            upper_bonus_deficit: 30, 
-                            yahtzee_is_wild: false, };
-    let app = AppState::new(&game);
-    let _result = best_choice_ev(game,&app);
-    // save_cache(&app);
-}
-
 // #[test]
 fn ev_of_yahtzee_in_1_roll() {
 // see https://www.yahtzeemanifesto.com/yahtzee-odds.php 
@@ -39,10 +26,7 @@ fn ev_of_yahtzee_in_1_roll() {
     let app = AppState::new(&game);
     let _result = best_choice_ev(game,&app);
     // eprintln!("{}, {}",rounded(_result.1, 4) , rounded( (6.0*1.0/6.0).powf(5.0) * 50.0, 4) );
-    assert_approx_eq!( 
-        _result.1 , 
-        6.0 * (1.0/6.0).powi(5) * 50.0 
-    );
+    assert_approx_eq!( _result.1 , 6.0 * (1.0/6.0).powi(5) * 50.0 );
 }
 
 // #[test]
@@ -54,10 +38,7 @@ fn ev_of_yahtzee_in_3_rolls() {
                             upper_bonus_deficit: INIT_DEFICIT , yahtzee_is_wild: false, };
     let app = AppState::new(&game);
     let _result = best_choice_ev(game,&app);
-    assert_eq!( 
-        rounded( _result.1, 1), 
-        rounded( 0.0461 * 50.0, 1) 
-    );
+    assert_eq!( rounded( _result.1, 1), rounded( 0.0461 * 50.0, 1) );
 }
 
 
@@ -70,10 +51,7 @@ fn ev_of_fullhouse_in_1() {
                             upper_bonus_deficit: INIT_DEFICIT , yahtzee_is_wild: false, };
     let app = AppState::new(&game);
     let result = best_choice_ev(game,&app);
-    assert_eq!( 
-        rounded( result.1, 1), 
-        rounded( 0.0386 * 25.0, 1) 
-    );
+    assert_eq!( rounded( result.1, 1), rounded( 0.0386 * 25.0, 1) );
 }
 
 // #[test] 
@@ -85,9 +63,7 @@ fn ev_of_smstraight_in_1() {
                             upper_bonus_deficit: INIT_DEFICIT , yahtzee_is_wild: false, };
     let app = AppState::new(&game);
     let result = best_choice_ev(game,&app);
-    assert_eq!( 
-        rounded( result.1 / 30.0, 2), rounded( 0.1235 + 0.0309 , 2) 
-    );
+    assert_eq!( rounded( result.1 / 30.0, 2), rounded( 0.1235 + 0.0309 , 2) );
 }
 
 // #[test]
@@ -99,11 +75,39 @@ fn ev_of_lgstraight_in_1() {
                             upper_bonus_deficit: INIT_DEFICIT , yahtzee_is_wild: false, };
     let app = AppState::new(&game);
     let result = best_choice_ev(game,&app);
+    assert_eq!( rounded( result.1  / 40.0, 4), rounded( 0.0309, 4) );
+}
+
+// #[test] 
+fn ev_of_4ofakind_in_1() {
+// see https://www.yahtzeemanifesto.com/yahtzee-odds.php 
+    let game = GameState{   rolls_remaining: 1, 
+                            sorted_open_slots: array_vec!([u8;13] => FOUR_OF_A_KIND), 
+                            sorted_dievals: UNROLLED_DIEVALS, 
+                            upper_bonus_deficit: INIT_DEFICIT , yahtzee_is_wild: false, };
+    let app = AppState::new(&game);
+    let result = best_choice_ev(game,&app);
     assert_eq!( 
-        rounded( result.1  / 40.0, 4), 
-        rounded( 0.0309, 4) 
+        rounded( result.1  / 17.5, 3), // we divide EV by average dice-total to get odds
+        rounded( 0.0193+0.00077, 3) //our 3 of a kind includes 4 of a kind & yahtzee
     );
 }
+
+// #[test] 
+fn ev_of_3ofakind_in_1() {
+// see https://www.yahtzeemanifesto.com/yahtzee-odds.php 
+    let game = GameState{   rolls_remaining: 1, 
+                            sorted_open_slots: array_vec!([u8;13] => THREE_OF_A_KIND), 
+                            sorted_dievals: UNROLLED_DIEVALS, 
+                            upper_bonus_deficit: INIT_DEFICIT , yahtzee_is_wild: false, };
+    let app = AppState::new(&game);
+    let result = best_choice_ev(game,&app); 
+    assert_eq!( 
+        rounded( result.1  / 17.5, 3), // we divide EV by average dice-total to get odds
+        rounded( 0.1929+0.0193+0.0007, 3) //our 3 of a kind includes 4 of a kind & yahtzee
+    );
+}
+
 
 // #[test]
 fn make_permutations(){
@@ -129,3 +133,17 @@ fn make_permutations(){
 //          75640 Mar 12 10:23 perms7
 //         645440 Mar 12 10:23 perms8
 //        6171800 Mar 12 10:23 perms9
+
+#[test]
+fn bench_test() {
+    // let slots= array_vec!([u8;13] => 1,2,3,4,5,6,7,8,9,10,11,12,13);
+    let game = GameState{   rolls_remaining: 0, 
+                            sorted_open_slots: array_vec!([u8;13] => SIXES,FOUR_OF_A_KIND,YAHTZEE ), 
+                            sorted_dievals: UNROLLED_DIEVALS, 
+                            upper_bonus_deficit: 30, 
+                            yahtzee_is_wild: false, };
+    let app = AppState::new(&game);
+    let _result = best_choice_ev(game,&app);
+    // save_cache(&app);
+}
+

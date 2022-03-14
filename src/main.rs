@@ -36,7 +36,7 @@ fn main() -> Result<(), Box<dyn Error>>{
    
 }
 /*-------------------------------------------------------------*/
-type Dice = ArrayVec<[u8;5]>;
+type Dice = ArrayVec<[u8;5]>; // maybe these should be [u8;N] arrays instead? probably no as cache needs fixed key type
 type Slots = ArrayVec<[u8;13]>;
 
 #[derive(Debug, PartialEq, Eq, Ord, PartialOrd, Hash, Clone, Copy, Serialize, Deserialize)]
@@ -86,7 +86,7 @@ const STUB:u8=0; const ACES:u8=1; const TWOS:u8=2; const THREES:u8=3; const FOUR
 const THREE_OF_A_KIND:u8=7; const FOUR_OF_A_KIND:u8=8; const FULL_HOUSE:u8=9; const SM_STRAIGHT:u8=10; const LG_STRAIGHT:u8=11; 
 const YAHTZEE:u8=12; const CHANCE:u8=13; 
  
-const UNROLLED_DIEVALS:[u8;5] = [255,245,235,225,215]; const SIDES:u8 = 6; const INIT_DEFICIT:u8 = 63;
+const UNROLLED_DIEVALS:[u8;5] = [0,0,0,0,0]; const SIDES:u8 = 6; const INIT_DEFICIT:u8 = 63;
 
 const SCORE_FNS:[fn(sorted_dievals:[u8;5])->u8;14] = [
     score_aces, // duplicate placeholder so indices align more intuitively with categories 
@@ -180,18 +180,20 @@ fn all_outcomes_rolling_5_dice() -> [[u8;5];7776] {
 }
 
 fn score_upperbox(boxnum:u8, sorted_dievals:[u8;5])->u8{
-   sorted_dievals.iter().filter(|x| **x==boxnum).sum()
+   sorted_dievals.into_iter().filter(|x| *x==boxnum).sum()
 }
 
 fn score_n_of_a_kind(n:u8,sorted_dievals:[u8;5])->u8{
-    let mut inarow=1; let mut maxinarow=1; let mut lastval=255; let mut sum=0; 
+    let mut inarow=1; let mut maxinarow=1; let mut lastval=100; let mut sum=0; 
     for x in sorted_dievals {
-        if x==lastval {inarow +=1} else {inarow=1}
+        if x==lastval && x!=0 {inarow +=1} else {inarow=1}
         maxinarow = max(inarow,maxinarow);
         lastval = x;
         sum+=x;
     }
-    if maxinarow>=n {sum} else {0}
+    if maxinarow>=n {
+        sum
+    } else {0}
 }
 
 
@@ -200,7 +202,7 @@ fn straight_len(sorted_dievals:[u8;5])->u8 {
     let mut maxinarow=1; 
     let mut lastval=254; // stub
     for x in sorted_dievals {
-        if x==lastval+1 {inarow+=1}
+        if x==lastval+1 && x!=0 {inarow+=1}
         else if x!=lastval {inarow=1};
         maxinarow = max(inarow,maxinarow);
         lastval = x;
@@ -223,13 +225,16 @@ fn score_lg_str8(sorted_dievals:    [u8;5])->u8{ if straight_len(sorted_dievals)
 // The official rule is that a Full House is "three of one number and two of another"
 fn score_fullhouse(sorted_dievals:[u8;5]) -> u8 { 
     let counts = sorted_dievals.iter().collect::<Counter<_>>().most_common_ordered(); //sorted(list(Counter(sorted_dievals).values() ))
-    if counts.len()==2 && (counts[0].1==3 && counts[1].1==2) {25} else {0}
+    if counts.len()==2 && 
+        (counts[0].1==3 && counts[1].1==2) &&
+        (*counts[0].0!=0 && *counts[1].0!=0)
+    {25} else {0}
 }
 
 fn score_chance(sorted_dievals:[u8;5])->u8 { sorted_dievals.iter().sum()  }
 fn score_yahtzee(sorted_dievals:[u8;5])->u8 { 
     let deduped=sorted_dievals.iter().dedup().collect_vec();
-    if deduped.len()==1 {50} else {0} 
+    if deduped.len()==1 && sorted_dievals[0]!=0 {50} else {0} 
 }
 
 /// reports the score for a set of dice in a given slot w/o regard for exogenous gamestate (bonuses, yahtzee wildcards etc)
@@ -241,7 +246,8 @@ fn score_slot(slot:u8, sorted_dievals:[u8;5])->u8{
 /// returns the best slot and corresponding ev for final dice, given the slot possibilities and other relevant state 
 fn best_slot_ev(game:GameState, app: &AppState) -> (Choice,f32) {
 
-    let slot_sequences = game.sorted_open_slots.into_iter().permutations(game.sorted_open_slots.len()); // TODO make a version of this that returns ArrayVecs 
+    // TODO consider slot_sequences.chunk(___) + multi-threading
+    let slot_sequences = game.sorted_open_slots.into_iter().permutations(game.sorted_open_slots.len()); // TODO make a version of this that returns ArrayVecs oor just Array<N>s 
     let mut best_ev = 0.0; 
     let mut best_slot=STUB; 
 
