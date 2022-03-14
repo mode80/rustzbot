@@ -1,6 +1,6 @@
 #![allow(dead_code)]
-//#![allow(unused_variables)]
 #![allow(unused_imports)]
+// #![allow(unused_variables)]
 
 use std::{cmp::max, sync::{Arc, RwLock, Mutex}, error::{self, Error}, fs::{self, File}, time::Duration};
 // use cached::proc_macro::cached;
@@ -86,7 +86,7 @@ const STUB:u8=0; const ACES:u8=1; const TWOS:u8=2; const THREES:u8=3; const FOUR
 const THREE_OF_A_KIND:u8=7; const FOUR_OF_A_KIND:u8=8; const FULL_HOUSE:u8=9; const SM_STRAIGHT:u8=10; const LG_STRAIGHT:u8=11; 
 const YAHTZEE:u8=12; const CHANCE:u8=13; 
  
-const UNROLLED_DIEVALS:[u8;5] = [0,0,0,0,0]; const SIDES:u8 = 6; const INIT_DEFICIT:u8 = 63;
+const UNROLLED_DIEVALS:[u8;5] = [0,0,0,0,0]; const INIT_DEFICIT:u8 = 63;
 
 const SCORE_FNS:[fn(sorted_dievals:[u8;5])->u8;14] = [
     score_aces, // duplicate placeholder so indices align more intuitively with categories 
@@ -102,7 +102,7 @@ static SELECTIONS:Lazy<[Dice;32]> = Lazy::new(die_index_combos);
 
 /*-------------------------------------------------------------*/
 
-/// rudimentary factorial suitable for our purposes here.. handles up to fact[34) */
+/// rudimentary factorial suitable for our purposes here.. handles up to fact(34) */
 fn fact(n: u128) -> u128{
     if n<=1 {1} else { n*fact(n-1) }
 }
@@ -148,6 +148,45 @@ fn console_log(game:&GameState, app:&AppState, choice:Choice, ev:f32 ){
         )
     );
 }
+
+struct SlotPermutations{
+    a:Slots,
+    c:[usize;13],// c is an encoding of the stack state. c[k] encodes the for-loop counter for when generate(k - 1, A) is called
+    i:usize,// i acts similarly to a stack pointer
+}
+impl SlotPermutations{
+    fn new(a:Slots) -> Self{
+        let c= [0;13];
+        let i = 255;
+        Self{ a, c, i}
+    }
+}
+impl Iterator for SlotPermutations{
+    type Item = Slots;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        
+        if self.i==255 { self.i=0; return Some(self.a); } // first run
+
+        if self.i == self.a.len()  {return None}; // last run
+
+        if self.c[self.i] < self.i { 
+            if self.i % 2 == 0 { // even 
+                (self.a[self.i], self.a[0]) = (self.a[0], self.a[self.i]); //swap 
+            } else { // odd
+                (self.a[self.c[self.i]], self.a[self.i]) = (self.a[self.i], self.a[self.c[self.i]]); //swap
+            } 
+            self.c[self.i] += 1;// Swap has occurred ending the "for-loop". Simulate the increment of the for-loop counter
+            self.i = 0;// Simulate recursive call reaching the base case by bringing the pointer to the base case analog in the array
+            Some(self.a)
+        } else { // Calling generate(i+1, A) has ended as the for-loop terminated. Reset the state and simulate popping the stack by incrementing the pointer.
+            self.c[self.i] = 0;
+            self.i += 1;
+            self.next()
+        } 
+    }
+}
+
 /*-------------------------------------------------------------*/
 
 /// the set of all ways to roll different dice, as represented by a collection of indice vecs 
@@ -247,17 +286,14 @@ fn score_slot(slot:u8, sorted_dievals:[u8;5])->u8{
 fn best_slot_ev(game:GameState, app: &AppState) -> (Choice,f32) {
 
     // TODO consider slot_sequences.chunk(___) + multi-threading
-    let slot_sequences = game.sorted_open_slots.into_iter().permutations(game.sorted_open_slots.len()); // TODO make a version of this that returns ArrayVecs oor just Array<N>s 
     let mut best_ev = 0.0; 
     let mut best_slot=STUB; 
 
-    for slot_sequence_vec in slot_sequences {
+    for mut slot_sequence in SlotPermutations::new(game.sorted_open_slots) {
 
         // LEAF CALCS 
             // prep vars
                 let mut tail_ev = 0.0;
-                let mut slot_sequence = Slots::new();
-                slot_sequence.extend_from_slice(&slot_sequence_vec);
                 let top_slot = slot_sequence.pop().unwrap();
                 let mut _choice:Choice = Choice::Slot(top_slot);
                 let mut upper_deficit_now = game.upper_bonus_deficit ;
@@ -371,7 +407,7 @@ fn best_choice_ev(game:GameState,app: &AppState) -> (Choice,f32) {
 
     if let Some(result) = app.ev_cache.lock().unwrap().get(&game) { return *result}; // return cached result if we have one 
 
-    let result = if game.rolls_remaining == 0 {
+    let result = if game.rolls_remaining == 0 { //TODO figure out a non-recursive version of this (better for multi-threading)
         best_slot_ev(game,app)  // <-----------------
     } else { 
         best_dice_ev(game,app)  // <-----------------

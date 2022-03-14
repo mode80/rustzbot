@@ -134,6 +134,15 @@ fn make_permutations(){
 //         645440 Mar 12 10:23 perms8
 //        6171800 Mar 12 10:23 perms9
 
+// #[test]
+fn test_permutations() {
+
+    let a = SlotPermutations::new( array_vec!([u8;13] => 0,1,2) );
+    for perm in a { 
+        println!("{}", perm); 
+    }; 
+}
+
 #[test]
 fn bench_test() {
     // let slots= array_vec!([u8;13] => 1,2,3,4,5,6,7,8,9,10,11,12,13);
