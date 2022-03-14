@@ -36,7 +36,7 @@ fn main() -> Result<(), Box<dyn Error>>{
    
 }
 /*-------------------------------------------------------------*/
-type Dice = ArrayVec<[u8;5]>; // maybe these should be [u8;N] arrays instead? probably no as cache needs fixed key type
+type Dice = ArrayVec<[u8;5]>; 
 type Slots = ArrayVec<[u8;13]>;
 
 #[derive(Debug, PartialEq, Eq, Ord, PartialOrd, Hash, Clone, Copy, Serialize, Deserialize)]
@@ -59,7 +59,6 @@ struct AppState{
     done:Arc<RwLock<FxHashSet<Slots>>>, 
     ev_cache:Arc<Mutex<FxHashMap<GameState,(Choice,f32)>>>,
     checkpoint: Arc<RwLock<Duration>>,
-    // log, 
 }
 impl AppState{
     fn new(game: &GameState) -> Self{
@@ -165,11 +164,8 @@ impl Iterator for SlotPermutations{
     type Item = Slots;
 
     fn next(&mut self) -> Option<Self::Item> {
-        
         if self.i==255 { self.i=0; return Some(self.a); } // first run
-
         if self.i == self.a.len()  {return None}; // last run
-
         if self.c[self.i] < self.i { 
             if self.i % 2 == 0 { // even 
                 (self.a[self.i], self.a[0]) = (self.a[0], self.a[self.i]); //swap 
@@ -375,7 +371,7 @@ fn best_dice_ev(game:GameState, app: &AppState) -> (Choice,f32){
 fn avg_ev_for_selection(game:GameState, app: &AppState, selection:Dice) -> f32 {
     let selection_len = selection.len(); // this is how many dice we're selecting to roll
     // optimization: we'll always iterate over (some amount) of the outcomes of rolling 5 dice . This works because
-    // the trailing 'n' dice from this set amount to the same set outcomes for when 'n' diced are selected 
+    // the trailing 'n' dice from the 5-die set amount to the same set outcomes for when 'n' diced are selected 
     let idx_offset = 5-selection_len; // this will be the offset into the corrrect position when 'n' diced are selected. 
     let outcomes_count = [1,6,36,216,1296,7776][selection_len]; // we've pre-calcuated how many outcomes we need to iterate over
     let mut total = 0.0;
@@ -383,7 +379,7 @@ fn avg_ev_for_selection(game:GameState, app: &AppState, selection:Dice) -> f32 {
     for outcome in OUTCOMES.iter().take(outcomes_count) { 
         //###### HOT CODE PATH #######
         newvals=game.sorted_dievals;
-        for (i, j) in selection.into_iter().enumerate() { // TODO bitmask math as an optimization 
+        for (i, j) in selection.into_iter().enumerate() { 
             newvals[j as usize]=outcome[i+idx_offset];    
         }
         newvals.sort_unstable();
@@ -407,7 +403,7 @@ fn best_choice_ev(game:GameState,app: &AppState) -> (Choice,f32) {
 
     if let Some(result) = app.ev_cache.lock().unwrap().get(&game) { return *result}; // return cached result if we have one 
 
-    let result = if game.rolls_remaining == 0 { //TODO figure out a non-recursive version of this (better for multi-threading)
+    let result = if game.rolls_remaining == 0 { //TODO figure out a non-recursive version of this (better for multi-threading)?
         best_slot_ev(game,app)  // <-----------------
     } else { 
         best_dice_ev(game,app)  // <-----------------
