@@ -57,10 +57,10 @@ enum Choice{
 }
 
 struct AppState{
-    progress_bar:Arc<RwLock<ProgressBar>>, 
-    done:Arc<RwLock<FxHashSet<Slots>>>, 
-    ev_cache:Arc<Mutex<FxHashMap<GameState,EVResult>>>,
-    checkpoint: Arc<RwLock<Duration>>,
+    progress_bar:ProgressBar, 
+    done:FxHashSet<Slots>, 
+    ev_cache:FxHashMap<GameState,EVResult>,
+    checkpoint: Duration,
 }
 impl AppState{
     fn new(game: &GameState) -> Self{
@@ -75,10 +75,10 @@ impl AppState{
         } else {
             FxHashMap::with_capacity_and_hasher(init_capacity,Default::default())
         };
-        Self{   progress_bar : Arc::new(RwLock::new(ProgressBar::new(combo_count))), 
-                done : Arc::new(RwLock::new(FxHashSet::default())) ,  
-                ev_cache : Arc::new(Mutex::new(cachemap)),
-                checkpoint: Arc::new(RwLock::new(Duration::new(0,0))),
+        Self{   progress_bar : ProgressBar::new(combo_count), 
+                done : Default::default() ,  
+                ev_cache : cachemap,
+                checkpoint: Duration::new(0,0),
         }
     }
 }
@@ -128,22 +128,22 @@ fn n_take_r(n:u128, r:u128, ordered:bool, with_replacement:bool)->u128{
 }
 
 fn save_periodically(app:&AppState, every_n_secs:u64){
-    let current_duration = app.progress_bar.read().unwrap().elapsed();
-    let last_duration = *app.checkpoint.read().unwrap();
+    let current_duration = app.progress_bar.elapsed();
+    let last_duration = app.checkpoint;
     if current_duration - last_duration >= Duration::new(every_n_secs,0) { 
         save_cache(app);
    }
 }
 
 fn save_cache(app:&AppState){
-    let evs = &*app.ev_cache.lock().unwrap(); // the "*" derefs the Arc smart pointer, while "&" makes it into the borrow we need 
+    let evs = &app.ev_cache; 
     let mut f = &File::create("ev_cache").unwrap();
     let bytes = bincode::serialize(evs).unwrap();
     f.write_all(&bytes).unwrap();
 }
  
 fn console_log(game:&GameState, app:&AppState, choice:Choice, ev:f32 ){
-    app.progress_bar.read().unwrap().println (
+    app.progress_bar.println (
         format!("{:>}\t{}\t{:>4}\t{:>4.2}\t{:?}\t{:?}\t{:?}", 
             game.rolls_remaining, game.yahtzee_is_wild, game.upper_bonus_deficit, ev, game.sorted_dievals, game.sorted_open_slots, choice 
         )
@@ -281,7 +281,7 @@ fn score_slot(slot:u8, sorted_dievals:DieVals)->u8{
 /*-------------------------------------------------------------*/
 
 /// returns the best slot and corresponding ev for final dice, given the slot possibilities and other relevant state 
-fn best_slot_ev(game:GameState, app: &AppState) -> EVResult  {
+fn best_slot_ev(game:GameState, app: &mut AppState) -> EVResult  {
 
     // TODO consider slot_sequences.chunk(___) + multi-threading
     let mut best_ev = 0.0; 
@@ -350,7 +350,7 @@ fn best_slot_ev(game:GameState, app: &AppState) -> EVResult  {
 }
 
 /// returns the best selection of dice and corresponding ev, given slots left, existing dice, and other relevant state 
-fn best_dice_ev(game:GameState, app: &AppState) -> EVResult { 
+fn best_dice_ev(game:GameState, app: &mut AppState) -> EVResult { 
 
     let mut best_selection = array_vec![0,1,2,3,4]; // default selection is "all dice"
     let mut best_ev = 0.0; 
@@ -370,7 +370,7 @@ fn best_dice_ev(game:GameState, app: &AppState) -> EVResult {
 /// returns the average of all the expected values for rolling a selection of dice, given the game and app state
 /// "selection" is the set of dice to roll, as represented their indexes in a 5-length array
 #[inline(always)] // ~6% speedup 
-fn avg_ev_for_selection(game:GameState, app: &AppState, selection:Dice) -> f32 {
+fn avg_ev_for_selection(game:GameState, app: &mut AppState, selection:Dice) -> f32 {
     let selection_len = selection.len(); // this is how many dice we're selecting to roll
     // optimization: we'll always iterate over (some amount) of the outcomes of rolling 5 dice . This works because
     // the trailing 'n' dice from the 5-die set amount to the same set outcomes for when 'n' diced are selected 
@@ -401,9 +401,9 @@ fn avg_ev_for_selection(game:GameState, app: &AppState, selection:Dice) -> f32 {
 
 /// returns the best game Choice along with its expected value, given relevant game state.
 // #[cached(key = "GameState", convert = r#"{ game }"#)] 
-fn best_choice_ev(game:GameState,app: &AppState) -> EVResult  { 
+fn best_choice_ev(game:GameState,app: &mut AppState) -> EVResult  { 
 
-    if let Some(result) = app.ev_cache.lock().unwrap().get(&game) { return *result}; // return cached result if we have one 
+    if let Some(result) = app.ev_cache.get(&game) { return *result}; // return cached result if we have one 
 
     let result = if game.rolls_remaining == 0 { //TODO figure out a non-recursive version of this (better for multi-threading)?
         best_slot_ev(game,app)  // <-----------------
@@ -414,16 +414,16 @@ fn best_choice_ev(game:GameState,app: &AppState) -> EVResult  {
     // console_log(&game,app,result.0,result.1);
 
     if game.rolls_remaining==0 { // periodically update progress and save
-        let e = {app.done.read().unwrap().contains(&game.sorted_open_slots)} ;
+        let e = {app.done.contains(&game.sorted_open_slots)} ;
         if ! e  {
-            app.done.write().unwrap().insert(game.sorted_open_slots);
-            app.progress_bar.write().unwrap().inc(1);
+            app.done.insert(game.sorted_open_slots);
+            app.progress_bar.inc(1);
             console_log(&game,app,result.0,result.1);
             save_periodically(app,600) ;
         }
     }
     
-    app.ev_cache.lock().unwrap().insert(game, result);
+    app.ev_cache.insert(game, result);
     result 
 }
 
