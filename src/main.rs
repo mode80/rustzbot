@@ -210,7 +210,7 @@ fn all_outcomes_rolling_5_dice() -> [DieVals;7776] {
             for iii in 1..=6 {
                 for iv in 1..=6 {
                     for v in 1..=6 {
-                        them[j] = [i as u8, ii as u8, iii as u8, iv as u8, v as u8];
+                        them[j] = [v as u8, iv as u8, iii as u8, ii as u8, i as u8];
                         j+=1;
     } } } } }
     them
@@ -373,8 +373,7 @@ fn best_dice_ev(game:GameState, app: &mut AppState) -> EVResult {
 fn avg_ev_for_selection(game:GameState, app: &mut AppState, selection:Dice) -> f32 {
     let selection_len = selection.len(); // this is how many dice we're selecting to roll
     // optimization: we'll always iterate over (some amount) of the outcomes of rolling 5 dice . This works because
-    // the trailing 'n' dice from the 5-die set amount to the same set outcomes for when 'n' diced are selected 
-    let idx_offset = 5-selection_len; // this will be the offset into the corrrect position when 'n' diced are selected. 
+    // the first 'n' dice from the 5-die set amount to the same set outcomes for when 'n' diced are selected 
     let outcomes_count = [1,6,36,216,1296,7776][selection_len]; // we've pre-calcuated how many outcomes we need to iterate over
     let mut total = 0.0;
     let mut newvals:DieVals; 
@@ -382,7 +381,7 @@ fn avg_ev_for_selection(game:GameState, app: &mut AppState, selection:Dice) -> f
         //###### HOT CODE PATH #######
         newvals=game.sorted_dievals;
         for (i, j) in selection.into_iter().enumerate() { 
-            newvals[j as usize]=outcome[i+idx_offset];    
+            newvals[j as usize]=outcome[i];    
         }
         newvals.sort_unstable();
         let (_choice, next_ev) = best_choice_ev( GameState{ 
