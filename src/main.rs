@@ -36,12 +36,14 @@ fn main() -> Result<(), Box<dyn Error>>{
    
 }
 /*-------------------------------------------------------------*/
+type DieVals = [u8;5];
 type Dice = ArrayVec<[u8;5]>; 
 type Slots = ArrayVec<[u8;13]>;
+type EVResult =(Choice,f32) ; 
 
 #[derive(Debug, PartialEq, Eq, Ord, PartialOrd, Hash, Clone, Copy, Serialize, Deserialize)]
 struct GameState{
-    sorted_dievals:[u8;5], 
+    sorted_dievals:DieVals, 
     rolls_remaining:u8, 
     upper_bonus_deficit:u8, 
     yahtzee_is_wild:bool,
@@ -57,7 +59,7 @@ enum Choice{
 struct AppState{
     progress_bar:Arc<RwLock<ProgressBar>>, 
     done:Arc<RwLock<FxHashSet<Slots>>>, 
-    ev_cache:Arc<Mutex<FxHashMap<GameState,(Choice,f32)>>>,
+    ev_cache:Arc<Mutex<FxHashMap<GameState,EVResult>>>,
     checkpoint: Arc<RwLock<Duration>>,
 }
 impl AppState{
@@ -85,15 +87,15 @@ const STUB:u8=0; const ACES:u8=1; const TWOS:u8=2; const THREES:u8=3; const FOUR
 const THREE_OF_A_KIND:u8=7; const FOUR_OF_A_KIND:u8=8; const FULL_HOUSE:u8=9; const SM_STRAIGHT:u8=10; const LG_STRAIGHT:u8=11; 
 const YAHTZEE:u8=12; const CHANCE:u8=13; 
  
-const UNROLLED_DIEVALS:[u8;5] = [0,0,0,0,0]; const INIT_DEFICIT:u8 = 63;
+const UNROLLED_DIEVALS:DieVals = [0,0,0,0,0]; const INIT_DEFICIT:u8 = 63;
 
-const SCORE_FNS:[fn(sorted_dievals:[u8;5])->u8;14] = [
+const SCORE_FNS:[fn(sorted_dievals:DieVals)->u8;14] = [
     score_aces, // duplicate placeholder so indices align more intuitively with categories 
     score_aces, score_twos, score_threes, score_fours, score_fives, score_sixes, 
     score_3ofakind, score_4ofakind, score_fullhouse, score_sm_str8, score_lg_str8, score_yahtzee, score_chance, 
 ];
 
-static OUTCOMES:Lazy<[[u8;5];7776]> = Lazy::new(all_outcomes_rolling_5_dice);
+static OUTCOMES:Lazy<[DieVals;7776]> = Lazy::new(all_outcomes_rolling_5_dice);
 static SELECTIONS:Lazy<[Dice;32]> = Lazy::new(die_index_combos); 
 // [(), (0,), (0, 1), (0, 1, 2), (0, 1, 2, 3), (0, 1, 2, 3, 4), (0, 1, 2, 4), (0, 1, 3), (0, 1, 3, 4), 
 // (0, 1, 4), (0, 2), (0, 2, 3), (0, 2, 3, 4), (0, 2, 4), (0, 3), (0, 3, 4), (0, 4), (1,), (1, 2), (1, 2, 3), (1, 2, 3, 4), 
@@ -199,10 +201,10 @@ fn die_index_combos() ->[Dice;32]  {
     them
 }
 
-fn all_outcomes_rolling_5_dice() -> [[u8;5];7776] {
+fn all_outcomes_rolling_5_dice() -> [DieVals;7776] {
 
     let mut j:usize=0;
-    let mut them:[[u8;5];7776] = [[0;5];7776]; 
+    let mut them:[DieVals;7776] = [[0;5];7776]; 
     for i in 1..=6 {
         for ii in 1..=6 {
             for iii in 1..=6 {
@@ -214,11 +216,11 @@ fn all_outcomes_rolling_5_dice() -> [[u8;5];7776] {
     them
 }
 
-fn score_upperbox(boxnum:u8, sorted_dievals:[u8;5])->u8{
+fn score_upperbox(boxnum:u8, sorted_dievals:DieVals)->u8{
    sorted_dievals.into_iter().filter(|x| *x==boxnum).sum()
 }
 
-fn score_n_of_a_kind(n:u8,sorted_dievals:[u8;5])->u8{
+fn score_n_of_a_kind(n:u8,sorted_dievals:DieVals)->u8{
     let mut inarow=1; let mut maxinarow=1; let mut lastval=100; let mut sum=0; 
     for x in sorted_dievals {
         if x==lastval && x!=0 {inarow +=1} else {inarow=1}
@@ -232,7 +234,7 @@ fn score_n_of_a_kind(n:u8,sorted_dievals:[u8;5])->u8{
 }
 
 
-fn straight_len(sorted_dievals:[u8;5])->u8 {
+fn straight_len(sorted_dievals:DieVals)->u8 {
     let mut inarow=1; 
     let mut maxinarow=1; 
     let mut lastval=254; // stub
@@ -245,20 +247,20 @@ fn straight_len(sorted_dievals:[u8;5])->u8 {
     maxinarow 
 }
 
-fn score_aces(sorted_dievals:       [u8;5])->u8{ score_upperbox(1,sorted_dievals) }
-fn score_twos(sorted_dievals:       [u8;5])->u8{ score_upperbox(2,sorted_dievals) }
-fn score_threes(sorted_dievals:     [u8;5])->u8{ score_upperbox(3,sorted_dievals) }
-fn score_fours(sorted_dievals:      [u8;5])->u8{ score_upperbox(4,sorted_dievals) }
-fn score_fives(sorted_dievals:      [u8;5])->u8{ score_upperbox(5,sorted_dievals) }
-fn score_sixes(sorted_dievals:      [u8;5])->u8{ score_upperbox(6,sorted_dievals) }
+fn score_aces(sorted_dievals:       DieVals)->u8{ score_upperbox(1,sorted_dievals) }
+fn score_twos(sorted_dievals:       DieVals)->u8{ score_upperbox(2,sorted_dievals) }
+fn score_threes(sorted_dievals:     DieVals)->u8{ score_upperbox(3,sorted_dievals) }
+fn score_fours(sorted_dievals:      DieVals)->u8{ score_upperbox(4,sorted_dievals) }
+fn score_fives(sorted_dievals:      DieVals)->u8{ score_upperbox(5,sorted_dievals) }
+fn score_sixes(sorted_dievals:      DieVals)->u8{ score_upperbox(6,sorted_dievals) }
 
-fn score_3ofakind(sorted_dievals:   [u8;5])->u8{ score_n_of_a_kind(3,sorted_dievals) }
-fn score_4ofakind(sorted_dievals:   [u8;5])->u8{ score_n_of_a_kind(4,sorted_dievals) }
-fn score_sm_str8(sorted_dievals:    [u8;5])->u8{ if straight_len(sorted_dievals) >=4 {30} else {0} }
-fn score_lg_str8(sorted_dievals:    [u8;5])->u8{ if straight_len(sorted_dievals) >=5 {40} else {0} }
+fn score_3ofakind(sorted_dievals:   DieVals)->u8{ score_n_of_a_kind(3,sorted_dievals) }
+fn score_4ofakind(sorted_dievals:   DieVals)->u8{ score_n_of_a_kind(4,sorted_dievals) }
+fn score_sm_str8(sorted_dievals:    DieVals)->u8{ if straight_len(sorted_dievals) >=4 {30} else {0} }
+fn score_lg_str8(sorted_dievals:    DieVals)->u8{ if straight_len(sorted_dievals) >=5 {40} else {0} }
 
 // The official rule is that a Full House is "three of one number and two of another"
-fn score_fullhouse(sorted_dievals:[u8;5]) -> u8 { 
+fn score_fullhouse(sorted_dievals:DieVals) -> u8 { 
     let counts = sorted_dievals.iter().collect::<Counter<_>>().most_common_ordered(); //sorted(list(Counter(sorted_dievals).values() ))
     if counts.len()==2 && 
         (counts[0].1==3 && counts[1].1==2) &&
@@ -266,20 +268,20 @@ fn score_fullhouse(sorted_dievals:[u8;5]) -> u8 {
     {25} else {0}
 }
 
-fn score_chance(sorted_dievals:[u8;5])->u8 { sorted_dievals.iter().sum()  }
-fn score_yahtzee(sorted_dievals:[u8;5])->u8 { 
+fn score_chance(sorted_dievals:DieVals)->u8 { sorted_dievals.iter().sum()  }
+fn score_yahtzee(sorted_dievals:DieVals)->u8 { 
     let deduped=sorted_dievals.iter().dedup().collect_vec();
     if deduped.len()==1 && sorted_dievals[0]!=0 {50} else {0} 
 }
 
 /// reports the score for a set of dice in a given slot w/o regard for exogenous gamestate (bonuses, yahtzee wildcards etc)
-fn score_slot(slot:u8, sorted_dievals:[u8;5])->u8{
+fn score_slot(slot:u8, sorted_dievals:DieVals)->u8{
     SCORE_FNS[slot as usize](sorted_dievals) 
 }
 /*-------------------------------------------------------------*/
 
 /// returns the best slot and corresponding ev for final dice, given the slot possibilities and other relevant state 
-fn best_slot_ev(game:GameState, app: &AppState) -> (Choice,f32) {
+fn best_slot_ev(game:GameState, app: &AppState) -> EVResult  {
 
     // TODO consider slot_sequences.chunk(___) + multi-threading
     let mut best_ev = 0.0; 
@@ -348,7 +350,7 @@ fn best_slot_ev(game:GameState, app: &AppState) -> (Choice,f32) {
 }
 
 /// returns the best selection of dice and corresponding ev, given slots left, existing dice, and other relevant state 
-fn best_dice_ev(game:GameState, app: &AppState) -> (Choice,f32){ 
+fn best_dice_ev(game:GameState, app: &AppState) -> EVResult { 
 
     let mut best_selection = array_vec![0,1,2,3,4]; // default selection is "all dice"
     let mut best_ev = 0.0; 
@@ -375,7 +377,7 @@ fn avg_ev_for_selection(game:GameState, app: &AppState, selection:Dice) -> f32 {
     let idx_offset = 5-selection_len; // this will be the offset into the corrrect position when 'n' diced are selected. 
     let outcomes_count = [1,6,36,216,1296,7776][selection_len]; // we've pre-calcuated how many outcomes we need to iterate over
     let mut total = 0.0;
-    let mut newvals:[u8;5]; 
+    let mut newvals:DieVals; 
     for outcome in OUTCOMES.iter().take(outcomes_count) { 
         //###### HOT CODE PATH #######
         newvals=game.sorted_dievals;
@@ -399,7 +401,7 @@ fn avg_ev_for_selection(game:GameState, app: &AppState, selection:Dice) -> f32 {
 
 /// returns the best game Choice along with its expected value, given relevant game state.
 // #[cached(key = "GameState", convert = r#"{ game }"#)] 
-fn best_choice_ev(game:GameState,app: &AppState) -> (Choice,f32) { 
+fn best_choice_ev(game:GameState,app: &AppState) -> EVResult  { 
 
     if let Some(result) = app.ev_cache.lock().unwrap().get(&game) { return *result}; // return cached result if we have one 
 
