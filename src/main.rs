@@ -369,6 +369,7 @@ fn best_dice_ev(game:GameState, app: &mut AppState) -> EVResult {
 
 /// returns the average of all the expected values for rolling a selection of dice, given the game and app state
 /// "selection" is the set of dice to roll, as represented their indexes in a 5-length array
+#[allow(clippy::needless_range_loop)]
 #[inline(always)] // ~6% speedup 
 fn avg_ev_for_selection(game:GameState, app: &mut AppState, selection:Dice) -> f32 {
     let selection_len = selection.len(); // this is how many dice we're selecting to roll
@@ -377,11 +378,16 @@ fn avg_ev_for_selection(game:GameState, app: &mut AppState, selection:Dice) -> f
     let outcomes_count = [1,6,36,216,1296,7776][selection_len]; // we've pre-calcuated how many outcomes we need to iterate over
     let mut total = 0.0;
     let mut newvals:DieVals; 
+    let selection_ = selection.as_slice();
+    let selection_len = selection_.len();
+    let mut j;
     for outcome in OUTCOMES.iter().take(outcomes_count) { 
         //###### HOT CODE PATH #######
         newvals=game.sorted_dievals;
-        for (i, j) in selection.into_iter().enumerate() { 
-            newvals[j as usize]=outcome[i];    
+        j=0;
+        for i in 0..selection_len { // {(i, j) in selection_slice.iter().enumerate() { 
+            newvals[selection_[j] as usize]=outcome[i];    
+            j+=1;
         }
         newvals.sort_unstable();
         let (_choice, next_ev) = best_choice_ev( GameState{ 
