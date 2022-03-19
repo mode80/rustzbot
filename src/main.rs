@@ -65,8 +65,8 @@ struct AppState{
 }
 impl AppState{
     fn new(game: &GameState) -> Self{
-        let slot_count=game.sorted_open_slots.len();
-        let combo_count = (1..=slot_count).map(|r| n_take_r(slot_count as u128, r as u128,false,false) as u64 ).sum() ;
+        let slot_count=game.sorted_open_slots.len() as u8;
+        let combo_count = (1..=slot_count).map(|r| n_take_r(slot_count, r ,false,false) as u64 ).sum() ;
         // let bytes = fs::read("ev_cache").unwrap(); // TODO don't forget to re-enable cache load here
         // let cachemap = ::bincode::deserialize(&bytes).unwrap() ;
         let init_capacity = combo_count as usize * 252 * 64; 
@@ -110,13 +110,23 @@ static SELECTION_RANGES:Lazy<[Range<usize>;32]> = Lazy::new(selection_ranges);
 /*-------------------------------------------------------------*/
 
 /// rudimentary factorial suitable for our purposes here.. handles up to fact(34) */
-fn fact(n: u128) -> u128{
-    if n<=1 {1} else { n*fact(n-1) }
+fn fact(n: u8) -> u128{
+    let big_n = n as u128;
+    if n<=1 {1} else { (big_n)*fact(n-1) }
+}
+
+fn distinct_outcome_count(dievals:[u8;5])->u128{
+    let counts = dievals.into_iter().collect::<Counter<_>>();
+    let mut divisor:usize=1;
+    for count in counts { 
+        divisor *= fact(count.1 as u8) as usize ; 
+    } 
+    (fact(5) as f64 / divisor as f64) as u128
 }
 
 /// count of arrangements that can be formed from r selections, chosen from n items, 
 /// where order DOES or DOESNT matter, and WITH or WITHOUT replacement, as specified
-fn n_take_r(n:u128, r:u128, ordered:bool, with_replacement:bool)->u128{
+fn n_take_r(n:u8, r:u8, ordered:bool, with_replacement:bool)->u128{
 
     if !ordered { // we're counting "combinations" where order doesn't matter, so there are less of these 
         if with_replacement {
@@ -126,7 +136,7 @@ fn n_take_r(n:u128, r:u128, ordered:bool, with_replacement:bool)->u128{
         }
     } else { // is ordered
         if with_replacement {
-            n.pow(r as u32)
+            (n as u128).pow(r as u32)
         } else { // no replacement
             fact(n) / fact(n-r)
         }
@@ -217,7 +227,7 @@ fn selection_ranges() ->[Range<usize>;32]  {
     let mut sel_ranges:[Range<usize>;32] = Default::default();
     let mut s = 0;
     for (i,combo) in die_index_combos().into_iter().enumerate(){
-        let count = n_take_r(6, combo.len() as u128, false, true) ;
+        let count = n_take_r(6, combo.len() as u8, false, true) ;
         sel_ranges[i] = s..(s+count as usize);
         s += count as usize; 
     }
@@ -395,7 +405,10 @@ fn best_dice_ev(game:GameState, app: &mut AppState) -> EVResult {
     } else { // iterate over all the possible ways to select dice and take the best outcome 
         for selection in 0_u8..=31 {
             let avg_ev = avg_ev_for_selection(game,app,selection);
-            if avg_ev > best_ev {best_ev = avg_ev; best_selection = selection; }
+            if avg_ev > best_ev {
+                best_ev = avg_ev; 
+                best_selection = selection; 
+            }
         }
     }
     // console_log(game, app, Choice::Dice(best_selection), best_ev );
@@ -416,8 +429,10 @@ fn avg_ev_for_selection(game:GameState, app: &mut AppState, selection_bitfield:u
     for outcome in SELECTION_OUTCOMES[range].iter() { 
         //###### HOT CODE PATH #######
         newvals=game.sorted_dievals;
-        for i in 0..4 { 
-            if outcome[i]!=0 {newvals[i]=outcome[i]};
+        for i in 0..=4 { 
+            if outcome[i]!=0 {
+                newvals[i]=outcome[i]
+            };
         }
         newvals.sort_unstable();
         let (_choice, next_ev) = best_choice_ev( GameState{ 
@@ -427,8 +442,8 @@ fn avg_ev_for_selection(game:GameState, app: &mut AppState, selection_bitfield:u
             upper_bonus_deficit: game.upper_bonus_deficit,
             sorted_dievals: newvals, 
         }, app);
-        let dice_rolled = (*outcome).into_iter().fold(0,|a,x| {a+if x>0 {1} else {0}}) as usize;
-        arrangement_count = CACHED_FACTORIALS[dice_rolled];
+        // eprintln!("{:?} {:?} {:?}",outcome, newvals, next_ev); 
+        arrangement_count = distinct_outcome_count(newvals); //TODO cache these somehow
         outcomes_count += arrangement_count ;
         total += next_ev * arrangement_count as f32;
         //############################

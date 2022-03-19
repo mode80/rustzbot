@@ -21,7 +21,7 @@ fn ev_of_yahtzee_in_1_roll() {
 // see https://www.yahtzeemanifesto.com/yahtzee-odds.php 
     let game = GameState{   rolls_remaining: 1, 
                             sorted_open_slots: array_vec!([u8;13] => YAHTZEE ), 
-                            sorted_dievals: UNROLLED_DIEVALS, 
+                            sorted_dievals: [0,0,0,0,0], 
                             upper_bonus_deficit: INIT_DEFICIT , yahtzee_is_wild: false, };
     let app = &mut AppState::new(&game);
     let _result = best_choice_ev(game, app);
@@ -29,7 +29,7 @@ fn ev_of_yahtzee_in_1_roll() {
     assert_approx_eq!( _result.1 , 6.0 * (1.0/6.0).powi(5) * 50.0 );
 }
 
-// #[test]
+#[test]
 fn ev_of_yahtzee_in_3_rolls() {
 // see https://www.yahtzeemanifesto.com/yahtzee-odds.php 
     let game = GameState{   rolls_remaining: 3, 
@@ -143,7 +143,7 @@ fn test_permutations() {
     }; 
 }
 
-#[test]
+// #[test]
 fn bench_test() {
     // let slots= array_vec!([u8;13] => 1,2,3,4,5,6,7,8,9,10,11,12,13);
     let game = GameState{   rolls_remaining: 0, 
