@@ -95,9 +95,10 @@ const SCORE_FNS:[fn(sorted_dievals:DieVals)->u8;14] = [
     score_3ofakind, score_4ofakind, score_fullhouse, score_sm_str8, score_lg_str8, score_yahtzee, score_chance, 
 ];
 
-static OUTCOMES:Lazy<[DieVals;7776]> = Lazy::new(all_outcomes_rolling_5_dice);
+static OUTCOMES:Lazy<[DieVals;7776]> = Lazy::new(five_dice_permutations);
 static SELECTIONS:Lazy<[Dice;32]> = Lazy::new(die_index_combos); 
 static SELECTION_OUTCOMES:Lazy<[DieVals;1683]> = Lazy::new(all_selection_outcomes); 
+static FIVE_DIE_SEL_OUTS:Lazy<[DieVals;252]> = Lazy::new(five_dice_combinations); 
 // [(), (0,), (0, 1), (0, 1, 2), (0, 1, 2, 3), (0, 1, 2, 3, 4), (0, 1, 2, 4), (0, 1, 3), (0, 1, 3, 4), 
 // (0, 1, 4), (0, 2), (0, 2, 3), (0, 2, 3, 4), (0, 2, 4), (0, 3), (0, 3, 4), (0, 4), (1,), (1, 2), (1, 2, 3), (1, 2, 3, 4), 
 // (1, 2, 4), (1, 3), (1, 3, 4), (1, 4), (2,), (2, 3), (2, 3, 4), (2, 4), (3,), (3, 4), (4,)]
@@ -200,8 +201,12 @@ fn all_selection_outcomes() ->[DieVals;1683]  {
             retval.push(sel_out);
         }
     } 
-    retval.sort_unstable();
+    // retval.sort_unstable();
     retval.try_into().unwrap()
+}
+
+fn five_dice_combinations() ->[DieVals;252]{
+    (*SELECTION_OUTCOMES)[1683-252..].try_into().unwrap()
 }
 
 /// the set of all ways to roll different dice, as represented by a collection of index arrays
@@ -209,16 +214,16 @@ fn all_selection_outcomes() ->[DieVals;1683]  {
 fn die_index_combos() ->[Dice;32]  { 
     let mut i=0; 
     let mut them:[Dice;32] = [Dice::new() ;32]; // init dice arrray 
-    for combo in (0..=4).combinations(1){ them[i]= {let mut it=Dice::new(); it.extend_from_slice(&combo); i+=1; it} } 
-    for combo in (0..=4).combinations(2){ them[i]= {let mut it=Dice::new(); it.extend_from_slice(&combo); i+=1; it} } 
-    for combo in (0..=4).combinations(3){ them[i]= {let mut it=Dice::new(); it.extend_from_slice(&combo); i+=1; it} } 
-    for combo in (0..=4).combinations(4){ them[i]= {let mut it=Dice::new(); it.extend_from_slice(&combo); i+=1; it} } 
-    for combo in (0..=4).combinations(5){ them[i]= {let mut it=Dice::new(); it.extend_from_slice(&combo); i+=1; it} } 
-    them.sort_unstable();
+    for n in 1..=5 {
+        for combo in (0..=4).combinations(n){ 
+            them[i]= {let mut it=Dice::new(); it.extend_from_slice(&combo); i+=1; it} 
+        } 
+    }
+    // them.sort_unstable();
     them
 }
 
-fn all_outcomes_rolling_5_dice() -> [DieVals;7776] {
+fn five_dice_permutations() -> [DieVals;7776] {
 
     let mut j:usize=0;
     let mut them:[DieVals;7776] = [[0;5];7776]; 
