@@ -2,7 +2,7 @@
 #![allow(unused_imports)]
 // #![allow(unused_variables)]
 
-use std::{cmp::max, sync::{Arc, RwLock, Mutex}, error::{self, Error}, fs::{self, File}, time::Duration};
+use std::{cmp::max, sync::{Arc, RwLock, Mutex}, error::{self, Error}, fs::{self, File}, time::Duration, ops::Range};
 // use cached::proc_macro::cached;
 use counter::Counter;
 use itertools::Itertools;
@@ -99,6 +99,7 @@ static OUTCOMES:Lazy<[DieVals;7776]> = Lazy::new(five_dice_permutations);
 static SELECTIONS:Lazy<[Dice;32]> = Lazy::new(die_index_combos); 
 static SELECTION_OUTCOMES:Lazy<[DieVals;1683]> = Lazy::new(all_selection_outcomes); 
 static FIVE_DIE_SEL_OUTS:Lazy<[DieVals;252]> = Lazy::new(five_dice_combinations); 
+static SELECTION_RANGES:Lazy<[Range<usize>;6]> = Lazy::new(selection_ranges); 
 // [(), (0,), (0, 1), (0, 1, 2), (0, 1, 2, 3), (0, 1, 2, 3, 4), (0, 1, 2, 4), (0, 1, 3), (0, 1, 3, 4), 
 // (0, 1, 4), (0, 2), (0, 2, 3), (0, 2, 3, 4), (0, 2, 4), (0, 3), (0, 3, 4), (0, 4), (1,), (1, 2), (1, 2, 3), (1, 2, 3, 4), 
 // (1, 2, 4), (1, 3), (1, 3, 4), (1, 4), (2,), (2, 3), (2, 3, 4), (2, 4), (3,), (3, 4), (4,)]
@@ -196,7 +197,7 @@ fn all_selection_outcomes() ->[DieVals;1683]  {
         sel_out = [0,0,0,0,0];
         for dievals in [1,2,3,4,5,6].into_iter().combinations_with_replacement(sel.len()){ 
             for (i, dieval) in dievals.into_iter().enumerate() {
-                sel_out[sel[i] as usize]=dieval;
+                sel_out[4-sel[i] as usize]=dieval;
             }
             retval.push(sel_out);
         }
@@ -209,15 +210,24 @@ fn five_dice_combinations() ->[DieVals;252]{
     (*SELECTION_OUTCOMES)[1683-252..].try_into().unwrap()
 }
 
+fn selection_ranges() ->[Range<usize>;6]  { 
+    let mut them:[Range<usize>;6] = Default::default(); 
+    let mut s=0; let mut len; 
+    for (i,r) in (0..=5).enumerate() {
+        len = n_take_r(5, r, false, false) as usize;
+        them[i]=Range{start:s, end:s+len-1};
+        s+=len;
+    }
+    them
+}
+
 /// the set of all ways to roll different dice, as represented by a collection of index arrays
 #[allow(clippy::eval_order_dependence)]
 fn die_index_combos() ->[Dice;32]  { 
+    let mut them = [Dice::new() ;32]; // init dice arrray 
     let mut i=0; 
-    let mut them:[Dice;32] = [Dice::new() ;32]; // init dice arrray 
     for n in 1..=5 {
-        for combo in (0..=4).combinations(n){ 
-            them[i]= {let mut it=Dice::new(); it.extend_from_slice(&combo); i+=1; it} 
-        } 
+        for combo in (0..=4).combinations(n){ them[i]= {let mut it=Dice::new(); it.extend_from_slice(&combo);  i+=1; it} } 
     }
     // them.sort_unstable();
     them

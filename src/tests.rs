@@ -157,7 +157,8 @@ fn bench_test() {
 }
 
 #[test]
-fn all_selection_outcomes_test() {
+fn print_misc() {
+    // eprint!("{:?}", selection_ranges() );
+    // eprint!("{:?}", all_selection_outcomes() );
     eprint!("{:?}", five_dice_combinations() );
-    eprint!("{:?}", all_selection_outcomes() );
 }
