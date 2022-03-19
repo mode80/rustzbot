@@ -99,6 +99,7 @@ const SCORE_FNS:[fn(sorted_dievals:DieVals)->u8;14] = [
 // static OUTCOMES:Lazy<[DieVals;7776]> = Lazy::new(five_dice_permutations);
 // static SELECTIONS:Lazy<[Dice;32]> = Lazy::new(die_index_combos); 
 
+const CACHED_FACTORIALS:[usize;6] = [1, 1, 2, 6, 24, 120];
 static SELECTION_OUTCOMES:Lazy<[DieVals;1683]> = Lazy::new(all_selection_outcomes); 
 // static FIVE_DIE_SEL_OUTS:Lazy<[DieVals;252]> = Lazy::new(five_dice_combinations); 
 static SELECTION_RANGES:Lazy<[Range<usize>;32]> = Lazy::new(selection_ranges); 
@@ -217,7 +218,7 @@ fn selection_ranges() ->[Range<usize>;32]  {
     let mut s = 0;
     for (i,combo) in die_index_combos().into_iter().enumerate(){
         let count = n_take_r(6, combo.len() as u128, false, true) ;
-        sel_ranges[i] = s..(s+count as usize-1);
+        sel_ranges[i] = s..(s+count as usize);
         s += count as usize; 
     }
     sel_ranges
@@ -410,7 +411,8 @@ fn avg_ev_for_selection(game:GameState, app: &mut AppState, selection_bitfield:u
     let mut newvals:DieVals; 
     
     let range = SELECTION_RANGES[selection_bitfield as usize].clone();
-    let outcomes_count = range.len();
+    let mut outcomes_count = 0; 
+    let mut arrangement_count;
     for outcome in SELECTION_OUTCOMES[range].iter() { 
         //###### HOT CODE PATH #######
         newvals=game.sorted_dievals;
@@ -425,10 +427,13 @@ fn avg_ev_for_selection(game:GameState, app: &mut AppState, selection_bitfield:u
             upper_bonus_deficit: game.upper_bonus_deficit,
             sorted_dievals: newvals, 
         }, app);
-        total += next_ev 
+        let dice_rolled = (*outcome).into_iter().fold(0,|a,x| {a+if x>0 {1} else {0}}) as usize;
+        arrangement_count = CACHED_FACTORIALS[dice_rolled];
+        outcomes_count += arrangement_count ;
+        total += next_ev * arrangement_count as f32;
         //############################
     }
-    total/outcomes_count as f32
+    total/outcomes_count as f32 
 }
 
 

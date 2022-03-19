@@ -160,7 +160,7 @@ fn bench_test() {
 fn print_misc() {
     // eprint!("{:?}", selection_ranges() );
     // eprint!("{:?}", all_selection_outcomes() );
-    // eprintln!("{:?}", selection_ranges() );
+    eprintln!("{:?}", selection_ranges() );
     // eprint!("{:?}", five_dice_combinations() );
     // eprint!("{:?}", die_index_combos() );
 }
