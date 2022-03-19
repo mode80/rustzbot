@@ -143,7 +143,7 @@ fn test_permutations() {
     }; 
 }
 
-// #[test]
+#[test]
 fn bench_test() {
     // let slots= array_vec!([u8;13] => 1,2,3,4,5,6,7,8,9,10,11,12,13);
     let game = GameState{   rolls_remaining: 0, 
@@ -156,9 +156,11 @@ fn bench_test() {
     // save_cache(&app);
 }
 
-#[test]
+// #[test]
 fn print_misc() {
     // eprint!("{:?}", selection_ranges() );
     // eprint!("{:?}", all_selection_outcomes() );
-    eprint!("{:?}", five_dice_combinations() );
+    // eprintln!("{:?}", selection_ranges() );
+    // eprint!("{:?}", five_dice_combinations() );
+    // eprint!("{:?}", die_index_combos() );
 }

@@ -37,7 +37,8 @@ fn main() -> Result<(), Box<dyn Error>>{
 }
 /*-------------------------------------------------------------*/
 type DieVals = [u8;5];
-type Dice = ArrayVec<[u8;5]>; 
+type DieIdxAV = ArrayVec<[u8;5]>; 
+type DiceBits = u8;
 type Slots = ArrayVec<[u8;13]>;
 type EVResult =(Choice,f32) ; 
 
@@ -53,7 +54,7 @@ struct GameState{
 #[derive(Debug,Clone,Copy,Serialize,Deserialize,PartialEq)]
 enum Choice{
     Slot(u8),
-    Dice(Dice)
+    Dice(DiceBits)
 }
 
 struct AppState{
@@ -95,11 +96,12 @@ const SCORE_FNS:[fn(sorted_dievals:DieVals)->u8;14] = [
     score_3ofakind, score_4ofakind, score_fullhouse, score_sm_str8, score_lg_str8, score_yahtzee, score_chance, 
 ];
 
-static OUTCOMES:Lazy<[DieVals;7776]> = Lazy::new(five_dice_permutations);
-static SELECTIONS:Lazy<[Dice;32]> = Lazy::new(die_index_combos); 
+// static OUTCOMES:Lazy<[DieVals;7776]> = Lazy::new(five_dice_permutations);
+// static SELECTIONS:Lazy<[Dice;32]> = Lazy::new(die_index_combos); 
+
 static SELECTION_OUTCOMES:Lazy<[DieVals;1683]> = Lazy::new(all_selection_outcomes); 
-static FIVE_DIE_SEL_OUTS:Lazy<[DieVals;252]> = Lazy::new(five_dice_combinations); 
-static SELECTION_RANGES:Lazy<[Range<usize>;6]> = Lazy::new(selection_ranges); 
+// static FIVE_DIE_SEL_OUTS:Lazy<[DieVals;252]> = Lazy::new(five_dice_combinations); 
+static SELECTION_RANGES:Lazy<[Range<usize>;32]> = Lazy::new(selection_ranges); 
 // [(), (0,), (0, 1), (0, 1, 2), (0, 1, 2, 3), (0, 1, 2, 3, 4), (0, 1, 2, 4), (0, 1, 3), (0, 1, 3, 4), 
 // (0, 1, 4), (0, 2), (0, 2, 3), (0, 2, 3, 4), (0, 2, 4), (0, 3), (0, 3, 4), (0, 4), (1,), (1, 2), (1, 2, 3), (1, 2, 3, 4), 
 // (1, 2, 4), (1, 3), (1, 3, 4), (1, 4), (2,), (2, 3), (2, 3, 4), (2, 4), (3,), (3, 4), (4,)]
@@ -210,24 +212,24 @@ fn five_dice_combinations() ->[DieVals;252]{
     (*SELECTION_OUTCOMES)[1683-252..].try_into().unwrap()
 }
 
-fn selection_ranges() ->[Range<usize>;6]  { 
-    let mut them:[Range<usize>;6] = Default::default(); 
-    let mut s=0; let mut len; 
-    for (i,r) in (0..=5).enumerate() {
-        len = n_take_r(5, r, false, false) as usize;
-        them[i]=Range{start:s, end:s+len-1};
-        s+=len;
+fn selection_ranges() ->[Range<usize>;32]  { 
+    let mut sel_ranges:[Range<usize>;32] = Default::default();
+    let mut s = 0;
+    for (i,combo) in die_index_combos().into_iter().enumerate(){
+        let count = n_take_r(6, combo.len() as u128, false, true) ;
+        sel_ranges[i] = s..(s+count as usize-1);
+        s += count as usize; 
     }
-    them
+    sel_ranges
 }
 
 /// the set of all ways to roll different dice, as represented by a collection of index arrays
 #[allow(clippy::eval_order_dependence)]
-fn die_index_combos() ->[Dice;32]  { 
-    let mut them = [Dice::new() ;32]; // init dice arrray 
+fn die_index_combos() ->[DieIdxAV;32]  { 
+    let mut them = [DieIdxAV::new() ;32]; // init dice arrray 
     let mut i=0; 
     for n in 1..=5 {
-        for combo in (0..=4).combinations(n){ them[i]= {let mut it=Dice::new(); it.extend_from_slice(&combo);  i+=1; it} } 
+        for combo in (0..=4).combinations(n){ them[i]= {let mut it=DieIdxAV::new(); it.extend_from_slice(&combo);  i+=1; it} } 
     }
     // them.sort_unstable();
     them
@@ -384,13 +386,13 @@ fn best_slot_ev(game:GameState, app: &mut AppState) -> EVResult  {
 /// returns the best selection of dice and corresponding ev, given slots left, existing dice, and other relevant state 
 fn best_dice_ev(game:GameState, app: &mut AppState) -> EVResult { 
 
-    let mut best_selection = array_vec![0,1,2,3,4]; // default selection is "all dice"
+    let mut best_selection = 0b11111; // default selection is "all dice"
     let mut best_ev = 0.0; 
     if game.rolls_remaining==3 {// special case .. we always roll all dice on initial roll
         best_ev = avg_ev_for_selection(game,app,best_selection);
         return (Choice::Dice(best_selection), best_ev)
     } else { // iterate over all the possible ways to select dice and take the best outcome 
-        for selection in SELECTIONS.into_iter() {
+        for selection in 0_u8..=31 {
             let avg_ev = avg_ev_for_selection(game,app,selection);
             if avg_ev > best_ev {best_ev = avg_ev; best_selection = selection; }
         }
@@ -403,23 +405,17 @@ fn best_dice_ev(game:GameState, app: &mut AppState) -> EVResult {
 /// "selection" is the set of dice to roll, as represented their indexes in a 5-length array
 #[allow(clippy::needless_range_loop)]
 #[inline(always)] // ~6% speedup 
-fn avg_ev_for_selection(game:GameState, app: &mut AppState, selection:Dice) -> f32 {
-    let selection_len = selection.len(); // this is how many dice we're selecting to roll
-    // optimization: we'll always iterate over (some amount) of the outcomes of rolling 5 dice . This works because
-    // the first 'n' dice from the 5-die set amount to the same set outcomes for when 'n' diced are selected 
-    let outcomes_count = [1,6,36,216,1296,7776][selection_len]; // we've pre-calcuated how many outcomes we need to iterate over
+fn avg_ev_for_selection(game:GameState, app: &mut AppState, selection_bitfield:u8) -> f32 {
     let mut total = 0.0;
     let mut newvals:DieVals; 
-    let selection_ = selection.as_slice();
-    let selection_len = selection_.len();
-    let mut j;
-    for outcome in OUTCOMES.iter().take(outcomes_count) { 
+    
+    let range = SELECTION_RANGES[selection_bitfield as usize].clone();
+    let outcomes_count = range.len();
+    for outcome in SELECTION_OUTCOMES[range].iter() { 
         //###### HOT CODE PATH #######
         newvals=game.sorted_dievals;
-        j=0;
-        for i in 0..selection_len { // {(i, j) in selection_slice.iter().enumerate() { 
-            newvals[selection_[j] as usize]=outcome[i];    
-            j+=1;
+        for i in 0..4 { 
+            if outcome[i]!=0 {newvals[i]=outcome[i]};
         }
         newvals.sort_unstable();
         let (_choice, next_ev) = best_choice_ev( GameState{ 
