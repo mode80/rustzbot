@@ -97,6 +97,7 @@ const SCORE_FNS:[fn(sorted_dievals:DieVals)->u8;14] = [
 
 static OUTCOMES:Lazy<[DieVals;7776]> = Lazy::new(all_outcomes_rolling_5_dice);
 static SELECTIONS:Lazy<[Dice;32]> = Lazy::new(die_index_combos); 
+static SELECTION_OUTCOMES:Lazy<[DieVals;1683]> = Lazy::new(all_selection_outcomes); 
 // [(), (0,), (0, 1), (0, 1, 2), (0, 1, 2, 3), (0, 1, 2, 3, 4), (0, 1, 2, 4), (0, 1, 3), (0, 1, 3, 4), 
 // (0, 1, 4), (0, 2), (0, 2, 3), (0, 2, 3, 4), (0, 2, 4), (0, 3), (0, 3, 4), (0, 4), (1,), (1, 2), (1, 2, 3), (1, 2, 3, 4), 
 // (1, 2, 4), (1, 3), (1, 3, 4), (1, 4), (2,), (2, 3), (2, 3, 4), (2, 4), (3,), (3, 4), (4,)]
@@ -186,8 +187,24 @@ impl Iterator for SlotPermutations{
 }
 
 /*-------------------------------------------------------------*/
+//the set of roll outcomes for every possible selection among 5 dice, where '0' represents an unselected die
+fn all_selection_outcomes() ->[DieVals;1683]  { 
+    let mut retval = Vec::<DieVals>::new();
+    let mut sel_out;
+    for sel in die_index_combos(){
+        sel_out = [0,0,0,0,0];
+        for dievals in [1,2,3,4,5,6].into_iter().combinations_with_replacement(sel.len()){ 
+            for (i, dieval) in dievals.into_iter().enumerate() {
+                sel_out[sel[i] as usize]=dieval;
+            }
+            retval.push(sel_out);
+        }
+    } 
+    retval.sort_unstable();
+    retval.try_into().unwrap()
+}
 
-/// the set of all ways to roll different dice, as represented by a collection of indice vecs 
+/// the set of all ways to roll different dice, as represented by a collection of index arrays
 #[allow(clippy::eval_order_dependence)]
 fn die_index_combos() ->[Dice;32]  { 
     let mut i=0; 

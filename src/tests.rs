@@ -156,3 +156,9 @@ fn bench_test() {
     // save_cache(&app);
 }
 
+// #[test]
+fn all_selection_outcomes_test() {
+    // eprint!("{:?}", outcomes_rolling_5_dice() );
+    eprint!("{:?}", all_selection_outcomes() );
+    // eprint!("{:?}", n_dieval_combos() );
+}
