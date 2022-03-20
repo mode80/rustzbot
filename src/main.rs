@@ -115,13 +115,17 @@ fn fact(n: u8) -> u128{
     if n<=1 {1} else { (big_n)*fact(n-1) }
 }
 
-fn distinct_outcome_count(dievals:[u8;5])->u128{
-    let counts = dievals.into_iter().collect::<Counter<_>>();
+fn distinct_outcomes_for(dievals:&[u8;5])->u128{
+    let counts = dievals.iter().counts();
     let mut divisor:usize=1;
+    let mut non_zero_dievals=0_u8;
     for count in counts { 
-        divisor *= fact(count.1 as u8) as usize ; 
+        if *count.0 != 0 { 
+            divisor *= fact(count.1 as u8) as usize ; 
+            non_zero_dievals += count.1 as u8;
+        }
     } 
-    (fact(5) as f64 / divisor as f64) as u128
+    (fact(non_zero_dievals) as f64 / divisor as f64) as u128
 }
 
 /// count of arrangements that can be formed from r selections, chosen from n items, 
@@ -394,6 +398,7 @@ fn best_slot_ev(game:GameState, app: &mut AppState) -> EVResult  {
     (Choice::Slot(best_slot), best_ev)
 }
 
+#[allow(clippy::if_same_then_else)] //TODO remove
 /// returns the best selection of dice and corresponding ev, given slots left, existing dice, and other relevant state 
 fn best_dice_ev(game:GameState, app: &mut AppState) -> EVResult { 
 
@@ -442,10 +447,11 @@ fn avg_ev_for_selection(game:GameState, app: &mut AppState, selection_bitfield:u
             upper_bonus_deficit: game.upper_bonus_deficit,
             sorted_dievals: newvals, 
         }, app);
-        // eprintln!("{:?} {:?} {:?}",outcome, newvals, next_ev); 
-        arrangement_count = distinct_outcome_count(newvals); //TODO cache these somehow
+        arrangement_count = distinct_outcomes_for(outcome); //TODO cache these somehow
         outcomes_count += arrangement_count ;
-        total += next_ev * arrangement_count as f32;
+        let increment = next_ev * arrangement_count as f32; 
+        total += increment;
+        // eprintln!("{:?} {:?} {:?} {:?} {:?} {:?}", game.rolls_remaining, outcome, newvals, next_ev, arrangement_count, increment); // for debugging
         //############################
     }
     total/outcomes_count as f32 

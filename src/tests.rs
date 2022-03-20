@@ -21,15 +21,28 @@ fn ev_of_yahtzee_in_1_roll() {
 // see https://www.yahtzeemanifesto.com/yahtzee-odds.php 
     let game = GameState{   rolls_remaining: 1, 
                             sorted_open_slots: array_vec!([u8;13] => YAHTZEE ), 
-                            sorted_dievals: [0,0,0,0,0], 
+                            sorted_dievals: UNROLLED_DIEVALS, 
                             upper_bonus_deficit: INIT_DEFICIT , yahtzee_is_wild: false, };
     let app = &mut AppState::new(&game);
     let _result = best_choice_ev(game, app);
-    // eprintln!("{}, {}",rounded(_result.1, 4) , rounded( (6.0*1.0/6.0).powf(5.0) * 50.0, 4) );
-    assert_approx_eq!( _result.1 , 6.0 * (1.0/6.0).powi(5) * 50.0 );
+    let in_1_odds = 6.0/7776.0; 
+    assert_approx_eq!( _result.1 , in_1_odds * 50.0 );
 }
 
-#[test]
+// #[test]
+fn ev_of_yahtzee_in_2_rolls() {
+    let game = GameState{   rolls_remaining: 2, 
+                            sorted_open_slots: array_vec!([u8;13] => YAHTZEE ), 
+                            sorted_dievals: UNROLLED_DIEVALS, 
+                            upper_bonus_deficit: INIT_DEFICIT , yahtzee_is_wild: false, };
+    let app = &mut AppState::new(&game);
+    let _result = best_choice_ev(game, app);
+    let in_2 = 0.01263; //https://www.datagenetics.com/blog/january42012/    
+    // let in_1 = 6.0/7776.0; //0.00077; 
+    assert_approx_eq!( rounded( _result.1 ,3), rounded( (in_2)*50.0, 3) );
+}
+
+// #[test]
 fn ev_of_yahtzee_in_3_rolls() {
 // see https://www.yahtzeemanifesto.com/yahtzee-odds.php 
     let game = GameState{   rolls_remaining: 3, 
@@ -38,20 +51,7 @@ fn ev_of_yahtzee_in_3_rolls() {
                             upper_bonus_deficit: INIT_DEFICIT , yahtzee_is_wild: false, };
     let app = &mut AppState::new(&game);
     let _result = best_choice_ev(game, app);
-    assert_eq!( rounded( _result.1, 1), rounded( 0.0461 * 50.0, 1) );
-}
-
-
-// #[test]
-fn ev_of_fullhouse_in_1() {
-// see https://www.yahtzeemanifesto.com/yahtzee-odds.php 
-    let game = GameState{   rolls_remaining: 1, 
-                            sorted_open_slots: array_vec!([u8;13] => FULL_HOUSE ), 
-                            sorted_dievals: UNROLLED_DIEVALS, 
-                            upper_bonus_deficit: INIT_DEFICIT , yahtzee_is_wild: false, };
-    let app = &mut AppState::new(&game);
-    let result = best_choice_ev(game, app);
-    assert_eq!( rounded( result.1, 1), rounded( 0.0386 * 25.0, 1) );
+    assert_approx_eq!( rounded( _result.1, 2), rounded( 0.04603 * 50.0, 2) );
 }
 
 // #[test] 
@@ -143,7 +143,7 @@ fn test_permutations() {
     }; 
 }
 
-// #[test]
+#[test]
 fn bench_test() {
     // let slots= array_vec!([u8;13] => 1,2,3,4,5,6,7,8,9,10,11,12,13);
     let game = GameState{   rolls_remaining: 0, 
