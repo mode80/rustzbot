@@ -144,12 +144,13 @@ fn n_take_r(n:u8, r:u8, ordered:bool, with_replacement:bool)->u128{
     }
 }
 
-fn save_periodically(app:&AppState, every_n_secs:u64){
+fn save_periodically(app:&mut AppState, every_n_secs:u64){
     let current_duration = app.progress_bar.elapsed();
     let last_duration = app.checkpoint;
     if current_duration - last_duration >= Duration::new(every_n_secs,0) { 
+        app.checkpoint = current_duration;
         save_cache(app);
-   }
+    }
 }
 
 fn save_cache(app:&AppState){
