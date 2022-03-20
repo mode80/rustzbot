@@ -2,16 +2,14 @@
 #![allow(unused_imports)]
 #![allow(unused_variables)]
 
-use std::{cmp::max, sync::{Arc, RwLock, Mutex}, error::{self, Error}, fs::{self, File}, time::Duration, ops::Range};
-// use cached::proc_macro::cached;
-use counter::Counter;
+use std::{cmp::max, error::{Error}, fs::{self, File}, time::Duration, ops::Range};
 use itertools::Itertools;
 use indicatif::ProgressBar;
 use rustc_hash::{FxHashSet, FxHashMap};
 use tinyvec::*;
-use rayon::prelude::*; 
 use once_cell::sync::Lazy;
 use std::io::Write; 
+// use cached::proc_macro::cached;
 
 #[macro_use] extern crate serde_derive;
 extern crate bincode;
@@ -73,10 +71,7 @@ impl AppState{
     fn new(game: &GameState) -> Self{
         let slot_count=game.sorted_open_slots.len() as u8;
         let combo_count = (1..=slot_count).map(|r| n_take_r(slot_count, r ,false,false) as u64 ).sum() ;
-        // let bytes = fs::read("ev_cache").unwrap(); // TODO don't forget to re-enable cache load here
-        // let cachemap = ::bincode::deserialize(&bytes).unwrap() ;
-        let init_capacity = combo_count as usize * 252 * 64; 
-        // let init_capacity = combo_count as usize * 252 * 64 * 2 * 2; // roughly: slotcombos * diecombos * deficits * wilds * rolls
+        let init_capacity = combo_count as usize * 252 * 64; // * 2 * 2; // roughly: slotcombos * diecombos * deficits * wilds * rolls
         let cachemap = if let Ok(bytes) = fs::read("ev_cache") { 
             ::bincode::deserialize(&bytes).unwrap() 
         } else {
@@ -102,10 +97,6 @@ const SCORE_FNS:[fn(sorted_dievals:DieVals)->u8;14] = [
     score_3ofakind, score_4ofakind, score_fullhouse, score_sm_str8, score_lg_str8, score_yahtzee, score_chance, 
 ];
 
-// static OUTCOMES:Lazy<[DieVals;7776]> = Lazy::new(five_dice_permutations);
-// static SELECTIONS:Lazy<[Dice;32]> = Lazy::new(die_index_combos); 
-
-const CACHED_FACTORIALS:[usize;6] = [1, 1, 2, 6, 24, 120];
 static SELECTION_RANGES:Lazy<[Range<usize>;32]> = Lazy::new(selection_ranges); 
 
 static SELECTION_OUTCOMES:Lazy<[Outcome;1683]> = Lazy::new(all_selection_outcomes); 
@@ -255,21 +246,6 @@ fn die_index_combos() ->[DieIdxAV;32]  {
     them
 }
 
-fn five_dice_permutations() -> [DieVals;7776] {
-
-    let mut j:usize=0;
-    let mut them:[DieVals;7776] = [[0;5];7776]; 
-    for i in 1..=6 {
-        for ii in 1..=6 {
-            for iii in 1..=6 {
-                for iv in 1..=6 {
-                    for v in 1..=6 {
-                        them[j] = [v as u8, iv as u8, iii as u8, ii as u8, i as u8];
-                        j+=1;
-    } } } } }
-    them
-}
-
 fn score_upperbox(boxnum:u8, sorted_dievals:DieVals)->u8{
    sorted_dievals.into_iter().filter(|x| *x==boxnum).sum()
 }
@@ -315,10 +291,12 @@ fn score_lg_str8(sorted_dievals:    DieVals)->u8{ if straight_len(sorted_dievals
 
 // The official rule is that a Full House is "three of one number and two of another"
 fn score_fullhouse(sorted_dievals:DieVals) -> u8 { 
-    let counts = sorted_dievals.iter().collect::<Counter<_>>().most_common_ordered(); //sorted(list(Counter(sorted_dievals).values() ))
-    if counts.len()==2 && 
-        (counts[0].1==3 && counts[1].1==2) &&
-        (*counts[0].0!=0 && *counts[1].0!=0)
+    let counts_map = sorted_dievals.into_iter().counts();
+    let mut counts = counts_map.values().collect_vec(); 
+    counts.sort_unstable();
+    if  (counts.len()==2) && 
+        (*counts[0]==2 && *counts[1]==3) &&
+        (*counts[0]!=0 && *counts[1]!=0)
     {25} else {0}
 }
 

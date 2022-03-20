@@ -1,6 +1,7 @@
+#![allow(dead_code)]
+
 use std::io::BufWriter;
 
-use ordered_float::Float;
 use assert_approx_eq::assert_approx_eq;
 
 use super::*;
@@ -11,12 +12,13 @@ fn rounded(it:f32,places:i32) -> f32{
     (it * e).round() / e 
 }
 
-// #[test]
+#[test]
 fn score_slot_test() {
-    assert_eq!(15, score_slot(FIVES,[1,2,5,5,5]));
+    assert_eq!(0, score_slot(FULL_HOUSE,[1,2,5,5,5]));
+    assert_eq!(25, score_slot(FULL_HOUSE,[2,2,5,5,5]));
 }
 
-// #[test]
+#[test]
 fn ev_of_yahtzee_in_1_roll() {
 // see https://www.yahtzeemanifesto.com/yahtzee-odds.php 
     let game = GameState{   rolls_remaining: 1, 
@@ -29,7 +31,7 @@ fn ev_of_yahtzee_in_1_roll() {
     assert_approx_eq!( _result.1 , in_1_odds * 50.0 );
 }
 
-// #[test]
+#[test]
 fn ev_of_yahtzee_in_2_rolls() {
     let game = GameState{   rolls_remaining: 2, 
                             sorted_open_slots: array_vec!([u8;13] => YAHTZEE ), 
@@ -42,7 +44,7 @@ fn ev_of_yahtzee_in_2_rolls() {
     assert_approx_eq!( rounded( _result.1 ,3), rounded( (in_2)*50.0, 3) );
 }
 
-// #[test]
+#[test]
 fn ev_of_yahtzee_in_3_rolls() {
 // see https://www.yahtzeemanifesto.com/yahtzee-odds.php 
     let game = GameState{   rolls_remaining: 3, 
@@ -54,7 +56,7 @@ fn ev_of_yahtzee_in_3_rolls() {
     assert_approx_eq!( rounded( _result.1, 2), rounded( 0.04603 * 50.0, 2) );
 }
 
-// #[test] 
+#[test] 
 fn ev_of_smstraight_in_1() {
 // see https://www.yahtzeemanifesto.com/yahtzee-odds.php 
     let game = GameState{   rolls_remaining: 1, 
@@ -66,7 +68,7 @@ fn ev_of_smstraight_in_1() {
     assert_eq!( rounded( result.1 / 30.0, 2), rounded( 0.1235 + 0.0309 , 2) );
 }
 
-// #[test]
+#[test]
 fn ev_of_lgstraight_in_1() {
 // see https://www.yahtzeemanifesto.com/yahtzee-odds.php 
     let game = GameState{   rolls_remaining: 1, 
@@ -78,7 +80,7 @@ fn ev_of_lgstraight_in_1() {
     assert_eq!( rounded( result.1  / 40.0, 4), rounded( 0.0309, 4) );
 }
 
-// #[test] 
+#[test] 
 fn ev_of_4ofakind_in_1() {
 // see https://www.yahtzeemanifesto.com/yahtzee-odds.php 
     let game = GameState{   rolls_remaining: 1, 
@@ -93,7 +95,7 @@ fn ev_of_4ofakind_in_1() {
     );
 }
 
-// #[test] 
+#[test] 
 fn ev_of_3ofakind_in_1() {
 // see https://www.yahtzeemanifesto.com/yahtzee-odds.php 
     let game = GameState{   rolls_remaining: 1, 
