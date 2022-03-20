@@ -28,7 +28,7 @@ fn main() -> Result<(), Box<dyn Error>>{
 
     let app = & mut AppState::new(&game);
 
-    let (_choice, _ev) = best_choice_ev(game, app);
+    let EVResult{choice, ev} = best_choice_ev(game, app);
    
     Ok(())
    
@@ -38,7 +38,14 @@ type DieVals = [u8;5];
 type DieIdxAV = ArrayVec<[u8;5]>; 
 type DiceBits = u8;
 type Slots = ArrayVec<[u8;13]>;
-type EVResult =(Choice,f32) ; 
+type Choice = u8; // represents the index of a chosen slot, or a big-endian bitfield of chosen dice
+// type EVResult =(Choice,f32) ; 
+
+#[derive(Debug,Clone,Copy,Serialize, Deserialize)]
+struct EVResult {
+    choice: Choice,
+    ev: f32
+}
 
 #[derive(Debug,Clone,Copy)]
 struct Outcome {
@@ -55,11 +62,11 @@ struct GameState{
     sorted_open_slots:Slots, 
 }
 
-#[derive(Debug,Clone,Copy,Serialize,Deserialize,PartialEq)]
-enum Choice{
-    Slot(u8),
-    Dice(DiceBits)
-}
+// #[derive(Debug,Clone,Copy,Serialize,Deserialize,PartialEq)]
+// enum Choice{
+//     Slot(u8),
+//     Dice(DiceBits)
+// }
 
 struct AppState{
     progress_bar:ProgressBar, 
@@ -326,7 +333,7 @@ fn best_slot_ev(game:GameState, app: &mut AppState) -> EVResult  {
             // prep vars
                 let mut tail_ev = 0.0;
                 let top_slot = slot_sequence.pop().unwrap();
-                let mut _choice:Choice = Choice::Slot(top_slot);
+                let mut _choice = top_slot;
                 let mut upper_deficit_now = game.upper_bonus_deficit ;
                 let mut yahtzee_wild_now:bool = game.yahtzee_is_wild;
 
@@ -364,7 +371,7 @@ fn best_slot_ev(game:GameState, app: &mut AppState) -> EVResult  {
                 slot_sequence.sort_unstable(); 
 
             // gather the collective ev for the remaining slots recursively
-                (_choice, tail_ev) = best_choice_ev( GameState{
+                EVResult{choice:_choice, ev:tail_ev} = best_choice_ev( GameState{
                     yahtzee_is_wild: yahtzee_wild_now,
                     sorted_open_slots: slot_sequence, 
                     rolls_remaining: 3,
@@ -378,8 +385,7 @@ fn best_slot_ev(game:GameState, app: &mut AppState) -> EVResult  {
 
     } // end for slot_sequence...
 
-    // console_log(game, app, Choice::Slot(best_slot), best_ev );
-    (Choice::Slot(best_slot), best_ev)
+    EVResult{choice:best_slot, ev:best_ev}
 }
 
 /// returns the best selection of dice and corresponding ev, given slots left, existing dice, and other relevant state 
@@ -389,9 +395,8 @@ fn best_dice_ev(game:GameState, app: &mut AppState) -> EVResult {
     let mut best_ev = 0.0; 
     if game.rolls_remaining==3 {// special case .. we always roll all dice on initial roll
         best_ev = avg_ev_for_selection(game,app,best_selection);
-        return (Choice::Dice(best_selection), best_ev)
     } else { // iterate over all the possible ways to select dice and take the best outcome 
-        for selection in 0_u8..=31 {
+        for selection in 0_u8..=31 { // each selection is a u8 encoded bitfield
             let avg_ev = avg_ev_for_selection(game,app,selection);
             if avg_ev > best_ev {
                 best_ev = avg_ev; 
@@ -399,19 +404,18 @@ fn best_dice_ev(game:GameState, app: &mut AppState) -> EVResult {
             }
         }
     }
-    // console_log(game, app, Choice::Dice(best_selection), best_ev );
-    (Choice::Dice(best_selection), best_ev)
+    EVResult{choice:best_selection, ev:best_ev}
 }
 
 /// returns the average of all the expected values for rolling a selection of dice, given the game and app state
 /// "selection" is the set of dice to roll, as represented their indexes in a 5-length array
-#[allow(clippy::needless_range_loop)]
+#[allow(clippy::needless_range_loop)] // we make use of 'i' twice for performance gain // TODO test enumerate()
 #[inline(always)] // ~6% speedup 
-fn avg_ev_for_selection(game:GameState, app: &mut AppState, selection_bitfield:u8) -> f32 {
-    let mut total = 0.0;
+fn avg_ev_for_selection(game:GameState, app: &mut AppState, selection:u8) -> f32 {
+    let mut total_ev = 0.0;
     let mut newvals:DieVals; 
     
-    let range = SELECTION_RANGES[selection_bitfield as usize].clone();
+    let range = SELECTION_RANGES[selection as usize].clone();
     let mut outcomes_count:usize = 0; 
     for outcome in SELECTION_OUTCOMES[range].iter() { 
         //###### HOT CODE PATH #######
@@ -422,20 +426,20 @@ fn avg_ev_for_selection(game:GameState, app: &mut AppState, selection_bitfield:u
             };
         }
         newvals.sort_unstable();
-        let (_choice, next_ev) = best_choice_ev( GameState{ 
+        let EVResult{choice, ev} = best_choice_ev( GameState{ 
             yahtzee_is_wild: game.yahtzee_is_wild, 
             sorted_open_slots: game.sorted_open_slots, 
             rolls_remaining: game.rolls_remaining-1,
             upper_bonus_deficit: game.upper_bonus_deficit,
             sorted_dievals: newvals, 
         }, app);
-        outcomes_count += outcome.arrangements_count as usize;
-        let increment = next_ev * outcome.arrangements_count as f32; 
-        total += increment;
-        // eprintln!("{:?} {:?} {:?} {:?} {:?} {:?}", game.rolls_remaining, outcome, newvals, next_ev, arrangement_count, increment); // for debugging
+        outcomes_count += outcome.arrangements_count as usize; // we loop through "combos" but we must sum all "perumtations"
+        let added_ev = ev * outcome.arrangements_count as f32; // each combo's ev is weighted by its count of distinct arrangements
+        total_ev += added_ev;
         //############################
+        // eprintln!("{:?} {:?} {:?} {:?} {:?} {:?}", game.rolls_remaining, outcome, newvals, next_ev, arrangement_count, increment); 
     }
-    total/outcomes_count as f32 
+    total_ev/outcomes_count as f32 
 }
 
 
@@ -458,7 +462,7 @@ fn best_choice_ev(game:GameState,app: &mut AppState) -> EVResult  {
         if ! e  {
             app.done.insert(game.sorted_open_slots);
             app.progress_bar.inc(1);
-            console_log(&game,app,result.0,result.1);
+            console_log(&game,app, result.choice, result.ev);
             save_periodically(app,600) ;
         }
     }

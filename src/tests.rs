@@ -28,7 +28,7 @@ fn ev_of_yahtzee_in_1_roll() {
     let app = &mut AppState::new(&game);
     let _result = best_choice_ev(game, app);
     let in_1_odds = 6.0/7776.0; 
-    assert_approx_eq!( _result.1 , in_1_odds * 50.0 );
+    assert_approx_eq!( _result.ev , in_1_odds * 50.0 );
 }
 
 #[test]
@@ -41,7 +41,7 @@ fn ev_of_yahtzee_in_2_rolls() {
     let _result = best_choice_ev(game, app);
     let in_2 = 0.01263; //https://www.datagenetics.com/blog/january42012/    
     // let in_1 = 6.0/7776.0; //0.00077; 
-    assert_approx_eq!( rounded( _result.1 ,3), rounded( (in_2)*50.0, 3) );
+    assert_approx_eq!( rounded( _result.ev ,3), rounded( (in_2)*50.0, 3) );
 }
 
 #[test]
@@ -53,7 +53,7 @@ fn ev_of_yahtzee_in_3_rolls() {
                             upper_bonus_deficit: INIT_DEFICIT , yahtzee_is_wild: false, };
     let app = &mut AppState::new(&game);
     let _result = best_choice_ev(game, app);
-    assert_approx_eq!( rounded( _result.1, 2), rounded( 0.04603 * 50.0, 2) );
+    assert_approx_eq!( rounded( _result.ev, 2), rounded( 0.04603 * 50.0, 2) );
 }
 
 #[test] 
@@ -65,7 +65,7 @@ fn ev_of_smstraight_in_1() {
                             upper_bonus_deficit: INIT_DEFICIT , yahtzee_is_wild: false, };
     let app = &mut AppState::new(&game);
     let result = best_choice_ev(game, app);
-    assert_eq!( rounded( result.1 / 30.0, 2), rounded( 0.1235 + 0.0309 , 2) );
+    assert_eq!( rounded( result.ev / 30.0, 2), rounded( 0.1235 + 0.0309 , 2) );
 }
 
 #[test]
@@ -77,7 +77,7 @@ fn ev_of_lgstraight_in_1() {
                             upper_bonus_deficit: INIT_DEFICIT , yahtzee_is_wild: false, };
     let app = &mut AppState::new(&game);
     let result = best_choice_ev(game, app);
-    assert_eq!( rounded( result.1  / 40.0, 4), rounded( 0.0309, 4) );
+    assert_eq!( rounded( result.ev  / 40.0, 4), rounded( 0.0309, 4) );
 }
 
 #[test] 
@@ -90,7 +90,7 @@ fn ev_of_4ofakind_in_1() {
     let app = &mut AppState::new(&game);
     let result = best_choice_ev(game, app);
     assert_eq!( 
-        rounded( result.1  / 17.5, 3), // we divide EV by average dice-total to get odds
+        rounded( result.ev  / 17.5, 3), // we divide EV by average dice-total to get odds
         rounded( 0.0193+0.00077, 3) //our 3 of a kind includes 4 of a kind & yahtzee
     );
 }
@@ -105,7 +105,7 @@ fn ev_of_3ofakind_in_1() {
     let app = &mut AppState::new(&game);
     let result = best_choice_ev(game, app); 
     assert_eq!( 
-        rounded( result.1  / 17.5, 3), // we divide EV by average dice-total to get odds
+        rounded( result.ev  / 17.5, 3), // we divide EV by average dice-total to get odds
         rounded( 0.1929+0.0193+0.0007, 3) //our 3 of a kind includes 4 of a kind & yahtzee
     );
 }
@@ -154,8 +154,8 @@ fn bench_test() {
                             upper_bonus_deficit: 30, 
                             yahtzee_is_wild: false, };
     let app = &mut AppState::new(&game);
-    let _result = best_choice_ev(game, app);
-    assert_eq!(rounded(_result.1,2),  28.92);
+    let result = best_choice_ev(game, app);
+    assert_eq!(rounded(result.ev,2),  28.92);
     // save_cache(&app);
 }
 
