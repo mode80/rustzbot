@@ -153,6 +153,7 @@ fn bench_test() {
                             yahtzee_is_wild: false, };
     let app = &mut AppState::new(&game);
     let _result = best_choice_ev(game, app);
+    assert_eq!(rounded(_result.1,2),  28.92);
     // save_cache(&app);
 }
 

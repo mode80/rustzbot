@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
-// #![allow(unused_variables)]
+#![allow(unused_variables)]
 
 use std::{cmp::max, sync::{Arc, RwLock, Mutex}, error::{self, Error}, fs::{self, File}, time::Duration, ops::Range};
 // use cached::proc_macro::cached;
@@ -41,6 +41,12 @@ type DieIdxAV = ArrayVec<[u8;5]>;
 type DiceBits = u8;
 type Slots = ArrayVec<[u8;13]>;
 type EVResult =(Choice,f32) ; 
+
+#[derive(Debug,Clone,Copy)]
+struct Outcome {
+    dievals: DieVals,
+    arrangements_count: u8,
+}
 
 #[derive(Debug, PartialEq, Eq, Ord, PartialOrd, Hash, Clone, Copy, Serialize, Deserialize)]
 struct GameState{
@@ -100,9 +106,9 @@ const SCORE_FNS:[fn(sorted_dievals:DieVals)->u8;14] = [
 // static SELECTIONS:Lazy<[Dice;32]> = Lazy::new(die_index_combos); 
 
 const CACHED_FACTORIALS:[usize;6] = [1, 1, 2, 6, 24, 120];
-static SELECTION_OUTCOMES:Lazy<[DieVals;1683]> = Lazy::new(all_selection_outcomes); 
-// static FIVE_DIE_SEL_OUTS:Lazy<[DieVals;252]> = Lazy::new(five_dice_combinations); 
 static SELECTION_RANGES:Lazy<[Range<usize>;32]> = Lazy::new(selection_ranges); 
+
+static SELECTION_OUTCOMES:Lazy<[Outcome;1683]> = Lazy::new(all_selection_outcomes); 
 // [(), (0,), (0, 1), (0, 1, 2), (0, 1, 2, 3), (0, 1, 2, 3, 4), (0, 1, 2, 4), (0, 1, 3), (0, 1, 3, 4), 
 // (0, 1, 4), (0, 2), (0, 2, 3), (0, 2, 3, 4), (0, 2, 4), (0, 3), (0, 3, 4), (0, 4), (1,), (1, 2), (1, 2, 3), (1, 2, 3, 4), 
 // (1, 2, 4), (1, 3), (1, 3, 4), (1, 4), (2,), (2, 3), (2, 3, 4), (2, 4), (3,), (3, 4), (4,)]
@@ -115,8 +121,8 @@ fn fact(n: u8) -> u128{
     if n<=1 {1} else { (big_n)*fact(n-1) }
 }
 
-fn distinct_outcomes_for(dievals:&[u8;5])->u128{
-    let counts = dievals.iter().counts();
+fn distinct_arrangements_for(dieval_vec:Vec<u8>)->u8{
+    let counts = dieval_vec.iter().counts();
     let mut divisor:usize=1;
     let mut non_zero_dievals=0_u8;
     for count in counts { 
@@ -125,7 +131,7 @@ fn distinct_outcomes_for(dievals:&[u8;5])->u128{
             non_zero_dievals += count.1 as u8;
         }
     } 
-    (fact(non_zero_dievals) as f64 / divisor as f64) as u128
+    (fact(non_zero_dievals) as f64 / divisor as f64) as u8
 }
 
 /// count of arrangements that can be formed from r selections, chosen from n items, 
@@ -207,24 +213,23 @@ impl Iterator for SlotPermutations{
 
 /*-------------------------------------------------------------*/
 //the set of roll outcomes for every possible selection among 5 dice, where '0' represents an unselected die
-fn all_selection_outcomes() ->[DieVals;1683]  { 
-    let mut retval = Vec::<DieVals>::new();
-    let mut sel_out;
+fn all_selection_outcomes() ->[Outcome;1683]  { 
+    let mut retval:[Outcome;1683] = [Outcome{dievals:[0,0,0,0,0], arrangements_count:0};1683];
+    let mut sel_out = Outcome{dievals:[0,0,0,0,0], arrangements_count:0};
+    let mut i=0;
     for sel in die_index_combos(){
-        sel_out = [0,0,0,0,0];
+        sel_out.dievals = [0,0,0,0,0];
         for dievals in [1,2,3,4,5,6].into_iter().combinations_with_replacement(sel.len()){ 
-            for (i, dieval) in dievals.into_iter().enumerate() {
-                sel_out[4-sel[i] as usize]=dieval;
+            for (j, dieval) in dievals.iter().enumerate() { 
+                let rev_idx = 4-sel[j] as usize; // count down the indexes so it maps naturally to a u8 bitfield 
+                sel_out.dievals[rev_idx] = *dieval; 
             }
-            retval.push(sel_out);
+            sel_out.arrangements_count = distinct_arrangements_for(dievals);
+            retval[i]=sel_out;
+            i+=1;
         }
     } 
-    // retval.sort_unstable();
-    retval.try_into().unwrap()
-}
-
-fn five_dice_combinations() ->[DieVals;252]{
-    (*SELECTION_OUTCOMES)[1683-252..].try_into().unwrap()
+    retval
 }
 
 fn selection_ranges() ->[Range<usize>;32]  { 
@@ -398,7 +403,6 @@ fn best_slot_ev(game:GameState, app: &mut AppState) -> EVResult  {
     (Choice::Slot(best_slot), best_ev)
 }
 
-#[allow(clippy::if_same_then_else)] //TODO remove
 /// returns the best selection of dice and corresponding ev, given slots left, existing dice, and other relevant state 
 fn best_dice_ev(game:GameState, app: &mut AppState) -> EVResult { 
 
@@ -429,14 +433,13 @@ fn avg_ev_for_selection(game:GameState, app: &mut AppState, selection_bitfield:u
     let mut newvals:DieVals; 
     
     let range = SELECTION_RANGES[selection_bitfield as usize].clone();
-    let mut outcomes_count = 0; 
-    let mut arrangement_count;
+    let mut outcomes_count:usize = 0; 
     for outcome in SELECTION_OUTCOMES[range].iter() { 
         //###### HOT CODE PATH #######
         newvals=game.sorted_dievals;
         for i in 0..=4 { 
-            if outcome[i]!=0 {
-                newvals[i]=outcome[i]
+            if outcome.dievals[i]!=0 {
+                newvals[i]=outcome.dievals[i];
             };
         }
         newvals.sort_unstable();
@@ -447,9 +450,8 @@ fn avg_ev_for_selection(game:GameState, app: &mut AppState, selection_bitfield:u
             upper_bonus_deficit: game.upper_bonus_deficit,
             sorted_dievals: newvals, 
         }, app);
-        arrangement_count = distinct_outcomes_for(outcome); //TODO cache these somehow
-        outcomes_count += arrangement_count ;
-        let increment = next_ev * arrangement_count as f32; 
+        outcomes_count += outcome.arrangements_count as usize;
+        let increment = next_ev * outcome.arrangements_count as f32; 
         total += increment;
         // eprintln!("{:?} {:?} {:?} {:?} {:?} {:?}", game.rolls_remaining, outcome, newvals, next_ev, arrangement_count, increment); // for debugging
         //############################
