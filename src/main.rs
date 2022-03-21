@@ -70,7 +70,6 @@ struct GameState{
 
 struct AppState{
     progress_bar:ProgressBar, 
-    done:FxHashSet<Slots>, 
     ev_cache:FxHashMap<GameState,EVResult>,
     checkpoint: Duration,
 }
@@ -78,14 +77,17 @@ impl AppState{
     fn new(game: &GameState) -> Self{
         let slot_count=game.sorted_open_slots.len() as u8;
         let combo_count = (1..=slot_count).map(|r| n_take_r(slot_count, r ,false,false) as u64 ).sum() ;
+        let pb = ProgressBar::new(combo_count); 
         let init_capacity = combo_count as usize * 252 * 64; // * 2 * 2; // roughly: slotcombos * diecombos * deficits * wilds * rolls
         let cachemap = if let Ok(bytes) = fs::read("ev_cache") { 
             ::bincode::deserialize(&bytes).unwrap() 
         } else {
             FxHashMap::with_capacity_and_hasher(init_capacity,Default::default())
         };
-        Self{   progress_bar : ProgressBar::new(combo_count), 
-                done : Default::default() ,  
+        let cache_keys:Vec<&GameState> = cachemap.keys().into_iter().collect_vec();
+        let ticks = cache_keys.into_iter().filter(|x|x.rolls_remaining ==0).collect_vec().len();
+        pb.set_length(ticks as u64);
+        Self{   progress_bar : pb, 
                 ev_cache : cachemap,
                 checkpoint: Duration::new(0,0),
         }
@@ -458,9 +460,7 @@ fn best_choice_ev(game:GameState,app: &mut AppState) -> EVResult  {
     // console_log(&game,app,result.0,result.1);
 
     if game.rolls_remaining==0 { // periodically update progress and save
-        let e = {app.done.contains(&game.sorted_open_slots)} ;
-        if ! e  {
-            app.done.insert(game.sorted_open_slots);
+        if ! app.ev_cache.contains_key(&game)   {
             app.progress_bar.inc(1);
             console_log(&game,app, result.choice, result.ev);
             save_periodically(app,600) ;
