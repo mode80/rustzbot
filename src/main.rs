@@ -2,8 +2,8 @@
 #![allow(unused_imports)]
 #![allow(unused_variables)]
 
-use std::{cmp::max, error::{Error}, fs::{self, File}, time::Duration, ops::Range};
-use itertools::Itertools;
+use std::{cmp::max, error::{Error}, fs::{self, File}, time::Duration, ops::{Range, BitAnd, Index, IndexMut}, fmt::Display};
+use itertools::{Itertools, sorted};
 use indicatif::ProgressBar;
 use rustc_hash::{FxHashSet, FxHashMap};
 use tinyvec::*;
@@ -34,12 +34,91 @@ fn main() -> Result<(), Box<dyn Error>>{
    
 }
 /*-------------------------------------------------------------*/
-type DieVals = [u8;5];
-type DieIdxAV = ArrayVec<[u8;5]>; 
-type DiceBits = u8;
-type Slots = ArrayVec<[u8;13]>;
-type Choice = u8; // represents the index of a chosen slot, or a big-endian bitfield of chosen dice
-// type EVResult =(Choice,f32) ; 
+type Slots = ArrayVec<[u16;13]>;
+type Choice = u16;      // represents EITHER the index of a chosen slot, OR a big-endian bitfield of chosen dice
+type DieVal = u16;      // u16 is convient when used with bit math and sets of DieVals, also u16
+type Selection = u16;   // " 
+type Slot = u16; 
+type Score = u16;
+
+#[derive(Debug,Clone,Copy,PartialEq,Serialize,Deserialize,Eq,PartialOrd,Ord,Hash,Default)]
+struct DieVals{
+    pub data:u16, // 5 dievals (0 to 6) can be encoded in 2 bytes, with each taking 3 bits
+}
+
+impl DieVals {
+    fn get(&self, index:u16)->u16 {
+        let rev_idx=4-index;
+        let mask = 0b111 << (3*rev_idx);
+        let masked = self.data & mask;
+        masked >> (3*rev_idx) //.try_into().unwrap();
+    }
+    fn set(&mut self, index:u16, val:u16) {
+        let pos = 3*(4-index);
+        let mask = u16::MAX ^ (0b111 << pos); // make a hole
+        self.data = (self.data & mask) | ((val as u16) << pos );
+                                        // eprintln!("{} {:b} {:b} {} {}",self, self.data, mask, index , val);
+    }
+    fn sort(&mut self){
+        //TODO find something better
+        let mut temp:[u16;5] = self.into(); 
+        for (i,dieval) in self.into_iter().enumerate() {temp[i]=dieval};
+        temp.sort_unstable();
+        for i in 0_u16..=4 {self.set(i,temp[i as usize])};
+    }
+}
+
+impl Display for DieVals {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let temp:[u16;5] = self.into(); 
+        write!(f,"{:?}",temp) 
+    }
+}
+
+impl From<[u16; 5]> for DieVals{
+    fn from(a: [u16; 5]) -> Self {
+        DieVals{data: a[0]<<12 | a[1]<<9 | a[2]<<6 | a[3]<<3 | a[4] }
+    }
+}
+
+impl From<& DieVals> for [u16; 5]{ 
+    fn from(dievals: &DieVals) -> Self {
+        let mut temp:[u16;5] = Default::default(); 
+        for i in 0_u16..=4 {temp[i as usize] = dievals.get(i)};
+        temp
+    }
+}
+
+impl From<&mut DieVals> for [u16; 5]{ 
+    fn from(dievals: &mut DieVals) -> Self {
+        <[u16;5]>::from(&*dievals)
+    }
+}
+
+impl IntoIterator for DieVals{
+    type IntoIter=DieValIntoIter;
+    type Item = DieVal;
+
+    fn into_iter(self) -> Self::IntoIter {
+        DieValIntoIter { data:self, next_idx:0 }
+   }
+
+}
+
+struct DieValIntoIter{
+    data: DieVals,
+    next_idx: u16,
+}
+
+impl Iterator for DieValIntoIter {
+    type Item = DieVal;
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.next_idx == 5 {return None};
+        let retval = self.data.get(self.next_idx);
+        self.next_idx +=1;
+        Some(retval)
+    }
+}
 
 #[derive(Debug,Clone,Copy,Serialize, Deserialize)]
 struct EVResult {
@@ -57,7 +136,7 @@ struct Outcome {
 struct GameState{
     sorted_dievals:DieVals, 
     rolls_remaining:u8, 
-    upper_bonus_deficit:u8, 
+    upper_bonus_deficit:u16, 
     yahtzee_is_wild:bool,
     sorted_open_slots:Slots, 
 }
@@ -92,13 +171,15 @@ impl AppState{
     }
 }
 
-const STUB:u8=0; const ACES:u8=1; const TWOS:u8=2; const THREES:u8=3; const FOURS:u8=4; const FIVES:u8=5; const SIXES:u8=6;
-const THREE_OF_A_KIND:u8=7; const FOUR_OF_A_KIND:u8=8; const FULL_HOUSE:u8=9; const SM_STRAIGHT:u8=10; const LG_STRAIGHT:u8=11; 
-const YAHTZEE:u8=12; const CHANCE:u8=13; 
+const STUB:u16=0; const ACES:u16=1; const TWOS:u16=2; const THREES:u16=3; const FOURS:u16=4; const FIVES:u16=5; const SIXES:u16=6;
+const THREE_OF_A_KIND:u16=7; const FOUR_OF_A_KIND:u16=8; const FULL_HOUSE:u16=9; const SM_STRAIGHT:u16=10; const LG_STRAIGHT:u16=11; 
+const YAHTZEE:u16=12; const CHANCE:u16=13; 
  
-const UNROLLED_DIEVALS:DieVals = [0,0,0,0,0]; const INIT_DEFICIT:u8 = 63;
+#[allow(clippy::unusual_byte_groupings)] // each group of 3 bits encodes a dieval from 0 to 6
+const UNROLLED_DIEVALS:DieVals = DieVals{data:0}; 
+const INIT_DEFICIT:u16 = 63;
 
-const SCORE_FNS:[fn(sorted_dievals:DieVals)->u8;14] = [
+const SCORE_FNS:[fn(sorted_dievals:DieVals)->Score;14] = [
     score_aces, // duplicate placeholder so indices align more intuitively with categories 
     score_aces, score_twos, score_threes, score_fours, score_fives, score_sixes, 
     score_3ofakind, score_4ofakind, score_fullhouse, score_sm_str8, score_lg_str8, score_yahtzee, score_chance, 
@@ -119,7 +200,7 @@ fn fact(n: u8) -> u128{
     if n<=1 {1} else { (big_n)*fact(n-1) }
 }
 
-fn distinct_arrangements_for(dieval_vec:Vec<u8>)->u8{
+fn distinct_arrangements_for(dieval_vec:Vec<u16>)->u8{
     let counts = dieval_vec.iter().counts();
     let mut divisor:usize=1;
     let mut non_zero_dievals=0_u8;
@@ -211,19 +292,19 @@ impl Iterator for SlotPermutations{
 }
 
 /*-------------------------------------------------------------*/
-//the set of roll outcomes for every possible selection among 5 dice, where '0' represents an unselected die
+//the set of roll outcomes for every possible 5-die selection, where '0' represents an unselected die
 fn all_selection_outcomes() ->[Outcome;1683]  { 
-    let mut retval:[Outcome;1683] = [Outcome{dievals:[0,0,0,0,0], arrangements_count:0};1683];
-    let mut sel_out = Outcome{dievals:[0,0,0,0,0], arrangements_count:0};
+    let mut retval:[Outcome;1683] = [Outcome{dievals:UNROLLED_DIEVALS, arrangements_count:0};1683];
+    let mut sel_out = Outcome{dievals:UNROLLED_DIEVALS, arrangements_count:0};
     let mut i=0;
-    for sel in die_index_combos(){
-        sel_out.dievals = [0,0,0,0,0];
-        for dievals in [1,2,3,4,5,6].into_iter().combinations_with_replacement(sel.len()){ 
-            for (j, dieval) in dievals.iter().enumerate() { 
-                let rev_idx = 4-sel[j] as usize; // count down the indexes so it maps naturally to a u8 bitfield 
-                sel_out.dievals[rev_idx] = *dieval; 
+    for sel_idxs in die_index_combos(){
+        sel_out.dievals = UNROLLED_DIEVALS;
+        for dievals_vec in [1,2,3,4,5,6_u16].into_iter().combinations_with_replacement(sel_idxs.len()){ 
+            for (j, &val ) in dievals_vec.iter().enumerate() { 
+                let idx = 4-sel_idxs[j] as u16; // count down the indexes so it maps naturally to a big-endian bitfield 
+                sel_out.dievals.set(idx,val) ; // dievals is a u16 that encodes five 3-bit values of 0 to 6 
             }
-            sel_out.arrangements_count = distinct_arrangements_for(dievals);
+            sel_out.arrangements_count = distinct_arrangements_for(dievals_vec);
             retval[i]=sel_out;
             i+=1;
         }
@@ -231,6 +312,7 @@ fn all_selection_outcomes() ->[Outcome;1683]  {
     retval
 }
 
+/// this generates the ranges that correspond to the outcomes for a given selection, within the set of all outcomes above
 fn selection_ranges() ->[Range<usize>;32]  { 
     let mut sel_ranges:[Range<usize>;32] = Default::default();
     let mut s = 0;
@@ -244,21 +326,23 @@ fn selection_ranges() ->[Range<usize>;32]  {
 
 /// the set of all ways to roll different dice, as represented by a collection of index arrays
 #[allow(clippy::eval_order_dependence)]
-fn die_index_combos() ->[DieIdxAV;32]  { 
-    let mut them = [DieIdxAV::new() ;32]; // init dice arrray 
+fn die_index_combos() ->[ArrayVec<[u16;5]>;32]  { 
+    let mut them = [ArrayVec::<[u16;5]>::new() ;32]; // init dice arrray 
     let mut i=0; 
     for n in 1..=5 {
-        for combo in (0..=4).combinations(n){ them[i]= {let mut it=DieIdxAV::new(); it.extend_from_slice(&combo);  i+=1; it} } 
+        for combo in (0..=4).combinations(n){ 
+            them[i]= { let mut it=ArrayVec::<[u16;5]>::new(); it.extend_from_slice(&combo); i+=1; it} 
+        } 
     }
     // them.sort_unstable();
     them
 }
 
-fn score_upperbox(boxnum:u8, sorted_dievals:DieVals)->u8{
+fn score_upperbox(boxnum:Slot, sorted_dievals:DieVals)->Score{
    sorted_dievals.into_iter().filter(|x| *x==boxnum).sum()
 }
 
-fn score_n_of_a_kind(n:u8,sorted_dievals:DieVals)->u8{
+fn score_n_of_a_kind(n:u8,sorted_dievals:DieVals)->Score{
     let mut inarow=1; let mut maxinarow=1; let mut lastval=100; let mut sum=0; 
     for x in sorted_dievals {
         if x==lastval && x!=0 {inarow +=1} else {inarow=1}
@@ -285,20 +369,20 @@ fn straight_len(sorted_dievals:DieVals)->u8 {
     maxinarow 
 }
 
-fn score_aces(sorted_dievals:       DieVals)->u8{ score_upperbox(1,sorted_dievals) }
-fn score_twos(sorted_dievals:       DieVals)->u8{ score_upperbox(2,sorted_dievals) }
-fn score_threes(sorted_dievals:     DieVals)->u8{ score_upperbox(3,sorted_dievals) }
-fn score_fours(sorted_dievals:      DieVals)->u8{ score_upperbox(4,sorted_dievals) }
-fn score_fives(sorted_dievals:      DieVals)->u8{ score_upperbox(5,sorted_dievals) }
-fn score_sixes(sorted_dievals:      DieVals)->u8{ score_upperbox(6,sorted_dievals) }
+fn score_aces(sorted_dievals:       DieVals)->Score{ score_upperbox(1,sorted_dievals) }
+fn score_twos(sorted_dievals:       DieVals)->Score{ score_upperbox(2,sorted_dievals) }
+fn score_threes(sorted_dievals:     DieVals)->Score{ score_upperbox(3,sorted_dievals) }
+fn score_fours(sorted_dievals:      DieVals)->Score{ score_upperbox(4,sorted_dievals) }
+fn score_fives(sorted_dievals:      DieVals)->Score{ score_upperbox(5,sorted_dievals) }
+fn score_sixes(sorted_dievals:      DieVals)->Score{ score_upperbox(6,sorted_dievals) }
 
-fn score_3ofakind(sorted_dievals:   DieVals)->u8{ score_n_of_a_kind(3,sorted_dievals) }
-fn score_4ofakind(sorted_dievals:   DieVals)->u8{ score_n_of_a_kind(4,sorted_dievals) }
-fn score_sm_str8(sorted_dievals:    DieVals)->u8{ if straight_len(sorted_dievals) >=4 {30} else {0} }
-fn score_lg_str8(sorted_dievals:    DieVals)->u8{ if straight_len(sorted_dievals) >=5 {40} else {0} }
+fn score_3ofakind(sorted_dievals:   DieVals)->Score{ score_n_of_a_kind(3,sorted_dievals) }
+fn score_4ofakind(sorted_dievals:   DieVals)->Score{ score_n_of_a_kind(4,sorted_dievals) }
+fn score_sm_str8(sorted_dievals:    DieVals)->Score{ if straight_len(sorted_dievals) >=4 {30} else {0} }
+fn score_lg_str8(sorted_dievals:    DieVals)->Score{ if straight_len(sorted_dievals) >=5 {40} else {0} }
 
 // The official rule is that a Full House is "three of one number and two of another"
-fn score_fullhouse(sorted_dievals:DieVals) -> u8 { 
+fn score_fullhouse(sorted_dievals:DieVals) -> Score { 
     let counts_map = sorted_dievals.into_iter().counts();
     let mut counts = counts_map.values().collect_vec(); 
     counts.sort_unstable();
@@ -308,14 +392,14 @@ fn score_fullhouse(sorted_dievals:DieVals) -> u8 {
     {25} else {0}
 }
 
-fn score_chance(sorted_dievals:DieVals)->u8 { sorted_dievals.iter().sum()  }
-fn score_yahtzee(sorted_dievals:DieVals)->u8 { 
-    let deduped=sorted_dievals.iter().dedup().collect_vec();
-    if deduped.len()==1 && sorted_dievals[0]!=0 {50} else {0} 
+fn score_chance(sorted_dievals:DieVals)->Score { sorted_dievals.into_iter().sum()  }
+fn score_yahtzee(sorted_dievals:DieVals)->Score { 
+    let deduped=sorted_dievals.into_iter().dedup().collect_vec(); //TODO banish use of vecs for less allocating
+    if deduped.len()==1 && sorted_dievals.get(0)!=0 {50} else {0} 
 }
 
 /// reports the score for a set of dice in a given slot w/o regard for exogenous gamestate (bonuses, yahtzee wildcards etc)
-fn score_slot(slot:u8, sorted_dievals:DieVals)->u8{
+fn score_slot(slot:Slot, sorted_dievals:DieVals)->Score{
     SCORE_FNS[slot as usize](sorted_dievals) 
 }
 /*-------------------------------------------------------------*/
@@ -332,7 +416,7 @@ fn best_slot_ev(game:GameState, app: &mut AppState) -> EVResult  {
         // LEAF CALCS 
             // prep vars
                 let mut tail_ev = 0.0;
-                let top_slot = slot_sequence.pop().unwrap();
+                let top_slot = slot_sequence.pop().unwrap(); //TODO try not mutating this
                 let mut _choice = top_slot;
                 let mut upper_deficit_now = game.upper_bonus_deficit ;
                 let mut yahtzee_wild_now:bool = game.yahtzee_is_wild;
@@ -347,7 +431,7 @@ fn best_slot_ev(game:GameState, app: &mut AppState) -> EVResult  {
                 } 
 
             // special handling of "extra yahtzees" 
-                let yahtzee_rolled = game.sorted_dievals[0]==game.sorted_dievals[4]; 
+                let yahtzee_rolled = game.sorted_dievals.get(0)==game.sorted_dievals.get(4); 
                 if yahtzee_rolled && game.yahtzee_is_wild { // extra yahtzee situation
                     if top_slot==SM_STRAIGHT {head_ev=30}; // extra yahtzees are valid in any lower slot, per wildcard rules
                     if top_slot==LG_STRAIGHT {head_ev=40}; 
@@ -391,12 +475,12 @@ fn best_slot_ev(game:GameState, app: &mut AppState) -> EVResult  {
 /// returns the best selection of dice and corresponding ev, given slots left, existing dice, and other relevant state 
 fn best_dice_ev(game:GameState, app: &mut AppState) -> EVResult { 
 
-    let mut best_selection = 0b11111; // default selection is "all dice"
+    let mut best_selection:u16 = 0b11111; // default selection is "all dice"
     let mut best_ev = 0.0; 
     if game.rolls_remaining==3 {// special case .. we always roll all dice on initial roll
         best_ev = avg_ev_for_selection(game,app,best_selection);
     } else { // iterate over all the possible ways to select dice and take the best outcome 
-        for selection in 0_u8..=31 { // each selection is a u8 encoded bitfield
+        for selection in 0_u16..=31 { // each selection is a u8 encoded bitfield
             let avg_ev = avg_ev_for_selection(game,app,selection);
             if avg_ev > best_ev {
                 best_ev = avg_ev; 
@@ -411,21 +495,21 @@ fn best_dice_ev(game:GameState, app: &mut AppState) -> EVResult {
 /// "selection" is the set of dice to roll, as represented their indexes in a 5-length array
 #[allow(clippy::needless_range_loop)] // we make use of 'i' twice for performance gain // TODO test enumerate()
 #[inline(always)] // ~6% speedup 
-fn avg_ev_for_selection(game:GameState, app: &mut AppState, selection:u8) -> f32 {
+fn avg_ev_for_selection(game:GameState, app: &mut AppState, selection:Selection) -> f32 {
     let mut total_ev = 0.0;
     let mut newvals:DieVals; 
-    
-    let range = SELECTION_RANGES[selection as usize].clone();
+
+    let range = SELECTION_RANGES[selection as usize].clone(); // selection bitfield also indexes into the cached ranges for corresponding outcomes 
     let mut outcomes_count:usize = 0; 
     for outcome in SELECTION_OUTCOMES[range].iter() { 
         //###### HOT CODE PATH #######
         newvals=game.sorted_dievals;
         for i in 0..=4 { 
-            if outcome.dievals[i]!=0 {
-                newvals[i]=outcome.dievals[i];
+            if outcome.dievals.get(i)!=0 {
+                newvals.set(i, outcome.dievals.get(i));
             };
         }
-        newvals.sort_unstable();
+        newvals.sort();
         let EVResult{choice, ev} = best_choice_ev( GameState{ 
             yahtzee_is_wild: game.yahtzee_is_wild, 
             sorted_open_slots: game.sorted_open_slots, 
@@ -437,7 +521,7 @@ fn avg_ev_for_selection(game:GameState, app: &mut AppState, selection:u8) -> f32
         let added_ev = ev * outcome.arrangements_count as f32; // each combo's ev is weighted by its count of distinct arrangements
         total_ev += added_ev;
         //############################
-        // eprintln!("{:?} {:?} {:?} {:?} {:?} {:?}", game.rolls_remaining, outcome, newvals, next_ev, arrangement_count, increment); 
+        // eprintln!("{} {} {} {} {} {}", game.rolls_remaining, outcome.dievals, outcome.arrangements_count, newvals, ev, added_ev); 
     }
     total_ev/outcomes_count as f32 
 }
