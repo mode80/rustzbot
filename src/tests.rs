@@ -29,24 +29,13 @@ fn score_slot_test() {
     assert_eq!(50, score_slot(YAHTZEE,[1,1,1,1,1].into()));
 }
 
-// #[test]
-fn avg_ev_for_selection_test() {
-    let game = GameState{   rolls_remaining: 1, 
-                            sorted_open_slots: array_vec!([u16;13] => YAHTZEE ), 
-                            sorted_dievals: [1,1,1,1,1].into(), 
-                            upper_bonus_deficit: INIT_DEFICIT , yahtzee_is_wild: false, };
-    let app = &mut AppState::new(&game);
-    let sel = 31;
-    let result = avg_ev_for_selection(game, app, sel) ;
-    assert_eq!(result,50.0);
-}
- 
+
 // #[test]
 fn ev_of_yahtzee_in_1_roll() {
 // see https://www.yahtzeemanifesto.com/yahtzee-odds.php 
     let game = GameState{   rolls_remaining: 1, 
                             sorted_open_slots: array_vec!([u16;13] => YAHTZEE ), 
-                            sorted_dievals: UNROLLED_DIEVALS, 
+                            sorted_dievals: Default::default(), 
                             upper_bonus_deficit: INIT_DEFICIT , yahtzee_is_wild: false, };
     let app = &mut AppState::new(&game);
     let _result = best_choice_ev(game, app);
@@ -58,7 +47,7 @@ fn ev_of_yahtzee_in_1_roll() {
 fn ev_of_yahtzee_in_2_rolls() {
     let game = GameState{   rolls_remaining: 2, 
                             sorted_open_slots: array_vec!([u16;13] => YAHTZEE ), 
-                            sorted_dievals: UNROLLED_DIEVALS, 
+                            sorted_dievals: Default::default(), 
                             upper_bonus_deficit: INIT_DEFICIT , yahtzee_is_wild: false, };
     let app = &mut AppState::new(&game);
     let _result = best_choice_ev(game, app);
@@ -72,7 +61,7 @@ fn ev_of_yahtzee_in_3_rolls() {
 // see https://www.yahtzeemanifesto.com/yahtzee-odds.php 
     let game = GameState{   rolls_remaining: 3, 
                             sorted_open_slots: array_vec!([u16;13] => YAHTZEE ), 
-                            sorted_dievals: UNROLLED_DIEVALS, 
+                            sorted_dievals: Default::default(), 
                             upper_bonus_deficit: INIT_DEFICIT , yahtzee_is_wild: false, };
     let app = &mut AppState::new(&game);
     let _result = best_choice_ev(game, app);
@@ -96,7 +85,7 @@ fn ev_of_lgstraight_in_1() {
 // see https://www.yahtzeemanifesto.com/yahtzee-odds.php 
     let game = GameState{   rolls_remaining: 1, 
                             sorted_open_slots: array_vec!([u16;13] => LG_STRAIGHT ), 
-                            sorted_dievals: UNROLLED_DIEVALS, 
+                            sorted_dievals: Default::default(), 
                             upper_bonus_deficit: INIT_DEFICIT , yahtzee_is_wild: false, };
     let app = &mut AppState::new(&game);
     let result = best_choice_ev(game, app);
@@ -108,7 +97,7 @@ fn ev_of_4ofakind_in_1() {
 // see https://www.yahtzeemanifesto.com/yahtzee-odds.php 
     let game = GameState{   rolls_remaining: 1, 
                             sorted_open_slots: array_vec!([u16;13] => FOUR_OF_A_KIND), 
-                            sorted_dievals: UNROLLED_DIEVALS, 
+                            sorted_dievals: Default::default(), 
                             upper_bonus_deficit: INIT_DEFICIT , yahtzee_is_wild: false, };
     let app = &mut AppState::new(&game);
     let result = best_choice_ev(game, app);
@@ -123,7 +112,7 @@ fn ev_of_3ofakind_in_1() {
 // see https://www.yahtzeemanifesto.com/yahtzee-odds.php 
     let game = GameState{   rolls_remaining: 1, 
                             sorted_open_slots: array_vec!([u16;13] => THREE_OF_A_KIND), 
-                            sorted_dievals: UNROLLED_DIEVALS, 
+                            sorted_dievals: Default::default(), 
                             upper_bonus_deficit: INIT_DEFICIT , yahtzee_is_wild: false, };
     let app = &mut AppState::new(&game);
     let result = best_choice_ev(game, app); 
@@ -173,7 +162,7 @@ fn bench_test() {
     // let slots= array_vec!([u16;13] => 1,2,3,4,5,6,7,8,9,10,11,12,13);
     let game = GameState{   rolls_remaining: 0, 
                             sorted_open_slots: array_vec!([u16;13] => SIXES,FOUR_OF_A_KIND,YAHTZEE ), 
-                            sorted_dievals: UNROLLED_DIEVALS, 
+                            sorted_dievals: Default::default(), 
                             upper_bonus_deficit: 30, 
                             yahtzee_is_wild: false, };
     let app = &mut AppState::new(&game);

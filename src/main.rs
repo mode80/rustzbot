@@ -2,7 +2,7 @@
 #![allow(unused_imports)]
 #![allow(unused_variables)]
 
-use std::{cmp::max, error::{Error}, fs::{self, File}, time::Duration, ops::{Range, BitAnd, Index, IndexMut}, fmt::Display};
+use std::{cmp::max, error::{Error}, fs::{self, File}, time::Duration, ops::{Range, BitAnd, Index, IndexMut}, fmt::Display, u32::MAX};
 use itertools::{Itertools, sorted};
 use indicatif::ProgressBar;
 use rustc_hash::{FxHashSet, FxHashMap};
@@ -21,11 +21,7 @@ mod tests;
 
 fn main() -> Result<(), Box<dyn Error>>{
     
-    let game = GameState{
-        sorted_open_slots: Slots::from([ACES,TWOS,THREES,FOURS,FIVES,SIXES,THREE_OF_A_KIND,FOUR_OF_A_KIND,SM_STRAIGHT,LG_STRAIGHT,FULL_HOUSE,YAHTZEE,CHANCE]),
-        sorted_dievals: UNROLLED_DIEVALS, rolls_remaining: 3, upper_bonus_deficit: INIT_DEFICIT, yahtzee_is_wild: false,
-    };
-
+    let game = GameState::default();
     let app = & mut AppState::new(&game);
 
     let EVResult{choice, ev} = best_choice_ev(game, app);
@@ -48,7 +44,7 @@ struct DieVals{
 
 impl DieVals {
     fn get(&self, index:u16)->u16 {
-        let rev_idx=4-index;
+        let rev_idx=4-index; // TODO way to avoid this extra OP?
         let mask = 0b111 << (3*rev_idx);
         let masked = self.data & mask;
         masked >> (3*rev_idx) //.try_into().unwrap();
@@ -126,9 +122,10 @@ struct EVResult {
     ev: f32
 }
 
-#[derive(Debug,Clone,Copy)]
+#[derive(Debug,Clone,Copy,Default)]
 struct Outcome {
     dievals: DieVals,
+    mask: DieVals, // stores a pre-made mask for blitting this outcome onto a GameState.DieVals.data u16 later
     arrangements_count: u8,
 }
 
@@ -139,6 +136,13 @@ struct GameState{
     upper_bonus_deficit:u16, 
     yahtzee_is_wild:bool,
     sorted_open_slots:Slots, 
+}
+impl Default for GameState{
+    fn default() -> Self {
+        Self { sorted_dievals: Default::default(), rolls_remaining: 3, upper_bonus_deficit: 63, 
+            yahtzee_is_wild: false, sorted_open_slots: [1,2,3,4,5,6,7,8,9,10,11,12,13].into(),
+        }
+    }
 }
 
 // #[derive(Debug,Clone,Copy,Serialize,Deserialize,PartialEq)]
@@ -176,7 +180,7 @@ const THREE_OF_A_KIND:u16=7; const FOUR_OF_A_KIND:u16=8; const FULL_HOUSE:u16=9;
 const YAHTZEE:u16=12; const CHANCE:u16=13; 
  
 #[allow(clippy::unusual_byte_groupings)] // each group of 3 bits encodes a dieval from 0 to 6
-const UNROLLED_DIEVALS:DieVals = DieVals{data:0}; 
+const UNROLLED_DIEVALS:DieVals = DieVals{data:0};  //just use DieVals::default()
 const INIT_DEFICIT:u16 = 63;
 
 const SCORE_FNS:[fn(sorted_dievals:DieVals)->Score;14] = [
@@ -294,18 +298,21 @@ impl Iterator for SlotPermutations{
 /*-------------------------------------------------------------*/
 //the set of roll outcomes for every possible 5-die selection, where '0' represents an unselected die
 fn all_selection_outcomes() ->[Outcome;1683]  { 
-    let mut retval:[Outcome;1683] = [Outcome{dievals:UNROLLED_DIEVALS, arrangements_count:0};1683];
-    let mut sel_out = Outcome{dievals:UNROLLED_DIEVALS, arrangements_count:0};
+    let mut retval:[Outcome;1683] = [Default::default();1683];
+    let mut outcome = Outcome::default();
     let mut i=0;
+    let mut mask:DieVals; 
     for sel_idxs in die_index_combos(){
-        sel_out.dievals = UNROLLED_DIEVALS;
+        outcome.dievals = Default::default();
         for dievals_vec in [1,2,3,4,5,6_u16].into_iter().combinations_with_replacement(sel_idxs.len()){ 
+            outcome.mask = [0b111,0b111,0b111,0b111,0b111].into();
             for (j, &val ) in dievals_vec.iter().enumerate() { 
                 let idx = 4-sel_idxs[j] as u16; // count down the indexes so it maps naturally to a big-endian bitfield 
-                sel_out.dievals.set(idx,val) ; // dievals is a u16 that encodes five 3-bit values of 0 to 6 
+                outcome.dievals.set(idx,val) ; 
+                outcome.mask.set(idx,0);
             }
-            sel_out.arrangements_count = distinct_arrangements_for(dievals_vec);
-            retval[i]=sel_out;
+            outcome.arrangements_count = distinct_arrangements_for(dievals_vec);
+            retval[i]=outcome;
             i+=1;
         }
     } 
@@ -499,16 +506,22 @@ fn avg_ev_for_selection(game:GameState, app: &mut AppState, selection:Selection)
     let mut total_ev = 0.0;
     let mut newvals:DieVals; 
 
-    let range = SELECTION_RANGES[selection as usize].clone(); // selection bitfield also indexes into the cached ranges for corresponding outcomes 
+    let range = SELECTION_RANGES[selection as usize].clone(); // selection bitfield also acts as index into the cached ranges for corresponding outcomes 
     let mut outcomes_count:usize = 0; 
     for outcome in SELECTION_OUTCOMES[range].iter() { 
         //###### HOT CODE PATH #######
-        newvals=game.sorted_dievals;
-        for i in 0..=4 { 
-            if outcome.dievals.get(i)!=0 {
-                newvals.set(i, outcome.dievals.get(i));
-            };
-        }
+        // let mut test_newvals:DieVals = Default::default(); 
+        // test_newvals.data = (game.sorted_dievals.data & outcome.mask.data) | outcome.dievals.data; 
+        newvals = Default::default(); 
+        newvals.data = (game.sorted_dievals.data & outcome.mask.data) | outcome.dievals.data; 
+        // newvals = game.sorted_dievals; 
+        // for i in 0..=4 { 
+        //     if outcome.dievals.get(i)!=0 {
+        //         newvals.set(i, outcome.dievals.get(i));
+        //     };
+        // }
+        // eprintln!("{:b} {:b}",test_newvals.data,newvals.data);
+        // assert_eq!(test_newvals.data,newvals.data);
         newvals.sort();
         let EVResult{choice, ev} = best_choice_ev( GameState{ 
             yahtzee_is_wild: game.yahtzee_is_wild, 
@@ -532,6 +545,8 @@ fn avg_ev_for_selection(game:GameState, app: &mut AppState, selection:Selection)
 fn best_choice_ev(game:GameState,app: &mut AppState) -> EVResult  { 
 
     if let Some(result) = app.ev_cache.get(&game) { return *result}; // return cached result if we have one 
+    // cache contention here during constant cache writing effectively caps us to single threaded speeds
+    // TODO consider periodically "freezing" chuncks of completed cache into read-only state for better multithreading
 
     let result = if game.rolls_remaining == 0 { //TODO figure out a non-recursive version of this (better for multi-threading)?
         best_slot_ev(game,app)  // <-----------------
