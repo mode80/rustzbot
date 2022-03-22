@@ -1,15 +1,14 @@
-#![allow(dead_code)]
-#![allow(unused_imports)]
-#![allow(unused_variables)]
+// #![allow(dead_code)]
+// #![allow(unused_imports)]
+// #![allow(unused_variables)]
 
-use std::{cmp::max, error::{Error}, fs::{self, File}, time::Duration, ops::{Range, BitAnd, Index, IndexMut}, fmt::Display, u32::MAX};
-use itertools::{Itertools, sorted};
+use std::{cmp::max, fs::{self, File}, time::Duration, ops::{Range, }, fmt::Display};
+use itertools::{Itertools};
 use indicatif::ProgressBar;
 use rustc_hash::{FxHashSet, FxHashMap};
 use tinyvec::*;
 use once_cell::sync::Lazy;
 use std::io::Write; 
-// use cached::proc_macro::cached;
 
 #[macro_use] extern crate serde_derive;
 extern crate bincode;
@@ -19,16 +18,14 @@ extern crate bincode;
 mod tests;
 //-------------------------------------------------------------*/
 
-fn main() -> Result<(), Box<dyn Error>>{
+fn main() {
     
     let game = GameState::default();
     let app = & mut AppState::new(&game);
 
     let EVResult{choice, ev} = best_choice_ev(game, app);
-   
-    Ok(())
-   
 }
+
 /*-------------------------------------------------------------*/
 type Slots = ArrayVec<[u16;13]>;
 type Choice = u16;      // represents EITHER the index of a chosen slot, OR a big-endian bitfield of chosen dice
@@ -37,21 +34,25 @@ type Selection = u16;   // "
 type Slot = u16; 
 type Score = u16;
 
+/*-------------------------------------------------------------
+DieVals
+-------------------------------------------------------------*/
+
 #[derive(Debug,Clone,Copy,PartialEq,Serialize,Deserialize,Eq,PartialOrd,Ord,Hash,Default)]
+
 struct DieVals{
-    pub data:u16, // 5 dievals (0 to 6) can be encoded in 2 bytes, with each taking 3 bits
+    pub data:u16, // 5 dievals (0 to 6) can be encoded in 2 bytes total, each taking 3 bits
 }
 
-const FIRST_INDEX_MASK:u16 = 0b111;
-
 impl DieVals {
+
     fn set(&mut self, index:u16, val:u16) {
         let bitpos = 3*(4-index); // big endian widths of 3 bits per value
         let mask = ! (0b111 << bitpos); // hole maker
         self.data = (self.data & mask) | ((val as u16) << bitpos ); // punch & fill hole
     }
     fn get(&self, index:u16)->u16 {
-        (self.data >> ((4-index)*3)) & FIRST_INDEX_MASK
+        (self.data >> ((4-index)*3)) & 0b111
     }
     fn sort(&mut self){ //insertion sort is good for small arrays like this one
         for i in 1..5 {
@@ -147,12 +148,6 @@ impl Default for GameState{
     }
 }
 
-// #[derive(Debug,Clone,Copy,Serialize,Deserialize,PartialEq)]
-// enum Choice{
-//     Slot(u8),
-//     Dice(DiceBits)
-// }
-
 struct AppState{
     progress_bar:ProgressBar, 
     done:FxHashSet<Slots>, 
@@ -182,7 +177,7 @@ const THREE_OF_A_KIND:u16=7; const FOUR_OF_A_KIND:u16=8; const FULL_HOUSE:u16=9;
 const YAHTZEE:u16=12; const CHANCE:u16=13; 
  
 #[allow(clippy::unusual_byte_groupings)] // each group of 3 bits encodes a dieval from 0 to 6
-const UNROLLED_DIEVALS:DieVals = DieVals{data:0};  //just use DieVals::default()
+// const UNROLLED_DIEVALS:DieVals = DieVals{data:0};  //just use DieVals::default()
 const INIT_DEFICIT:u16 = 63;
 
 const SCORE_FNS:[fn(sorted_dievals:DieVals)->Score;14] = [
@@ -256,7 +251,7 @@ fn save_cache(app:&AppState){
  
 fn console_log(game:&GameState, app:&AppState, choice:Choice, ev:f32 ){
     app.progress_bar.println (
-        format!("{:>}\t{}\t{:>4}\t{:>4.2}\t{:?}\t{:?}\t{:?}", 
+        format!("{:>}\t{}\t{:>4}\t{:>4.2}\t{}\t{}\t{:?}", 
             game.rolls_remaining, game.yahtzee_is_wild, game.upper_bonus_deficit, ev, game.sorted_dievals, game.sorted_open_slots, choice 
         )
     );
@@ -303,13 +298,12 @@ fn all_selection_outcomes() ->[Outcome;1683]  {
     let mut retval:[Outcome;1683] = [Default::default();1683];
     let mut outcome = Outcome::default();
     let mut i=0;
-    let mut mask:DieVals; 
-    for sel_idxs in die_index_combos(){
+    for selection_idxs in die_index_combos(){
         outcome.dievals = Default::default();
-        for dievals_vec in [1,2,3,4,5,6_u16].into_iter().combinations_with_replacement(sel_idxs.len()){ 
+        for dievals_vec in [1,2,3,4,5,6_u16].into_iter().combinations_with_replacement(selection_idxs.len()){ 
             outcome.mask = [0b111,0b111,0b111,0b111,0b111].into();
             for (j, &val ) in dievals_vec.iter().enumerate() { 
-                let idx = 4-sel_idxs[j] as u16; // count down the indexes so it maps naturally to a big-endian bitfield 
+                let idx = 4-selection_idxs[j] as u16; // count down the indexes so it maps naturally to a big-endian bitfield 
                 outcome.dievals.set(idx,val) ; 
                 outcome.mask.set(idx,0);
             }
@@ -514,7 +508,7 @@ fn avg_ev_for_selection(game:GameState, app: &mut AppState, selection:Selection)
         newvals = Default::default(); 
         newvals.data = (game.sorted_dievals.data & outcome.mask.data) | outcome.dievals.data; //gives result after rolling selected dice. faster than looping looping
         newvals.sort();
-        let EVResult{choice, ev} = best_choice_ev( GameState{ 
+        let EVResult{choice: _choice, ev} = best_choice_ev( GameState{ 
             yahtzee_is_wild: game.yahtzee_is_wild, 
             sorted_open_slots: game.sorted_open_slots, 
             rolls_remaining: game.rolls_remaining-1,
