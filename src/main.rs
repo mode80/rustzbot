@@ -1,6 +1,6 @@
-// #![allow(dead_code)]
-// #![allow(unused_imports)]
-// #![allow(unused_variables)]
+#![allow(dead_code)]
+#![allow(unused_imports)]
+#![allow(unused_variables)]
 
 use std::{cmp::max, fs::{self, File}, time::Duration, ops::{Range, }, fmt::Display};
 use itertools::{Itertools};
@@ -27,12 +27,14 @@ fn main() {
 }
 
 /*-------------------------------------------------------------*/
-type Slots = ArrayVec<[u16;13]>;
-type Choice = u16;      // represents EITHER the index of a chosen slot, OR a big-endian bitfield of chosen dice
-type DieVal = u16;      // u16 is convient when used with bit math and sets of DieVals, also u16
-type Selection = u16;   // " 
-type Slot = u16; 
-type Score = u16;
+type Slots = ArrayVec<[Slot;13]>;
+type Choice = u16;      // represents EITHER the index of a chosen slot, OR a DieSet (below)
+type DieSet = u16;      // big endian widths of 3bits for each of 5 die values 
+type DieVal = u8;       // a single die value 0 to 6 where 0 means "unselected"
+type Slot = u8; 
+type Score = u8;
+
+
 
 /*-------------------------------------------------------------
 DieVals
@@ -46,30 +48,30 @@ struct DieVals{
 
 impl DieVals {
 
-    fn set(&mut self, index:u16, val:u16) {
+    fn set(&mut self, index:u8, val:DieVal) {
         let bitpos = 3*(4-index); // big endian widths of 3 bits per value
         let mask = ! (0b111 << bitpos); // hole maker
         self.data = (self.data & mask) | ((val as u16) << bitpos ); // punch & fill hole
     }
-    fn get(&self, index:u16)->u16 {
-        (self.data >> ((4-index)*3)) & 0b111
+    fn get(&self, index:u8)->DieVal{
+        ((self.data >> ((4-index)*3)) & 0b111) as u8
     }
     fn sort(&mut self){ //insertion sort is good for small arrays like this one
         for i in 1..5 {
             let key = self.get(i);
             let mut j = (i as i8) - 1;
-            while j >= 0 && self.get(j as u16) > key {
-                self.set((j + 1) as u16 , self.get(j as u16) );
+            while j >= 0 && self.get(j as u8) > key {
+                self.set((j + 1) as u8 , self.get(j as u8) );
                 j -= 1;
             }
-            self.set((j + 1) as u16, key);
+            self.set((j + 1) as u8, key);
         }
     }
 }
 
 impl Display for DieVals {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let temp:[u16;5] = self.into(); 
+        let temp:[DieVal;5] = self.into(); 
         write!(f,"{:?}",temp) 
     }
 }
@@ -80,17 +82,17 @@ impl From<[u16; 5]> for DieVals{
     }
 }
 
-impl From<& DieVals> for [u16; 5]{ 
+impl From<& DieVals> for [DieVal; 5]{ 
     fn from(dievals: &DieVals) -> Self {
-        let mut temp:[u16;5] = Default::default(); 
-        for i in 0_u16..=4 {temp[i as usize] = dievals.get(i)};
+        let mut temp:[DieVal;5] = Default::default(); 
+        for i in 0_u8..=4 {temp[i as usize] = dievals.get(i)};
         temp
     }
 }
 
-impl From<&mut DieVals> for [u16; 5]{ 
+impl From<&mut DieVals> for [DieVal; 5]{ 
     fn from(dievals: &mut DieVals) -> Self {
-        <[u16;5]>::from(&*dievals)
+        <[DieVal;5]>::from(&*dievals)
     }
 }
 
@@ -106,7 +108,7 @@ impl IntoIterator for DieVals{
 
 struct DieValIntoIter{
     data: DieVals,
-    next_idx: u16,
+    next_idx: u8,
 }
 
 impl Iterator for DieValIntoIter {
@@ -136,7 +138,7 @@ struct Outcome {
 struct GameState{
     sorted_dievals:DieVals, 
     rolls_remaining:u8, 
-    upper_bonus_deficit:u16, 
+    upper_bonus_deficit:u8, 
     yahtzee_is_wild:bool,
     sorted_open_slots:Slots, 
 }
@@ -172,13 +174,13 @@ impl AppState{
     }
 }
 
-const STUB:u16=0; const ACES:u16=1; const TWOS:u16=2; const THREES:u16=3; const FOURS:u16=4; const FIVES:u16=5; const SIXES:u16=6;
-const THREE_OF_A_KIND:u16=7; const FOUR_OF_A_KIND:u16=8; const FULL_HOUSE:u16=9; const SM_STRAIGHT:u16=10; const LG_STRAIGHT:u16=11; 
-const YAHTZEE:u16=12; const CHANCE:u16=13; 
+const STUB:Slot=0; const ACES:Slot=1; const TWOS:Slot=2; const THREES:Slot=3; const FOURS:Slot=4; const FIVES:Slot=5; const SIXES:Slot=6;
+const THREE_OF_A_KIND:Slot=7; const FOUR_OF_A_KIND:Slot=8; const FULL_HOUSE:Slot=9; const SM_STRAIGHT:Slot=10; const LG_STRAIGHT:Slot=11; 
+const YAHTZEE:Slot=12; const CHANCE:Slot=13; 
  
 #[allow(clippy::unusual_byte_groupings)] // each group of 3 bits encodes a dieval from 0 to 6
 // const UNROLLED_DIEVALS:DieVals = DieVals{data:0};  //just use DieVals::default()
-const INIT_DEFICIT:u16 = 63;
+const INIT_DEFICIT:u8 = 63;
 
 const SCORE_FNS:[fn(sorted_dievals:DieVals)->Score;14] = [
     score_aces, // duplicate placeholder so indices align more intuitively with categories 
@@ -193,7 +195,9 @@ static SELECTION_OUTCOMES:Lazy<[Outcome;1683]> = Lazy::new(all_selection_outcome
 // (0, 1, 4), (0, 2), (0, 2, 3), (0, 2, 3, 4), (0, 2, 4), (0, 3), (0, 3, 4), (0, 4), (1,), (1, 2), (1, 2, 3), (1, 2, 3, 4), 
 // (1, 2, 4), (1, 3), (1, 3, 4), (1, 4), (2,), (2, 3), (2, 3, 4), (2, 4), (3,), (3, 4), (4,)]
 
-/*-------------------------------------------------------------*/
+/*-------------------------------------------------------------
+Utils
+-------------------------------------------------------------*/
 
 /// rudimentary factorial suitable for our purposes here.. handles up to fact(34) */
 fn fact(n: u8) -> u128{
@@ -201,7 +205,7 @@ fn fact(n: u8) -> u128{
     if n<=1 {1} else { (big_n)*fact(n-1) }
 }
 
-fn distinct_arrangements_for(dieval_vec:Vec<u16>)->u8{
+fn distinct_arrangements_for(dieval_vec:Vec<DieVal>)->u8{
     let counts = dieval_vec.iter().counts();
     let mut divisor:usize=1;
     let mut non_zero_dievals=0_u8;
@@ -272,7 +276,7 @@ impl SlotPermutations{
 impl Iterator for SlotPermutations{
     type Item = Slots;
 
-    fn next(&mut self) -> Option<Self::Item> {
+    fn next(&mut self) -> Option<Self::Item> { //Heap's algorithm for generating permutations
         if self.i==255 { self.i=0; return Some(self.a); } // first run
         if self.i == self.a.len()  {return None}; // last run
         if self.c[self.i] < self.i { 
@@ -300,10 +304,10 @@ fn all_selection_outcomes() ->[Outcome;1683]  {
     let mut i=0;
     for selection_idxs in die_index_combos(){
         outcome.dievals = Default::default();
-        for dievals_vec in [1,2,3,4,5,6_u16].into_iter().combinations_with_replacement(selection_idxs.len()){ 
+        for dievals_vec in [1,2,3,4,5,6_u8].into_iter().combinations_with_replacement(selection_idxs.len()){ 
             outcome.mask = [0b111,0b111,0b111,0b111,0b111].into();
             for (j, &val ) in dievals_vec.iter().enumerate() { 
-                let idx = 4-selection_idxs[j] as u16; // count down the indexes so it maps naturally to a big-endian bitfield 
+                let idx = 4-selection_idxs[j] as u8; // count down the indexes so it maps naturally to a big-endian bitfield 
                 outcome.dievals.set(idx,val) ; 
                 outcome.mask.set(idx,0);
             }
@@ -420,7 +424,7 @@ fn best_slot_ev(game:GameState, app: &mut AppState) -> EVResult  {
             // prep vars
                 let mut tail_ev = 0.0;
                 let top_slot = slot_sequence.pop().unwrap(); //TODO try not mutating this
-                let mut _choice = top_slot;
+                let mut _choice;
                 let mut upper_deficit_now = game.upper_bonus_deficit ;
                 let mut yahtzee_wild_now:bool = game.yahtzee_is_wild;
 
@@ -472,7 +476,7 @@ fn best_slot_ev(game:GameState, app: &mut AppState) -> EVResult  {
 
     } // end for slot_sequence...
 
-    EVResult{choice:best_slot, ev:best_ev}
+    EVResult{choice:best_slot as u16, ev:best_ev}
 }
 
 /// returns the best selection of dice and corresponding ev, given slots left, existing dice, and other relevant state 
@@ -497,7 +501,7 @@ fn best_dice_ev(game:GameState, app: &mut AppState) -> EVResult {
 /// returns the average of all the expected values for rolling a selection of dice, given the game and app state
 /// "selection" is the set of dice to roll, as represented their indexes in a 5-length array
 #[inline(always)] // ~6% speedup 
-fn avg_ev_for_selection(game:GameState, app: &mut AppState, selection:Selection) -> f32 {
+fn avg_ev_for_selection(game:GameState, app: &mut AppState, selection:DieSet) -> f32 {
     let mut total_ev = 0.0;
     let mut newvals:DieVals; 
 
