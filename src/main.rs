@@ -2,7 +2,7 @@
 #![allow(unused_imports)]
 #![allow(unused_variables)]
 
-use std::{cmp::max, fs::{self, File}, time::Duration, ops::{Range, }, fmt::Display};
+use std::{cmp::max, fs::{self, File}, time::Duration, ops::{Range, }, fmt::Display, panic};
 use itertools::{Itertools};
 use indicatif::ProgressBar;
 use rustc_hash::{FxHashSet, FxHashMap};
@@ -27,12 +27,151 @@ fn main() {
 }
 
 /*-------------------------------------------------------------*/
-type Slots = ArrayVec<[Slot;13]>;
 type Choice = u16;      // represents EITHER the index of a chosen slot, OR a DieSet (below)
 type DieSet = u16;      // big endian widths of 3bits for each of 5 die values 
 type DieVal = u8;       // a single die value 0 to 6 where 0 means "unselected"
 type Slot = u8; 
 type Score = u8;
+
+
+/*-------------------------------------------------------------
+Slots
+-------------------------------------------------------------*/
+
+#[derive(Debug,Clone,Copy,PartialEq,Serialize,Deserialize,Eq,PartialOrd,Ord,Hash,Default)]
+
+struct Slots{
+    pub data:u64, // 13 slot indexis (0 to 12) can be encoded within these 8 bytes, each taking 4 bits
+    pub len:u8,
+}
+
+impl Slots {
+
+    //TODO test performance of inline always on these
+    fn set(&mut self, index:u8, val:Slot) { // TODO u8 here might be better off as usize since indexing arrays is inevitably usize
+        let bitpos = 4*index; // widths of 4 bits per value 
+        let mask = ! (0b1111 << bitpos); // hole maker
+        self.data = (self.data & mask) | ((val as u64) << bitpos ); // punch & fill hole
+    }
+    fn get(&self, index:u8)->Slot{
+        ((self.data >> (index*4)) & 0b1111) as Slot 
+    }
+    fn sort(&mut self){ //TODO generalize this for Slots and Dievals with each implmenting needed get/set Trait
+        for i in 1..self.len { // "insertion sort" is good for small arrays like this one
+            let key = self.get(i);
+            let mut j = (i as i8) - 1;
+            while j >= 0 && self.get(j as u8) > key {
+                self.set((j + 1) as u8 , self.get(j as u8) );
+                j -= 1;
+            }
+            self.set((j + 1) as u8, key);
+        }
+    }
+    fn pop(&mut self) -> Slot {
+        self.len -=1; // will panic if needed
+        self.get(self.len)
+    }
+
+    fn permutations (self) -> SlotPermutations{
+        SlotPermutations::new(self)
+    }
+}
+
+impl Display for Slots {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let temp:[Slot;13] = self.into(); 
+        write!(f,"{:?}",temp) 
+    }
+}
+
+impl <const N:usize> From<[Slot; N]> for Slots{
+    fn from(a: [Slot; N]) -> Self {
+        if a.len() as usize > 13 { panic!(); }
+        let mut retval:Slots = Default::default();
+        for i in 0..N { retval.set(i as u8, a[i as usize]); }
+        retval.len = a.len() as u8;
+        retval 
+    }
+}
+
+
+impl <const N:usize>  From<&Slots> for [Slot; N]{ 
+    #[allow(clippy::needless_range_loop)] // isn't needless here 
+    fn from(slots: &Slots) -> Self {
+        if slots.len as usize > N { panic!(); }
+        let mut retval:[Slot;N] = [Slot::default(); N]; 
+        for i in 0..N {retval[i] = slots.get(i as u8)};
+        retval
+    }
+}
+
+impl <const N:usize>  From<&mut Slots> for [Slot; N]{ 
+    fn from(slots: &mut Slots) -> Self {
+        <[Slot;N]>::from(&*slots) // the &* here copies the mutable ref to a ref 
+    }
+}
+
+impl IntoIterator for Slots{
+    type IntoIter=SlotIntoIter;
+    type Item = Slot;
+
+    fn into_iter(self) -> Self::IntoIter {
+        SlotIntoIter { data:self, next_idx:0 }
+    }
+
+}
+
+struct SlotIntoIter{
+    data: Slots,
+    next_idx: u8,
+}
+
+impl Iterator for SlotIntoIter {
+    type Item = Slot ;
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.next_idx == self.data.len {return None};
+        let retval = self.data.get(self.next_idx);
+        self.next_idx +=1;
+        Some(retval)
+    }
+}
+
+struct SlotPermutations{
+    slots:Slots,
+    c:[usize;13],// c is an encoding of the stack state. c[k] encodes the for-loop counter for when generate(k - 1, A) is called
+    i:usize,// i acts similarly to a stack pointer
+}
+impl SlotPermutations{
+    fn new(slots:Slots) -> Self{
+        Self{ slots, c:Default::default(), i:255, }
+    }
+}
+impl Iterator for SlotPermutations{
+    type Item = Slots;
+
+    fn next(&mut self) -> Option<Self::Item> { //Heap's algorithm for generating permutations
+        if self.i==255 { self.i=0; return Some(self.slots); } // first run
+        if self.i == self.slots.len as usize {return None}; // last run
+        if self.c[self.i] < self.i { 
+            if self.i % 2 == 0 { // even 
+                let temp = self.slots.get(self.i as u8); // prep to swap
+                self.slots.set(self.i as u8, self.slots.get(0));
+                self.slots.set(0, temp);
+            } else { // odd
+                let temp = self.slots.get(self.c[self.i] as u8); //prep to swap
+                self.slots.set(self.c[self.i] as u8, self.slots.get(self.i as u8));
+                self.slots.set(self.i as u8, temp);
+            } 
+            self.c[self.i] += 1;// Swap has occurred ending the "for-loop". Simulate the increment of the for-loop counter
+            self.i = 0;// Simulate recursive call reaching the base case by bringing the pointer to the base case analog in the array
+            Some(self.slots)
+        } else { // Calling generate(i+1, A) has ended as the for-loop terminated. Reset the state and simulate popping the stack by incrementing the pointer.
+            self.c[self.i] = 0;
+            self.i += 1;
+            self.next()
+        } 
+    }
+}
 
 
 
@@ -48,13 +187,13 @@ struct DieVals{
 
 impl DieVals {
 
-    fn set(&mut self, index:u8, val:DieVal) {
+    fn set(&mut self, index:u8, val:DieVal) { //TODO don't need the extra 4- OP as long as get, From, Display and Into, generated combos also match
         let bitpos = 3*(4-index); // big endian widths of 3 bits per value
         let mask = ! (0b111 << bitpos); // hole maker
         self.data = (self.data & mask) | ((val as u16) << bitpos ); // punch & fill hole
     }
     fn get(&self, index:u8)->DieVal{
-        ((self.data >> ((4-index)*3)) & 0b111) as u8
+        ((self.data >> ((4-index)*3)) & 0b111) as DieVal
     }
     fn sort(&mut self){ //insertion sort is good for small arrays like this one
         for i in 1..5 {
@@ -76,9 +215,9 @@ impl Display for DieVals {
     }
 }
 
-impl From<[u16; 5]> for DieVals{
-    fn from(a: [u16; 5]) -> Self {
-        DieVals{data: a[0]<<12 | a[1]<<9 | a[2]<<6 | a[3]<<3 | a[4] }
+impl From<[DieVal; 5]> for DieVals{
+    fn from(a: [DieVal; 5]) -> Self {
+        DieVals{data: (a[0] as u16) << 12 | (a[1] as u16) <<9 | (a[2] as u16) <<6 | (a[3] as u16) <<3 | (a[4] as u16)}
     }
 }
 
@@ -97,21 +236,21 @@ impl From<&mut DieVals> for [DieVal; 5]{
 }
 
 impl IntoIterator for DieVals{
-    type IntoIter=DieValIntoIter;
+    type IntoIter=DieValsIntoIter;
     type Item = DieVal;
 
     fn into_iter(self) -> Self::IntoIter {
-        DieValIntoIter { data:self, next_idx:0 }
+        DieValsIntoIter { data:self, next_idx:0 }
    }
 
 }
 
-struct DieValIntoIter{
+struct DieValsIntoIter{
     data: DieVals,
     next_idx: u8,
 }
 
-impl Iterator for DieValIntoIter {
+impl Iterator for DieValsIntoIter {
     type Item = DieVal;
     fn next(&mut self) -> Option<Self::Item> {
         if self.next_idx == 5 {return None};
@@ -158,7 +297,7 @@ struct AppState{
 }
 impl AppState{
     fn new(game: &GameState) -> Self{
-        let slot_count=game.sorted_open_slots.len() as u8;
+        let slot_count=game.sorted_open_slots.len as u8;
         let combo_count = (1..=slot_count).map(|r| n_take_r(slot_count, r ,false,false) as u64 ).sum() ;
         let init_capacity = combo_count as usize * 252 * 64; // * 2 * 2; // roughly: slotcombos * diecombos * deficits * wilds * rolls
         let cachemap = if let Ok(bytes) = fs::read("ev_cache") { 
@@ -255,45 +394,10 @@ fn save_cache(app:&AppState){
  
 fn console_log(game:&GameState, app:&AppState, choice:Choice, ev:f32 ){
     app.progress_bar.println (
-        format!("{:>}\t{}\t{:>4}\t{:>4.2}\t{}\t{}\t{:?}", 
+        format!("{:>}\t{}\t{:>4}\t{:>4.2}\t{}\t{}\t{}", 
             game.rolls_remaining, game.yahtzee_is_wild, game.upper_bonus_deficit, ev, game.sorted_dievals, game.sorted_open_slots, choice 
         )
     );
-}
-
-struct SlotPermutations{
-    a:Slots,
-    c:[usize;13],// c is an encoding of the stack state. c[k] encodes the for-loop counter for when generate(k - 1, A) is called
-    i:usize,// i acts similarly to a stack pointer
-}
-impl SlotPermutations{
-    fn new(a:Slots) -> Self{
-        let c= [0;13];
-        let i = 255;
-        Self{ a, c, i}
-    }
-}
-impl Iterator for SlotPermutations{
-    type Item = Slots;
-
-    fn next(&mut self) -> Option<Self::Item> { //Heap's algorithm for generating permutations
-        if self.i==255 { self.i=0; return Some(self.a); } // first run
-        if self.i == self.a.len()  {return None}; // last run
-        if self.c[self.i] < self.i { 
-            if self.i % 2 == 0 { // even 
-                (self.a[self.i], self.a[0]) = (self.a[0], self.a[self.i]); //swap 
-            } else { // odd
-                (self.a[self.c[self.i]], self.a[self.i]) = (self.a[self.i], self.a[self.c[self.i]]); //swap
-            } 
-            self.c[self.i] += 1;// Swap has occurred ending the "for-loop". Simulate the increment of the for-loop counter
-            self.i = 0;// Simulate recursive call reaching the base case by bringing the pointer to the base case analog in the array
-            Some(self.a)
-        } else { // Calling generate(i+1, A) has ended as the for-loop terminated. Reset the state and simulate popping the stack by incrementing the pointer.
-            self.c[self.i] = 0;
-            self.i += 1;
-            self.next()
-        } 
-    }
 }
 
 /*-------------------------------------------------------------*/
@@ -418,21 +522,22 @@ fn best_slot_ev(game:GameState, app: &mut AppState) -> EVResult  {
     let mut best_ev = 0.0; 
     let mut best_slot=STUB; 
 
-    for mut slot_sequence in SlotPermutations::new(game.sorted_open_slots) {
+    let n = game.sorted_open_slots.len;
+    for mut slot_sequence in game.sorted_open_slots.permutations() {
 
         // LEAF CALCS 
             // prep vars
                 let mut tail_ev = 0.0;
-                let top_slot = slot_sequence.pop().unwrap(); //TODO try not mutating this
+                let head_slot = slot_sequence.pop();
                 let mut _choice;
                 let mut upper_deficit_now = game.upper_bonus_deficit ;
                 let mut yahtzee_wild_now:bool = game.yahtzee_is_wild;
 
             // score slot itself w/o regard to game state 
-                let mut head_ev = score_slot(top_slot, game.sorted_dievals); 
+                let mut head_ev = score_slot(head_slot, game.sorted_dievals); 
 
             // add upper bonus when needed total is reached
-                if top_slot <= SIXES && upper_deficit_now>0 && head_ev>0 { 
+                if head_slot <= SIXES && upper_deficit_now>0 && head_ev>0 { 
                     if head_ev >= upper_deficit_now {head_ev += 35}; 
                     upper_deficit_now = upper_deficit_now.saturating_sub(head_ev) ;
                 } 
@@ -440,15 +545,14 @@ fn best_slot_ev(game:GameState, app: &mut AppState) -> EVResult  {
             // special handling of "extra yahtzees" 
                 let yahtzee_rolled = game.sorted_dievals.get(0)==game.sorted_dievals.get(4); 
                 if yahtzee_rolled && game.yahtzee_is_wild { // extra yahtzee situation
-                    if top_slot==SM_STRAIGHT {head_ev=30}; // extra yahtzees are valid in any lower slot, per wildcard rules
-                    if top_slot==LG_STRAIGHT {head_ev=40}; 
-                    if top_slot==FULL_HOUSE  {head_ev=25}; 
+                    if head_slot==SM_STRAIGHT {head_ev=30}; // extra yahtzees are valid in any lower slot, per wildcard rules
+                    if head_slot==LG_STRAIGHT {head_ev=40}; 
+                    if head_slot==FULL_HOUSE  {head_ev=25}; 
                     head_ev+=100; // extra yahtzee bonus per rules
                 }
-                if top_slot==YAHTZEE && yahtzee_rolled {yahtzee_wild_now = true} ;
+                if head_slot==YAHTZEE && yahtzee_rolled {yahtzee_wild_now = true} ;
 
-
-        if ! slot_sequence.is_empty() { // proceed to include all the ev of remaining slots in this slot_sequence
+        if slot_sequence.len > 0 { // proceed to include all the ev of remaining slots in this slot_sequence
 
             //prune unneeded state duplication when there's no chance of reaching upper bonus
                 let mut best_deficit = upper_deficit_now;
@@ -459,7 +563,7 @@ fn best_slot_ev(game:GameState, app: &mut AppState) -> EVResult  {
                 if best_deficit > 0 {upper_deficit_now=63}; 
 
             // we'll permutate and find max ev on the inside down below, but we'll use this sorted sequence as the key when we cache the max 
-                slot_sequence.sort_unstable(); 
+                slot_sequence.sort(); 
 
             // gather the collective ev for the remaining slots recursively
                 EVResult{choice:_choice, ev:tail_ev} = best_choice_ev( GameState{
@@ -472,7 +576,7 @@ fn best_slot_ev(game:GameState, app: &mut AppState) -> EVResult  {
         }
 
         let ev = tail_ev + head_ev as f32 ; 
-        if ev >= best_ev { best_ev = ev; best_slot = top_slot ; }
+        if ev >= best_ev { best_ev = ev; best_slot = head_slot ; }
 
     } // end for slot_sequence...
 
