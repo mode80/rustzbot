@@ -13,6 +13,14 @@ fn rounded(it:f32,places:i32) -> f32{
 }
 
 // #[test]
+fn test_sort() {
+    let mut sortable:DieVals = [2,6,5,1,5].into();
+    let presorted:DieVals = [1,2,5,5,6].into();
+    sortable.sort();
+    assert_eq!(sortable.data, presorted.data);
+}
+
+// #[test]
 fn test_dievals_into(){
     let dv:DieVals = [2,2,5,5,5].into();
     assert_eq!(dv.get(5), 0);
@@ -157,6 +165,15 @@ fn test_permutations() {
     }; 
 }
 
+// #[test]
+fn print_misc() {
+    // eprint!("{:?}", selection_ranges() );
+    // eprint!("{:?}", all_selection_outcomes() );
+    eprintln!("{:?}", selection_ranges() );
+    // eprint!("{:?}", five_dice_combinations() );
+    // eprint!("{:?}", die_index_combos() );
+}
+
 #[test]
 fn bench_test() {
     // let slots= array_vec!([u16;13] => 1,2,3,4,5,6,7,8,9,10,11,12,13);
@@ -169,13 +186,4 @@ fn bench_test() {
     let result = best_choice_ev(game, app);
     assert_eq!(rounded(result.ev,2),  28.92);
     // save_cache(&app);
-}
-
-// #[test]
-fn print_misc() {
-    // eprint!("{:?}", selection_ranges() );
-    // eprint!("{:?}", all_selection_outcomes() );
-    eprintln!("{:?}", selection_ranges() );
-    // eprint!("{:?}", five_dice_combinations() );
-    // eprint!("{:?}", die_index_combos() );
 }

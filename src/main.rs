@@ -55,12 +55,16 @@ impl DieVals {
         self.data = (self.data & mask) | ((val as u16) << pos );
                                         // eprintln!("{} {:b} {:b} {} {}",self, self.data, mask, index , val);
     }
-    fn sort(&mut self){
-        //TODO find something better
-        let mut temp:[u16;5] = self.into(); 
-        for (i,dieval) in self.into_iter().enumerate() {temp[i]=dieval};
-        temp.sort_unstable();
-        for i in 0_u16..=4 {self.set(i,temp[i as usize])};
+    fn sort(&mut self){ //insertion sort is good for small arrays like this one
+        for j in 1..5 {
+            let key = self.get(j);
+            let mut i = (j as i8) - 1;
+            while i >= 0 && self.get(i as u16) > key {
+                self.set((i + 1) as u16 , self.get(i as u16) );
+                i -= 1;
+            }
+            self.set((i + 1) as u16, key);
+        }
     }
 }
 
@@ -500,7 +504,6 @@ fn best_dice_ev(game:GameState, app: &mut AppState) -> EVResult {
 
 /// returns the average of all the expected values for rolling a selection of dice, given the game and app state
 /// "selection" is the set of dice to roll, as represented their indexes in a 5-length array
-#[allow(clippy::needless_range_loop)] // we make use of 'i' twice for performance gain // TODO test enumerate()
 #[inline(always)] // ~6% speedup 
 fn avg_ev_for_selection(game:GameState, app: &mut AppState, selection:Selection) -> f32 {
     let mut total_ev = 0.0;
@@ -510,18 +513,8 @@ fn avg_ev_for_selection(game:GameState, app: &mut AppState, selection:Selection)
     let mut outcomes_count:usize = 0; 
     for outcome in SELECTION_OUTCOMES[range].iter() { 
         //###### HOT CODE PATH #######
-        // let mut test_newvals:DieVals = Default::default(); 
-        // test_newvals.data = (game.sorted_dievals.data & outcome.mask.data) | outcome.dievals.data; 
         newvals = Default::default(); 
-        newvals.data = (game.sorted_dievals.data & outcome.mask.data) | outcome.dievals.data; 
-        // newvals = game.sorted_dievals; 
-        // for i in 0..=4 { 
-        //     if outcome.dievals.get(i)!=0 {
-        //         newvals.set(i, outcome.dievals.get(i));
-        //     };
-        // }
-        // eprintln!("{:b} {:b}",test_newvals.data,newvals.data);
-        // assert_eq!(test_newvals.data,newvals.data);
+        newvals.data = (game.sorted_dievals.data & outcome.mask.data) | outcome.dievals.data; //gives result after rolling selected dice. faster than looping looping
         newvals.sort();
         let EVResult{choice, ev} = best_choice_ev( GameState{ 
             yahtzee_is_wild: game.yahtzee_is_wild, 
