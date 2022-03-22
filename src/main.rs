@@ -42,28 +42,26 @@ struct DieVals{
     pub data:u16, // 5 dievals (0 to 6) can be encoded in 2 bytes, with each taking 3 bits
 }
 
+const FIRST_INDEX_MASK:u16 = 0b111;
+
 impl DieVals {
-    fn get(&self, index:u16)->u16 {
-        let rev_idx=4-index; // TODO way to avoid this extra OP?
-        let mask = 0b111 << (3*rev_idx);
-        let masked = self.data & mask;
-        masked >> (3*rev_idx) //.try_into().unwrap();
-    }
     fn set(&mut self, index:u16, val:u16) {
-        let pos = 3*(4-index);
-        let mask = u16::MAX ^ (0b111 << pos); // make a hole
-        self.data = (self.data & mask) | ((val as u16) << pos );
-                                        // eprintln!("{} {:b} {:b} {} {}",self, self.data, mask, index , val);
+        let bitpos = 3*(4-index); // big endian widths of 3 bits per value
+        let mask = ! (0b111 << bitpos); // hole maker
+        self.data = (self.data & mask) | ((val as u16) << bitpos ); // punch & fill hole
+    }
+    fn get(&self, index:u16)->u16 {
+        (self.data >> ((4-index)*3)) & FIRST_INDEX_MASK
     }
     fn sort(&mut self){ //insertion sort is good for small arrays like this one
-        for j in 1..5 {
-            let key = self.get(j);
-            let mut i = (j as i8) - 1;
-            while i >= 0 && self.get(i as u16) > key {
-                self.set((i + 1) as u16 , self.get(i as u16) );
-                i -= 1;
+        for i in 1..5 {
+            let key = self.get(i);
+            let mut j = (i as i8) - 1;
+            while j >= 0 && self.get(j as u16) > key {
+                self.set((j + 1) as u16 , self.get(j as u16) );
+                j -= 1;
             }
-            self.set((i + 1) as u16, key);
+            self.set((j + 1) as u16, key);
         }
     }
 }
