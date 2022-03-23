@@ -69,7 +69,9 @@ impl Slots {
     }
     fn pop(&mut self) -> Slot {
         self.len -=1; // will panic if needed
-        self.get(self.len)
+        let retval = self.get(self.len);
+        self.set(self.len,0); // TODO remove as optization?
+        retval
     }
 
     fn permutations (self) -> SlotPermutations{
@@ -398,8 +400,8 @@ fn save_cache(app:&AppState){
  
 fn console_log(game:&GameState, app:&AppState, choice:Choice, ev:f32 ){
     app.progress_bar.println (
-        format!("{:>}\t{}\t{:>4}\t{:>4.2}\t{}\t{}\t{}", 
-            game.rolls_remaining, game.yahtzee_is_wild, game.upper_bonus_deficit, ev, game.sorted_dievals, game.sorted_open_slots, choice 
+        format!("{:>}\t{}\t{:>4}\t{:>4.2}\t{}\t{}\t{:>30}", 
+            game.rolls_remaining, game.yahtzee_is_wild, game.upper_bonus_deficit, ev, choice, game.sorted_dievals, game.sorted_open_slots 
         )
     );
 }
