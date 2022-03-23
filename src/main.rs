@@ -48,7 +48,7 @@ struct Slots{
 impl Slots {
 
     //TODO test performance of inline always on these
-    fn set(&mut self, index:u8, val:Slot) { // TODO u8 here might be better off as usize since indexing arrays is inevitably usize
+    fn set(&mut self, index:u8, val:Slot) { 
         let bitpos = 4*index; // widths of 4 bits per value 
         let mask = ! (0b1111 << bitpos); // hole maker
         self.data = (self.data & mask) | ((val as u64) << bitpos ); // punch & fill hole
@@ -70,7 +70,7 @@ impl Slots {
     fn pop(&mut self) -> Slot {
         self.len -=1; // will panic if needed
         let retval = self.get(self.len);
-        self.set(self.len,0); // TODO remove as optization?
+        self.set(self.len,0); 
         retval
     }
 
@@ -190,12 +190,12 @@ struct DieVals{
 impl DieVals {
 
     fn set(&mut self, index:u8, val:DieVal) { //TODO don't need the extra 4- OP as long as get, From, Display and Into, generated combos also match
-        let bitpos = 3*(4-index); // big endian widths of 3 bits per value
+        let bitpos = 3*index; // widths of 3 bits per value
         let mask = ! (0b111 << bitpos); // hole maker
         self.data = (self.data & mask) | ((val as u16) << bitpos ); // punch & fill hole
     }
     fn get(&self, index:u8)->DieVal{
-        ((self.data >> ((4-index)*3)) & 0b111) as DieVal
+        ((self.data >> (index*3)) & 0b111) as DieVal
     }
     fn sort(&mut self){ //insertion sort is good for small arrays like this one
         for i in 1..5 {
@@ -219,7 +219,7 @@ impl Display for DieVals {
 
 impl From<[DieVal; 5]> for DieVals{
     fn from(a: [DieVal; 5]) -> Self {
-        DieVals{data: (a[0] as u16) << 12 | (a[1] as u16) <<9 | (a[2] as u16) <<6 | (a[3] as u16) <<3 | (a[4] as u16)}
+        DieVals{data: (a[4] as u16) << 12 | (a[3] as u16) <<9 | (a[2] as u16) <<6 | (a[1] as u16) <<3 | (a[0] as u16)}
     }
 }
 
@@ -417,7 +417,7 @@ fn all_selection_outcomes() ->[Outcome;1683]  {
         for dievals_vec in [1,2,3,4,5,6_u8].into_iter().combinations_with_replacement(selection_idxs.len()){ 
             outcome.mask = [0b111,0b111,0b111,0b111,0b111].into();
             for (j, &val ) in dievals_vec.iter().enumerate() { 
-                let idx = 4-selection_idxs[j] as u8; // count down the indexes so it maps naturally to a big-endian bitfield 
+                let idx = 4-selection_idxs[j] as u8; // count down the indexes such that 0 represts selecting none and 31 all 
                 outcome.dievals.set(idx,val) ; 
                 outcome.mask.set(idx,0);
             }
@@ -653,7 +653,7 @@ fn best_choice_ev(game:GameState,app: &mut AppState) -> EVResult  {
         best_dice_ev(game,app)  // <-----------------
     };
 
-    // console_log(&game,app,result.0,result.1);
+    // console_log(&game,app,result.choice,result.ev);
 
     if game.rolls_remaining==0 { // periodically update progress and save
         let e = {app.done.contains(&game.sorted_open_slots)} ;
