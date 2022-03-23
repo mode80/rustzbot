@@ -82,7 +82,9 @@ impl Slots {
 impl Display for Slots {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let temp:[Slot;13] = self.into(); 
-        write!(f,"{:?}",temp) 
+        let mut temp_vec = vec![0;13];
+        temp_vec.copy_from_slice(&temp);
+        write!(f,"{:?}",temp.into_iter().filter(|x|*x!=0).collect_vec()) 
     }
 }
 
