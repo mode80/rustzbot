@@ -308,7 +308,7 @@ impl AppState{
         };
         let cache_keys:Vec<&GameState> = cachemap.keys().into_iter().collect_vec();
         let ticks = cache_keys.into_iter().filter(|x|x.rolls_remaining ==0).collect_vec().len();
-        pb.set_length(ticks as u64);
+        pb.inc(ticks as u64);
         Self{   progress_bar : pb, 
                 ev_cache : cachemap,
                 checkpoint: Duration::new(0,0),
