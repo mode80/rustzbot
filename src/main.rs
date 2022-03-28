@@ -2,11 +2,10 @@
 #![allow(unused_imports)]
 #![allow(unused_variables)]
 
-use std::{cmp::max, fs::{self, File}, time::Duration, ops::{Range, }, fmt::Display, panic};
-use itertools::{Itertools};
+use std::{cmp::max, fs::{self, File}, time::Duration, ops::Range, fmt::Display, panic};
+use itertools::Itertools;
 use indicatif::ProgressBar;
 use rustc_hash::{FxHashSet, FxHashMap};
-use tinyvec::*;
 use once_cell::sync::Lazy;
 use std::io::Write; 
 
@@ -414,12 +413,12 @@ fn all_selection_outcomes() ->[Outcome;1683]  {
     let mut retval:[Outcome;1683] = [Default::default();1683];
     let mut outcome = Outcome::default();
     let mut i=0;
-    for selection_idxs in die_index_combos(){
+    for combo in die_index_combos(){
         outcome.dievals = Default::default();
-        for dievals_vec in [1,2,3,4,5,6_u8].into_iter().combinations_with_replacement(selection_idxs.len()){ 
+        for dievals_vec in [1,2,3,4,5,6_u8].into_iter().combinations_with_replacement(combo.len()){ 
             outcome.mask = [0b111,0b111,0b111,0b111,0b111].into();
             for (j, &val ) in dievals_vec.iter().enumerate() { 
-                let idx = 4-selection_idxs[j] as u8; // count down the indexes such that 0 represts selecting none and 31 all 
+                let idx = 4-combo[j] as u8; // count down the indexes such that 0 represts selecting none and 31 all 
                 outcome.dievals.set(idx,val) ; 
                 outcome.mask.set(idx,0);
             }
@@ -427,7 +426,7 @@ fn all_selection_outcomes() ->[Outcome;1683]  {
             retval[i]=outcome;
             i+=1;
         }
-    } 
+    }
     retval
 }
 
@@ -435,6 +434,7 @@ fn all_selection_outcomes() ->[Outcome;1683]  {
 fn selection_ranges() ->[Range<usize>;32]  { 
     let mut sel_ranges:[Range<usize>;32] = Default::default();
     let mut s = 0;
+    sel_ranges[0] = 0..1;
     for (i,combo) in die_index_combos().into_iter().enumerate(){
         let count = n_take_r(6, combo.len() as u8, false, true) ;
         sel_ranges[i] = s..(s+count as usize);
@@ -445,15 +445,14 @@ fn selection_ranges() ->[Range<usize>;32]  {
 
 /// the set of all ways to roll different dice, as represented by a collection of index arrays
 #[allow(clippy::eval_order_dependence)]
-fn die_index_combos() ->[ArrayVec<[u16;5]>;32]  { 
-    let mut them = [ArrayVec::<[u16;5]>::new() ;32]; // init dice arrray 
+fn die_index_combos() ->[Vec<u8>;32]  { 
+    let mut them:[Vec<u8>;32] = Default::default(); 
     let mut i=0; 
     for n in 1..=5 {
         for combo in (0..=4).combinations(n){ 
-            them[i]= { let mut it=ArrayVec::<[u16;5]>::new(); it.extend_from_slice(&combo); i+=1; it} 
+            them[i]= { let mut it=Vec::<u8>::new(); it.extend_from_slice(&combo); i+=1; it} 
         } 
     }
-    // them.sort_unstable();
     them
 }
 
@@ -530,7 +529,6 @@ fn best_slot_ev(game:GameState, app: &mut AppState) -> EVResult  {
     let mut best_ev = 0.0; 
     let mut best_slot=STUB; 
 
-    let n = game.sorted_open_slots.len;
     for mut slot_sequence in game.sorted_open_slots.permutations() {
 
         // LEAF CALCS 
