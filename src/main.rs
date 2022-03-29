@@ -46,16 +46,17 @@ struct Slots{
 
 impl Slots {
 
-    //TODO test performance of inline always on these
     fn set(&mut self, index:u8, val:Slot) { 
         let bitpos = 4*index; // widths of 4 bits per value 
         let mask = ! (0b1111 << bitpos); // hole maker
         self.data = (self.data & mask) | ((val as u64) << bitpos ); // punch & fill hole
     }
+
     fn get(&self, index:u8)->Slot{
         ((self.data >> (index*4)) & 0b1111) as Slot 
     }
-    fn sort(&mut self){ //TODO generalize this for Slots and Dievals with each implmenting needed get/set Trait
+
+    fn sort(&mut self){ 
         for i in 1..self.len { // "insertion sort" is good for small arrays like this one
             let key = self.get(i);
             let mut j = (i as i8) - 1;
@@ -66,6 +67,7 @@ impl Slots {
             self.set((j + 1) as u8, key);
         }
     }
+
     fn pop(&mut self) -> Slot {
         self.len -=1; // will panic if needed
         let retval = self.get(self.len);
@@ -190,14 +192,16 @@ struct DieVals{
 
 impl DieVals {
 
-    fn set(&mut self, index:u8, val:DieVal) { //TODO don't need the extra 4- OP as long as get, From, Display and Into, generated combos also match
+    fn set(&mut self, index:u8, val:DieVal) { 
         let bitpos = 3*index; // widths of 3 bits per value
         let mask = ! (0b111 << bitpos); // hole maker
         self.data = (self.data & mask) | ((val as u16) << bitpos ); // punch & fill hole
     }
+
     fn get(&self, index:u8)->DieVal{
         ((self.data >> (index*3)) & 0b111) as DieVal
     }
+
     fn sort(&mut self){ //insertion sort is good for small arrays like this one
         for i in 1..5 {
             let key = self.get(i);
@@ -501,19 +505,28 @@ fn score_lg_str8(sorted_dievals:    DieVals)->Score{ if straight_len(sorted_diev
 
 // The official rule is that a Full House is "three of one number and two of another"
 fn score_fullhouse(sorted_dievals:DieVals) -> Score { 
-    let counts_map = sorted_dievals.into_iter().counts();
-    let mut counts = counts_map.values().collect_vec(); 
-    counts.sort_unstable();
-    if  (counts.len()==2) && 
-        (*counts[0]==2 && *counts[1]==3) &&
-        (*counts[0]!=0 && *counts[1]!=0)
-    {25} else {0}
+    let mut iter=sorted_dievals.into_iter();
+    let val = iter.next().unwrap();
+    let val1=val; 
+    let mut val1count =1; 
+    let mut val2=0;
+    let mut val2count =0;
+    for val in iter {
+        if val == 0 {return 0};
+        if val1 == val {val1count+=1; continue;}
+        if val2 == 0 {val2 = val; val2count=1; continue;}    
+        if val2 == val {val2count+=1; continue;}
+    }
+    if (val1count==3 && val2count==2) || (val2count==3 && val1count==2) {25} else {0}
 }
 
 fn score_chance(sorted_dievals:DieVals)->Score { sorted_dievals.into_iter().sum()  }
+
 fn score_yahtzee(sorted_dievals:DieVals)->Score { 
-    let deduped=sorted_dievals.into_iter().dedup().collect_vec(); //TODO banish use of vecs for less allocating
-    if deduped.len()==1 && sorted_dievals.get(0)!=0 {50} else {0} 
+    let mut iter =sorted_dievals.into_iter(); 
+    let firstval = iter.next().unwrap();
+    for nextval in iter { if nextval!=firstval {return 0;} }
+    50
 }
 
 /// reports the score for a set of dice in a given slot w/o regard for exogenous gamestate (bonuses, yahtzee wildcards etc)

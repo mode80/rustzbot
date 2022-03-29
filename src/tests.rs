@@ -5,7 +5,6 @@ use std::io::BufWriter;
 use assert_approx_eq::assert_approx_eq;
 
 use super::*;
-// use test::Bencher;
 
 fn rounded(it:f32,places:i32) -> f32{
     let e = 10_f32.powi(places);
@@ -174,10 +173,23 @@ fn print_misc() {
     // eprint!("{:?}", die_index_combos() );
 }
 
-#[test]
+// #[test]
 fn bench_test() {
     let game = GameState{   rolls_remaining: 0, 
                             sorted_open_slots: [SIXES, FOUR_OF_A_KIND, YAHTZEE].into(), 
+                            sorted_dievals: Default::default(), 
+                            upper_bonus_deficit: 30, 
+                            yahtzee_is_wild: false, };
+    let app = &mut AppState::new(&game);
+    let result = best_choice_ev(game, app);
+    assert_eq!(rounded(result.ev,2),  28.92);
+    // save_cache(&app);
+}
+
+#[test]
+fn bench_allocators() {
+    let game = GameState{   rolls_remaining: 0, 
+                            sorted_open_slots: [SIXES, FULL_HOUSE, YAHTZEE].into(), 
                             sorted_dievals: Default::default(), 
                             upper_bonus_deficit: 30, 
                             yahtzee_is_wild: false, };
