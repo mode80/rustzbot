@@ -300,7 +300,7 @@ struct AppState{
     progress_bar:ProgressBar, 
     ev_cache:FxHashMap<GameState,EVResult>,
     checkpoint: Duration,
-    done:FxHashSet<Slots>,
+    // done:FxHashSet<Slots>,
 }
 impl AppState{
     fn new(game: &GameState) -> Self{
@@ -319,7 +319,7 @@ impl AppState{
         Self{   progress_bar : pb, 
                 ev_cache : cachemap,
                 checkpoint: Duration::new(0,0),
-                done: FxHashSet::default(), 
+                // done: FxHashSet::default(), 
         }
     }
 }
@@ -660,7 +660,7 @@ fn best_choice_ev(game:GameState,app: &mut AppState) -> EVResult  {
     // cache contention here during constant cache writing effectively caps us to single threaded speeds
     // TODO consider periodically "freezing" chuncks of completed cache into read-only state for better multithreading
 
-    let result = if game.rolls_remaining == 0 { //TODO figure out a non-recursive version of this (better for multi-threading)?
+    let result = if game.rolls_remaining == 0 { 
         best_slot_ev(game,app)  // <-----------------
     } else { 
         best_dice_ev(game,app)  // <-----------------
@@ -668,10 +668,10 @@ fn best_choice_ev(game:GameState,app: &mut AppState) -> EVResult  {
 
     // console_log(&game,app,result.choice,result.ev);
 
-    if game.rolls_remaining==0 { // periodically update progress and save
-        let e = {app.done.contains(&game.sorted_open_slots)} ;
-        if ! e  {
-            app.done.insert(game.sorted_open_slots);
+    // periodically update progress and save
+    if game.rolls_remaining==0 { // TODO this will get slow. go back to a dedicated seen_slots hashset once multithreading is sorted out 
+        let seen_slots = app.ev_cache.keys().any(|k| k.sorted_open_slots == game.sorted_open_slots); 
+        if ! seen_slots  {
             app.progress_bar.inc(1);
             console_log(&game,app, result.choice, result.ev);
             save_periodically(app,600) ;
