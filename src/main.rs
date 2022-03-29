@@ -4,7 +4,7 @@
 
 use std::{cmp::max, fs::{self, File}, time::Duration, ops::Range, fmt::Display, panic};
 use itertools::Itertools;
-use indicatif::ProgressBar;
+use indicatif::{ProgressBar, ProgressStyle};
 use rustc_hash::{FxHashSet, FxHashMap};
 use once_cell::sync::Lazy;
 use std::io::Write; 
@@ -307,6 +307,7 @@ impl AppState{
         let slot_count=game.sorted_open_slots.len as u8;
         let combo_count = (1..=slot_count).map(|r| n_take_r(slot_count, r ,false,false) as u64 ).sum() ;
         let pb = ProgressBar::new(combo_count); 
+        pb.set_style(ProgressStyle::default_bar().template("{prefix} {wide_bar} {percent}% {pos:>4}/{len:4} {elapsed:>}/{duration}"));
         let init_capacity = combo_count as usize * 252 * 64; // * 2 * 2; // roughly: slotcombos * diecombos * deficits * wilds * rolls
         let cachemap = if let Ok(bytes) = fs::read("ev_cache") { 
             ::bincode::deserialize(&bytes).unwrap() 
