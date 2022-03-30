@@ -3,7 +3,7 @@
 #![allow(unused_variables)]
 
 use std::{cmp::max, fs::{self, File}, time::Duration, ops::Range, fmt::Display, panic};
-use itertools::Itertools;
+use itertools::{Itertools, Combinations, iproduct};
 use indicatif::{ProgressBar, ProgressStyle};
 use rustc_hash::{FxHashSet, FxHashMap};
 use once_cell::sync::Lazy;
@@ -78,6 +78,36 @@ impl Slots {
     fn permutations (self) -> SlotPermutations{
         SlotPermutations::new(self)
     }
+
+    /// returns then number of unique "upper bonus totals" that could occur from these slots 
+    fn unique_upper_totals(self) -> u8 {
+        let mut tots : FxHashSet<u8> = Default::default();
+        let mut tot:u8;
+        let hits = 0..=5;
+        let hit_perms = iproduct!(  0..6, 
+                                    [0,2,4,6,8,10].into_iter(), 
+                                    [0,3,6,9,12,15].into_iter(), 
+                                    [0,4,8,12,16,20].into_iter(), 
+                                    [0,5,10,15,20,25].into_iter(), 
+                                    [0,6,12,18,24,30].into_iter() )
+                                    .filter(|x| {
+                                        let uppers = self.into_iter().filter(|&x|x<=SIXES).collect_vec();
+                                        let mut retval = true;
+                                        retval = retval && if uppers.iter().contains(&1) {true} else {x.0 == 0};
+                                        retval = retval && if uppers.iter().contains(&2) {true} else {x.1 == 0};
+                                        retval = retval && if uppers.iter().contains(&3) {true} else {x.2 == 0};
+                                        retval = retval && if uppers.iter().contains(&4) {true} else {x.3 == 0};
+                                        retval = retval && if uppers.iter().contains(&5) {true} else {x.4 == 0};
+                                        retval = retval && if uppers.iter().contains(&6) {true} else {x.5 == 0};
+                                        retval 
+                                    });
+        for perm in hit_perms {
+            tots.insert(perm.0 + perm.1 + perm.2 + perm.3 + perm.4 + perm.5 );
+        }
+        tots.len() as u8
+    }
+
+
 }
 
 impl Display for Slots {
@@ -305,10 +335,13 @@ struct AppState{
 impl AppState{
     fn new(game: &GameState) -> Self{
         let slot_count=game.sorted_open_slots.len as u8;
-        let combo_count = (1..=slot_count).map(|r| n_take_r(slot_count, r ,false,false) as u64 ).sum() ;
-        let pb = ProgressBar::new(combo_count); 
+        let slot_combos = (1..=slot_count).map(|r| n_take_r(slot_count, r ,false,false) as u64 ).sum() ;
+        let slot_perms:u64 = (1..=slot_count).map(|r| fact(n_take_r(slot_count, r ,false,false) as u8) as u64 ).sum() ;
+        let unique_deficits = game.sorted_open_slots.unique_upper_totals();
+        // let game_states = 
+        let pb = ProgressBar::new(slot_combos); 
         pb.set_style(ProgressStyle::default_bar().template("{prefix} {wide_bar} {percent}% {pos:>4}/{len:4} {elapsed:>}/{duration}"));
-        let init_capacity = combo_count as usize * 252 * 64; // * 2 * 2; // roughly: slotcombos * diecombos * deficits * wilds * rolls
+        let init_capacity = slot_combos as usize * 252 * 64; // * 2 * 2; // roughly: slotcombos * diecombos * deficits * wilds * rolls
         let cachemap = if let Ok(bytes) = fs::read("ev_cache") { 
             ::bincode::deserialize(&bytes).unwrap() 
         } else {

@@ -186,7 +186,7 @@ fn bench_test() {
     // save_cache(&app);
 }
 
-#[test]
+// #[test]
 fn bench_allocators() {
     let game = GameState{   rolls_remaining: 0, 
                             sorted_open_slots: [1,2,3,4].into(), 
@@ -197,4 +197,10 @@ fn bench_allocators() {
     let result = best_choice_ev(game, app);
     // assert_eq!(rounded(result.ev,2),  28.92);
     // save_cache(&app);
+}
+
+#[test]
+fn unique_upper_totals_test() {
+    let s:Slots = [1,2,7].into();
+    assert_eq!(s.unique_upper_totals(), 16);
 }
