@@ -551,16 +551,14 @@ fn score_fullhouse(sorted_dievals:DieVals) -> Score {
         if val2 == 0 {val2 = val; val2count=1; continue;}    
         if val2 == val {val2count+=1; continue;}
     }
+    if val1==0 || val2==0 {return 0};
     if (val1count==3 && val2count==2) || (val2count==3 && val1count==2) {25} else {0}
 }
 
 fn score_chance(sorted_dievals:DieVals)->Score { sorted_dievals.into_iter().sum()  }
 
 fn score_yahtzee(sorted_dievals:DieVals)->Score { 
-    let mut iter =sorted_dievals.into_iter(); 
-    let firstval = iter.next().unwrap();
-    for nextval in iter { if nextval!=firstval {return 0;} }
-    50
+    if sorted_dievals.get(0) == sorted_dievals.get(4) && sorted_dievals.get(0) != 0 {50} else {0}
 }
 
 /// reports the score for a set of dice in a given slot w/o regard for exogenous gamestate (bonuses, yahtzee wildcards etc)
@@ -596,7 +594,7 @@ fn best_slot_ev(game:GameState, app: &mut AppState) -> EVResult  {
                 } 
 
             // special handling of "extra yahtzees" 
-                let yahtzee_rolled = game.sorted_dievals.get(0)==game.sorted_dievals.get(4); 
+                let yahtzee_rolled = {score_yahtzee(game.sorted_dievals)==50}; 
                 if yahtzee_rolled && game.yahtzee_is_wild { // extra yahtzee situation
                     if head_slot==SM_STRAIGHT {head_ev=30}; // extra yahtzees are valid in any lower slot, per wildcard rules
                     if head_slot==LG_STRAIGHT {head_ev=40}; 

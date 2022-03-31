@@ -173,7 +173,7 @@ fn print_misc() {
     // eprint!("{:?}", die_index_combos() );
 }
 
-// #[test]
+#[test]
 fn bench_test() {
     let game = GameState{   rolls_remaining: 0, 
                             sorted_open_slots: [SIXES, FOUR_OF_A_KIND, YAHTZEE].into(), 
@@ -182,7 +182,7 @@ fn bench_test() {
                             yahtzee_is_wild: false, };
     let app = &mut AppState::new(&game);
     let result = best_choice_ev(game, app);
-    assert_eq!(rounded(result.ev,2),  28.92);
+    assert_eq!(rounded(result.ev,2),  21.8);
     // save_cache(&app);
 }
 
@@ -195,11 +195,9 @@ fn bench_allocators() {
                             yahtzee_is_wild: false, };
     let app = &mut AppState::new(&game);
     let result = best_choice_ev(game, app);
-    // assert_eq!(rounded(result.ev,2),  28.92);
-    // save_cache(&app);
 }
 
-#[test]
+// #[test]
 fn unique_upper_totals_test() {
     let s:Slots = [1,2,7].into();
     assert_eq!(s.unique_upper_totals(), 16);
