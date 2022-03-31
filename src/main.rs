@@ -3,9 +3,9 @@
 #![allow(unused_variables)]
 
 use std::{cmp::max, fs::{self, File}, time::Duration, ops::Range, fmt::Display, panic};
-use itertools::{Itertools, Combinations, iproduct};
-use indicatif::{ProgressBar, ProgressStyle};
-use rustc_hash::{FxHashSet, FxHashMap};
+use itertools::{Itertools};
+use indicatif::{ProgressBar, ProgressStyle, ProgressFinish};
+use rustc_hash::{FxHashMap};
 use once_cell::sync::Lazy;
 use std::io::Write; 
 
@@ -79,11 +79,9 @@ impl Slots {
         SlotPermutations::new(self)
     }
 
-    /// returns then number of unique "upper bonus totals" that could occur from these slots 
+    /* Works but unneeded rn /// returns then number of unique "upper bonus totals" that could occur from these slots 
     fn unique_upper_totals(self) -> u8 {
         let mut tots : FxHashSet<u8> = Default::default();
-        let mut tot:u8;
-        let hits = 0..=5;
         let hit_perms = iproduct!(  0..6, 
                                     [0,2,4,6,8,10].into_iter(), 
                                     [0,3,6,9,12,15].into_iter(), 
@@ -105,7 +103,7 @@ impl Slots {
             tots.insert(perm.0 + perm.1 + perm.2 + perm.3 + perm.4 + perm.5 );
         }
         tots.len() as u8
-    }
+    }*/
 
 
 }
@@ -324,7 +322,7 @@ impl Default for GameState{
             yahtzee_is_wild: false, sorted_open_slots: [1,2,3,4,5,6,7,8,9,10,11,12,13].into(),
         }
     }
-}
+ }
 
 struct AppState{
     progress_bar:ProgressBar, 
@@ -334,13 +332,14 @@ struct AppState{
 }
 impl AppState{
     fn new(game: &GameState) -> Self{
-        let slot_count=game.sorted_open_slots.len as u8;
-        let slot_combos = (1..=slot_count).map(|r| n_take_r(slot_count, r ,false,false) as u64 ).sum() ;
-        let slot_perms:u64 = (1..=slot_count).map(|r| fact(n_take_r(slot_count, r ,false,false) as u8) as u64 ).sum() ;
-        let unique_deficits = game.sorted_open_slots.unique_upper_totals();
-        // let game_states = 
-        let pb = ProgressBar::new(slot_combos); 
-        pb.set_style(ProgressStyle::default_bar().template("{prefix} {wide_bar} {percent}% {pos:>4}/{len:4} {elapsed:>}/{duration}"));
+        let slot_count=game.sorted_open_slots.len;
+        let slot_combos:u64 = (1..=slot_count).map(|r| n_take_r(slot_count, r ,false,false) as u64 ).sum() ;
+        let ticks:u64 = (1..=slot_count).map(|r| n_take_r(slot_count, r ,true,false) as u64 ).sum();
+        let pb = ProgressBar::new(ticks); 
+        pb.set_style(ProgressStyle::default_bar()
+            .template("{prefix} {wide_bar} {percent}% {pos:>4}/{len:4} {elapsed:>}/{duration} ETA:{eta}")
+            .on_finish(ProgressFinish::Abandon)
+        );
         let init_capacity = slot_combos as usize * 252 * 64; // * 2 * 2; // roughly: slotcombos * diecombos * deficits * wilds * rolls
         let cachemap = if let Ok(bytes) = fs::read("ev_cache") { 
             ::bincode::deserialize(&bytes).unwrap() 
@@ -348,14 +347,31 @@ impl AppState{
             FxHashMap::with_capacity_and_hasher(init_capacity,Default::default())
         };
         let cache_keys:Vec<&GameState> = cachemap.keys().into_iter().collect_vec();
-        let ticks = cache_keys.into_iter().filter(|x|x.rolls_remaining ==0).collect_vec().len();
-        pb.inc(ticks as u64);
+        let former_ticks:u64 = cache_keys.into_iter().filter(|x|x.rolls_remaining ==0).map(|x|fact(x.sorted_open_slots.len)).sum();
+        pb.inc(former_ticks);
         Self{   progress_bar : pb, 
                 ev_cache : cachemap,
                 checkpoint: Duration::new(0,0),
                 // done: FxHashSet::default(), 
         }
     }
+
+    fn save_periodically(&mut self , every_n_secs:u64){
+        let current_duration = self.progress_bar.elapsed();
+        let last_duration = self.checkpoint;
+        if current_duration - last_duration >= Duration::new(every_n_secs,0) { 
+            self.checkpoint = current_duration;
+            self.save_cache();
+        }
+    }
+
+    fn save_cache(&self){
+        let evs = &self.ev_cache; 
+        let mut f = &File::create("ev_cache").unwrap();
+        let bytes = bincode::serialize(evs).unwrap();
+        f.write_all(&bytes).unwrap();
+    }
+
 }
 
 const STUB:Slot=0; const ACES:Slot=1; const TWOS:Slot=2; const THREES:Slot=3; const FOURS:Slot=4; const FIVES:Slot=5; const SIXES:Slot=6;
@@ -373,20 +389,15 @@ const SCORE_FNS:[fn(sorted_dievals:DieVals)->Score;14] = [
 ];
 
 static SELECTION_RANGES:Lazy<[Range<usize>;32]> = Lazy::new(selection_ranges); 
-
 static SELECTION_OUTCOMES:Lazy<[Outcome;1683]> = Lazy::new(all_selection_outcomes); 
-// [(), (0,), (0, 1), (0, 1, 2), (0, 1, 2, 3), (0, 1, 2, 3, 4), (0, 1, 2, 4), (0, 1, 3), (0, 1, 3, 4), 
-// (0, 1, 4), (0, 2), (0, 2, 3), (0, 2, 3, 4), (0, 2, 4), (0, 3), (0, 3, 4), (0, 4), (1,), (1, 2), (1, 2, 3), (1, 2, 3, 4), 
-// (1, 2, 4), (1, 3), (1, 3, 4), (1, 4), (2,), (2, 3), (2, 3, 4), (2, 4), (3,), (3, 4), (4,)]
 
 /*-------------------------------------------------------------
 Utils
 -------------------------------------------------------------*/
 
-/// rudimentary factorial suitable for our purposes here.. handles up to fact(34) */
-fn fact(n: u8) -> u128{
-    let big_n = n as u128;
-    if n<=1 {1} else { (big_n)*fact(n-1) }
+/// rudimentary factorial suitable for our purposes here.. handles up to fact(20) */ TODO just pre-cache the first 20 of these 
+fn fact(n: u8) -> u64{
+    if n<=1 {1} else { (n as u64)*fact(n-1) }
 }
 
 fn distinct_arrangements_for(dieval_vec:Vec<DieVal>)->u8{
@@ -404,7 +415,7 @@ fn distinct_arrangements_for(dieval_vec:Vec<DieVal>)->u8{
 
 /// count of arrangements that can be formed from r selections, chosen from n items, 
 /// where order DOES or DOESNT matter, and WITH or WITHOUT replacement, as specified
-fn n_take_r(n:u8, r:u8, ordered:bool, with_replacement:bool)->u128{
+fn n_take_r(n:u8, r:u8, ordered:bool, with_replacement:bool)->u64{
 
     if !ordered { // we're counting "combinations" where order doesn't matter, so there are less of these 
         if with_replacement {
@@ -414,29 +425,13 @@ fn n_take_r(n:u8, r:u8, ordered:bool, with_replacement:bool)->u128{
         }
     } else { // is ordered
         if with_replacement {
-            (n as u128).pow(r as u32)
+            (n as u64).pow(r as u32)
         } else { // no replacement
             fact(n) / fact(n-r)
         }
     }
 }
 
-fn save_periodically(app:&mut AppState, every_n_secs:u64){
-    let current_duration = app.progress_bar.elapsed();
-    let last_duration = app.checkpoint;
-    if current_duration - last_duration >= Duration::new(every_n_secs,0) { 
-        app.checkpoint = current_duration;
-        save_cache(app);
-    }
-}
-
-fn save_cache(app:&AppState){
-    let evs = &app.ev_cache; 
-    let mut f = &File::create("ev_cache").unwrap();
-    let bytes = bincode::serialize(evs).unwrap();
-    f.write_all(&bytes).unwrap();
-}
- 
 fn console_log(game:&GameState, app:&AppState, choice:Choice, ev:f32 ){
     app.progress_bar.println (
         format!("{:>}\t{}\t{:>4}\t{:>4.2}\t{}\t{}\t{:>30}", 
@@ -665,7 +660,7 @@ fn avg_ev_for_selection(game:GameState, app: &mut AppState, selection:DieSet) ->
     for outcome in SELECTION_OUTCOMES[range].iter() { 
         //###### HOT CODE PATH #######
         newvals = Default::default(); 
-        newvals.data = (game.sorted_dievals.data & outcome.mask.data) | outcome.dievals.data; //gives result after rolling selected dice. faster than looping looping
+        newvals.data = (game.sorted_dievals.data & outcome.mask.data) | outcome.dievals.data; // blit for the result after rolling selected dice. faster than looping
         newvals.sort();
         let EVResult{choice: _choice, ev} = best_choice_ev( GameState{ 
             yahtzee_is_wild: game.yahtzee_is_wild, 
@@ -674,7 +669,7 @@ fn avg_ev_for_selection(game:GameState, app: &mut AppState, selection:DieSet) ->
             upper_bonus_deficit: game.upper_bonus_deficit,
             sorted_dievals: newvals, 
         }, app);
-        outcomes_count += outcome.arrangements_count as usize; // we loop through "combos" but we must sum all "perumtations"
+        outcomes_count += outcome.arrangements_count as usize; // we loop through die "combos" but we must sum all "perumtations"
         let added_ev = ev * outcome.arrangements_count as f32; // each combo's ev is weighted by its count of distinct arrangements
         total_ev += added_ev;
         //############################
@@ -688,9 +683,22 @@ fn avg_ev_for_selection(game:GameState, app: &mut AppState, selection:DieSet) ->
 // #[cached(key = "GameState", convert = r#"{ game }"#)] 
 fn best_choice_ev(game:GameState,app: &mut AppState) -> EVResult  { 
 
-    if let Some(result) = app.ev_cache.get(&game) { return *result}; // return cached result if we have one 
+    // print!("{}", game.rolls_remaining);
+    // if game.rolls_remaining ==1 {
+        // println!("");
+    // }
+    // app.progress_bar.inc(1);
+
+    if let Some(result) = app.ev_cache.get(&game) { 
+        // if game.rolls_remaining ==0 {app.progress_bar.inc(1)};
+        // if game.rolls_remaining ==1 {app.progress_bar.inc(1683)};
+        // if game.rolls_remaining ==2 {app.progress_bar.inc(1683*1683)};
+        // if game.rolls_remaining ==3 {app.progress_bar.inc(1683*1683*252)};
+        return *result
+    }; // return cached result if we have one 
     // cache contention here during constant cache writing effectively caps us to single threaded speeds
     // TODO consider periodically "freezing" chuncks of completed cache into read-only state for better multithreading
+
 
     let result = if game.rolls_remaining == 0 { 
         best_slot_ev(game,app)  // <-----------------
@@ -704,9 +712,9 @@ fn best_choice_ev(game:GameState,app: &mut AppState) -> EVResult  {
     if game.rolls_remaining==0 { // TODO this will get slow. go back to a dedicated seen_slots hashset once multithreading is sorted out 
         let seen_slots = app.ev_cache.keys().any(|k| k.sorted_open_slots == game.sorted_open_slots); 
         if ! seen_slots  {
-            app.progress_bar.inc(1);
+            app.save_periodically(600) ;
             console_log(&game,app, result.choice, result.ev);
-            save_periodically(app,600) ;
+            app.progress_bar.inc(fact(game.sorted_open_slots.len));
         }
     }
     
