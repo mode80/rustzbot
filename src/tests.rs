@@ -173,6 +173,12 @@ fn print_misc() {
     // eprint!("{:?}", die_index_combos() );
 }
 
+// #[test]
+// fn unique_upper_totals_test() {
+//     let s:Slots = [1,2,7].into();
+//     assert_eq!(s.unique_upper_totals(), 16);
+// }
+
 #[test]
 fn bench_test() {
     let game = GameState{   rolls_remaining: 0, 
@@ -187,7 +193,13 @@ fn bench_test() {
 }
 
 // #[test]
-// fn unique_upper_totals_test() {
-//     let s:Slots = [1,2,7].into();
-//     assert_eq!(s.unique_upper_totals(), 16);
-// }
+fn progress_eta_test() {
+    let game = GameState{   rolls_remaining: 0, 
+                            sorted_open_slots: [1,2,3,4].into(), 
+                            sorted_dievals: Default::default(), 
+                            upper_bonus_deficit: 30, 
+                            yahtzee_is_wild: false, };
+    let app = &mut AppState::new(&game);
+    let result = best_choice_ev(game, app);
+}
+

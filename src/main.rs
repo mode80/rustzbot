@@ -332,10 +332,10 @@ struct AppState{
 }
 impl AppState{
     fn new(game: &GameState) -> Self{
-        let slot_count=game.sorted_open_slots.len;
+        let slot_count=game.sorted_open_slots.len as usize;
         let slot_combos:u64 = (1..=slot_count).map(|r| n_take_r(slot_count, r ,false,false) as u64 ).sum() ;
-        let ticks:u64 = (1..=slot_count).map(|r| n_take_r(slot_count, r ,true,false) as u64 ).sum();
-        let pb = ProgressBar::new(ticks); 
+        let slot_perms:u64 = (1..=slot_count).map(|r| n_take_r(slot_count, r ,true,false) as u64 ).sum() ;
+        let pb = ProgressBar::new(slot_perms); 
         pb.set_style(ProgressStyle::default_bar()
             .template("{prefix} {wide_bar} {percent}% {pos:>4}/{len:4} {elapsed:>}/{duration} ETA:{eta}")
             .on_finish(ProgressFinish::Abandon)
@@ -347,7 +347,7 @@ impl AppState{
             FxHashMap::with_capacity_and_hasher(init_capacity,Default::default())
         };
         let cache_keys:Vec<&GameState> = cachemap.keys().into_iter().collect_vec();
-        let former_ticks:u64 = cache_keys.into_iter().filter(|x|x.rolls_remaining ==0).map(|x|fact(x.sorted_open_slots.len)).sum();
+        let former_ticks:u64 = cache_keys.into_iter().filter(|x|x.rolls_remaining ==0).map(|x|FACT[x.sorted_open_slots.len as usize] ).sum();
         pb.inc(former_ticks);
         Self{   progress_bar : pb, 
                 ev_cache : cachemap,
@@ -390,6 +390,14 @@ const SCORE_FNS:[fn(sorted_dievals:DieVals)->Score;14] = [
 
 static SELECTION_RANGES:Lazy<[Range<usize>;32]> = Lazy::new(selection_ranges); 
 static SELECTION_OUTCOMES:Lazy<[Outcome;1683]> = Lazy::new(all_selection_outcomes); 
+static FACT:Lazy<[u64;21]> = Lazy::new(some_factorials); 
+
+#[allow(clippy::needless_range_loop)]
+fn some_factorials() -> [u64;21] {
+    let mut a:[u64;21]=[0;21];
+    for i in 0..=20 {a[i]=fact(i as u8);}
+    a
+}
 
 /*-------------------------------------------------------------
 Utils
@@ -406,30 +414,31 @@ fn distinct_arrangements_for(dieval_vec:Vec<DieVal>)->u8{
     let mut non_zero_dievals=0_u8;
     for count in counts { 
         if *count.0 != 0 { 
-            divisor *= fact(count.1 as u8) as usize ; 
+            divisor *= FACT[count.1] as usize ; 
             non_zero_dievals += count.1 as u8;
         }
     } 
-    (fact(non_zero_dievals) as f64 / divisor as f64) as u8
+    (FACT[non_zero_dievals as usize] as f64 / divisor as f64) as u8
 }
 
 /// count of arrangements that can be formed from r selections, chosen from n items, 
 /// where order DOES or DOESNT matter, and WITH or WITHOUT replacement, as specified
-fn n_take_r(n:u8, r:u8, ordered:bool, with_replacement:bool)->u64{
+fn n_take_r(n:usize, r:usize, order_matters:bool, with_replacement:bool)->u64{
 
-    if !ordered { // we're counting "combinations" where order doesn't matter, so there are less of these 
-        if with_replacement {
-            fact(n+r-1) / (fact(r)*fact(n-1))
-        } else { // no replacement
-            fact(n) / (fact(r)*fact(n-r)) 
-        }
-    } else { // is ordered
+    if order_matters { // order matters; we're counting "permutations" 
         if with_replacement {
             (n as u64).pow(r as u32)
         } else { // no replacement
-            fact(n) / fact(n-r)
+            FACT[n] / FACT[n-r]  // this = FACT[n) when r=n
+        }
+    } else { // we're counting "combinations" where order doesn't matter; there are less of these 
+        if with_replacement {
+            FACT[n+r-1] / (FACT[r]*FACT[n-1])
+        } else { // no replacement
+            FACT[n] / (FACT[r]*FACT[n-r]) 
         }
     }
+
 }
 
 fn console_log(game:&GameState, app:&AppState, choice:Choice, ev:f32 ){
@@ -469,7 +478,7 @@ fn selection_ranges() ->[Range<usize>;32]  {
     let mut s = 0;
     sel_ranges[0] = 0..1;
     for (i,combo) in die_index_combos().into_iter().enumerate(){
-        let count = n_take_r(6, combo.len() as u8, false, true) ;
+        let count = n_take_r(6, combo.len(), false, true) ;
         sel_ranges[i] = s..(s+count as usize);
         s += count as usize; 
     }
@@ -714,7 +723,7 @@ fn best_choice_ev(game:GameState,app: &mut AppState) -> EVResult  {
         if ! seen_slots  {
             app.save_periodically(600) ;
             console_log(&game,app, result.choice, result.ev);
-            app.progress_bar.inc(fact(game.sorted_open_slots.len));
+            app.progress_bar.inc(FACT[game.sorted_open_slots.len as usize]);
         }
     }
     
