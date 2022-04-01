@@ -179,7 +179,7 @@ fn print_misc() {
 //     assert_eq!(s.unique_upper_totals(), 16);
 // }
 
-#[test]
+// #[test]
 fn bench_test() {
     let game = GameState{   rolls_remaining: 0, 
                             sorted_open_slots: [SIXES, FOUR_OF_A_KIND, YAHTZEE].into(), 
@@ -192,7 +192,7 @@ fn bench_test() {
     // save_cache(&app);
 }
 
-// #[test]
+#[test]
 fn progress_eta_test() {
     let game = GameState{   rolls_remaining: 0, 
                             sorted_open_slots: [1,2,3,4].into(), 

@@ -1,6 +1,5 @@
-#![allow(dead_code)]
-#![allow(unused_imports)]
-#![allow(unused_variables)]
+#![allow(dead_code)] #![allow(unused_imports)] #![allow(unused_variables)]
+#![allow(clippy::needless_range_loop)] #![allow(clippy::unusual_byte_groupings)] 
 
 use std::{cmp::max, fs::{self, File}, time::Duration, ops::Range, fmt::Display, panic};
 use itertools::{Itertools};
@@ -79,7 +78,7 @@ impl Slots {
         SlotPermutations::new(self)
     }
 
-    /* Works but unneeded rn /// returns then number of unique "upper bonus totals" that could occur from these slots 
+    /* Works but not needed /// returns the number of unique "upper bonus totals" that could occur from these slots 
     fn unique_upper_totals(self) -> u8 {
         let mut tots : FxHashSet<u8> = Default::default();
         let hit_perms = iproduct!(  0..6, 
@@ -126,10 +125,7 @@ impl <const N:usize> From<[Slot; N]> for Slots{
         retval 
     }
 }
-
-
 impl <const N:usize>  From<&Slots> for [Slot; N]{ 
-    #[allow(clippy::needless_range_loop)] // isn't needless here 
     fn from(slots: &Slots) -> Self {
         if slots.len as usize > N { panic!(); }
         let mut retval:[Slot;N] = [Slot::default(); N]; 
@@ -137,7 +133,6 @@ impl <const N:usize>  From<&Slots> for [Slot; N]{
         retval
     }
 }
-
 impl <const N:usize>  From<&mut Slots> for [Slot; N]{ 
     fn from(slots: &mut Slots) -> Self {
         <[Slot;N]>::from(&*slots) // the &* here copies the mutable ref to a ref 
@@ -168,6 +163,10 @@ impl Iterator for SlotIntoIter {
         Some(retval)
     }
 }
+
+/*-------------------------------------------------------------
+Slot Permutations
+-------------------------------------------------------------*/
 
 struct SlotPermutations{
     slots:Slots,
@@ -295,12 +294,18 @@ impl Iterator for DieValsIntoIter {
     }
 }
 
+/*-------------------------------------------------------------
+EVResult
+-------------------------------------------------------------*/
 #[derive(Debug,Clone,Copy,Serialize, Deserialize)]
 struct EVResult {
     choice: Choice,
     ev: f32
 }
 
+/*-------------------------------------------------------------
+Outcome
+-------------------------------------------------------------*/
 #[derive(Debug,Clone,Copy,Default)]
 struct Outcome {
     dievals: DieVals,
@@ -308,6 +313,9 @@ struct Outcome {
     arrangements_count: u8,
 }
 
+/*-------------------------------------------------------------
+GameState
+-------------------------------------------------------------*/
 #[derive(Debug, PartialEq, Eq, Ord, PartialOrd, Hash, Clone, Copy, Serialize, Deserialize)]
 struct GameState{
     sorted_dievals:DieVals, 
@@ -324,6 +332,9 @@ impl Default for GameState{
     }
  }
 
+/*-------------------------------------------------------------
+AppState
+-------------------------------------------------------------*/
 struct AppState{
     progress_bar:ProgressBar, 
     ev_cache:FxHashMap<GameState,EVResult>,
@@ -374,12 +385,14 @@ impl AppState{
 
 }
 
+/*-------------------------------------------------------------
+CONSTS
+-------------------------------------------------------------*/
+
 const STUB:Slot=0; const ACES:Slot=1; const TWOS:Slot=2; const THREES:Slot=3; const FOURS:Slot=4; const FIVES:Slot=5; const SIXES:Slot=6;
 const THREE_OF_A_KIND:Slot=7; const FOUR_OF_A_KIND:Slot=8; const FULL_HOUSE:Slot=9; const SM_STRAIGHT:Slot=10; const LG_STRAIGHT:Slot=11; 
 const YAHTZEE:Slot=12; const CHANCE:Slot=13; 
  
-#[allow(clippy::unusual_byte_groupings)] // each group of 3 bits encodes a dieval from 0 to 6
-// const UNROLLED_DIEVALS:DieVals = DieVals{data:0};  //just use DieVals::default()
 const INIT_DEFICIT:u8 = 63;
 
 const SCORE_FNS:[fn(sorted_dievals:DieVals)->Score;14] = [
@@ -390,20 +403,67 @@ const SCORE_FNS:[fn(sorted_dievals:DieVals)->Score;14] = [
 
 static SELECTION_RANGES:Lazy<[Range<usize>;32]> = Lazy::new(selection_ranges); 
 static SELECTION_OUTCOMES:Lazy<[Outcome;1683]> = Lazy::new(all_selection_outcomes); 
-static FACT:Lazy<[u64;21]> = Lazy::new(some_factorials); 
+static FACT:Lazy<[u64;21]> = Lazy::new(||{let mut a:[u64;21]=[0;21]; for i in 0..=20 {a[i]=fact(i as u8);} a});  // cached factorials
 
-#[allow(clippy::needless_range_loop)]
-fn some_factorials() -> [u64;21] {
-    let mut a:[u64;21]=[0;21];
-    for i in 0..=20 {a[i]=fact(i as u8);}
-    a
-}
 
 /*-------------------------------------------------------------
-Utils
+INITIALIZERS
 -------------------------------------------------------------*/
 
-/// rudimentary factorial suitable for our purposes here.. handles up to fact(20) */ TODO just pre-cache the first 20 of these 
+/// this generates the ranges that correspond to the outcomes for a given selection, within the set of all outcomes above
+fn selection_ranges() ->[Range<usize>;32]  { 
+    let mut sel_ranges:[Range<usize>;32] = Default::default();
+    let mut s = 0;
+    sel_ranges[0] = 0..1;
+    for (i,combo) in die_index_combos().into_iter().enumerate(){
+        let count = n_take_r(6, combo.len(), false, true) ;
+        sel_ranges[i] = s..(s+count as usize);
+        s += count as usize; 
+    }
+    sel_ranges
+}
+
+//the set of roll outcomes for every possible 5-die selection, where '0' represents an unselected die
+fn all_selection_outcomes() ->[Outcome;1683]  { 
+    let mut retval:[Outcome;1683] = [Default::default();1683];
+    let mut outcome = Outcome::default();
+    let mut i=0;
+    for combo in die_index_combos(){
+        outcome.dievals = Default::default();
+        for dievals_vec in [1,2,3,4,5,6_u8].into_iter().combinations_with_replacement(combo.len()){ 
+            outcome.mask = [0b111,0b111,0b111,0b111,0b111].into();
+            for (j, &val ) in dievals_vec.iter().enumerate() { 
+                let idx = 4-combo[j] as u8; // count down the indexes such that 0 represts selecting none and 31 all 
+                outcome.dievals.set(idx,val) ; 
+                outcome.mask.set(idx,0);
+            }
+            outcome.arrangements_count = distinct_arrangements_for(dievals_vec);
+            retval[i]=outcome;
+            i+=1;
+        }
+    }
+    retval
+}
+
+/// the set of all ways to roll different dice, as represented by a collection of index arrays
+#[allow(clippy::eval_order_dependence)]
+fn die_index_combos() ->[Vec<u8>;32]  { 
+    let mut them:[Vec<u8>;32] = Default::default(); 
+    let mut i=0; 
+    for n in 1..=5 {
+        for combo in (0..=4).combinations(n){ 
+            them[i]= { let mut it=Vec::<u8>::new(); it.extend_from_slice(&combo); i+=1; it} 
+        } 
+    }
+    them
+}
+
+
+/*-------------------------------------------------------------
+UTILS
+-------------------------------------------------------------*/
+
+/// rudimentary factorial suitable for our purposes here.. handles up to fact(20) 
 fn fact(n: u8) -> u64{
     if n<=1 {1} else { (n as u64)*fact(n-1) }
 }
@@ -429,7 +489,7 @@ fn n_take_r(n:usize, r:usize, order_matters:bool, with_replacement:bool)->u64{
         if with_replacement {
             (n as u64).pow(r as u32)
         } else { // no replacement
-            FACT[n] / FACT[n-r]  // this = FACT[n) when r=n
+            FACT[n] / FACT[n-r]  // this = FACT[n] when r=n
         }
     } else { // we're counting "combinations" where order doesn't matter; there are less of these 
         if with_replacement {
@@ -447,55 +507,6 @@ fn console_log(game:&GameState, app:&AppState, choice:Choice, ev:f32 ){
             game.rolls_remaining, game.yahtzee_is_wild, game.upper_bonus_deficit, ev, choice, game.sorted_dievals, game.sorted_open_slots 
         )
     );
-}
-
-/*-------------------------------------------------------------*/
-//the set of roll outcomes for every possible 5-die selection, where '0' represents an unselected die
-fn all_selection_outcomes() ->[Outcome;1683]  { 
-    let mut retval:[Outcome;1683] = [Default::default();1683];
-    let mut outcome = Outcome::default();
-    let mut i=0;
-    for combo in die_index_combos(){
-        outcome.dievals = Default::default();
-        for dievals_vec in [1,2,3,4,5,6_u8].into_iter().combinations_with_replacement(combo.len()){ 
-            outcome.mask = [0b111,0b111,0b111,0b111,0b111].into();
-            for (j, &val ) in dievals_vec.iter().enumerate() { 
-                let idx = 4-combo[j] as u8; // count down the indexes such that 0 represts selecting none and 31 all 
-                outcome.dievals.set(idx,val) ; 
-                outcome.mask.set(idx,0);
-            }
-            outcome.arrangements_count = distinct_arrangements_for(dievals_vec);
-            retval[i]=outcome;
-            i+=1;
-        }
-    }
-    retval
-}
-
-/// this generates the ranges that correspond to the outcomes for a given selection, within the set of all outcomes above
-fn selection_ranges() ->[Range<usize>;32]  { 
-    let mut sel_ranges:[Range<usize>;32] = Default::default();
-    let mut s = 0;
-    sel_ranges[0] = 0..1;
-    for (i,combo) in die_index_combos().into_iter().enumerate(){
-        let count = n_take_r(6, combo.len(), false, true) ;
-        sel_ranges[i] = s..(s+count as usize);
-        s += count as usize; 
-    }
-    sel_ranges
-}
-
-/// the set of all ways to roll different dice, as represented by a collection of index arrays
-#[allow(clippy::eval_order_dependence)]
-fn die_index_combos() ->[Vec<u8>;32]  { 
-    let mut them:[Vec<u8>;32] = Default::default(); 
-    let mut i=0; 
-    for n in 1..=5 {
-        for combo in (0..=4).combinations(n){ 
-            them[i]= { let mut it=Vec::<u8>::new(); it.extend_from_slice(&combo); i+=1; it} 
-        } 
-    }
-    them
 }
 
 fn score_upperbox(boxnum:Slot, sorted_dievals:DieVals)->Score{
@@ -569,7 +580,11 @@ fn score_yahtzee(sorted_dievals:DieVals)->Score {
 fn score_slot(slot:Slot, sorted_dievals:DieVals)->Score{
     SCORE_FNS[slot as usize](sorted_dievals) 
 }
-/*-------------------------------------------------------------*/
+
+
+/*-------------------------------------------------------------
+Expected Value Core Functions 
+-------------------------------------------------------------*/
 
 /// returns the best slot and corresponding ev for final dice, given the slot possibilities and other relevant state 
 fn best_slot_ev(game:GameState, app: &mut AppState) -> EVResult  {
@@ -578,7 +593,7 @@ fn best_slot_ev(game:GameState, app: &mut AppState) -> EVResult  {
     let mut best_ev = 0.0; 
     let mut best_slot=STUB; 
 
-    for mut slot_sequence in game.sorted_open_slots.permutations() {
+    for mut slot_sequence in game.sorted_open_slots.permutations() { // We're trying out each ordering and choosing the best one
 
         // LEAF CALCS 
             // prep vars
@@ -689,22 +704,9 @@ fn avg_ev_for_selection(game:GameState, app: &mut AppState, selection:DieSet) ->
 
 
 /// returns the best game Choice along with its expected value, given relevant game state.
-// #[cached(key = "GameState", convert = r#"{ game }"#)] 
 fn best_choice_ev(game:GameState,app: &mut AppState) -> EVResult  { 
 
-    // print!("{}", game.rolls_remaining);
-    // if game.rolls_remaining ==1 {
-        // println!("");
-    // }
-    // app.progress_bar.inc(1);
-
-    if let Some(result) = app.ev_cache.get(&game) { 
-        // if game.rolls_remaining ==0 {app.progress_bar.inc(1)};
-        // if game.rolls_remaining ==1 {app.progress_bar.inc(1683)};
-        // if game.rolls_remaining ==2 {app.progress_bar.inc(1683*1683)};
-        // if game.rolls_remaining ==3 {app.progress_bar.inc(1683*1683*252)};
-        return *result
-    }; // return cached result if we have one 
+    if let Some(result) = app.ev_cache.get(&game) { return *result }; // return cached result if we have one 
     // cache contention here during constant cache writing effectively caps us to single threaded speeds
     // TODO consider periodically "freezing" chuncks of completed cache into read-only state for better multithreading
 
@@ -730,4 +732,3 @@ fn best_choice_ev(game:GameState,app: &mut AppState) -> EVResult  {
     app.ev_cache.insert(game, result);
     result 
 }
-
