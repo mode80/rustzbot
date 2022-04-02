@@ -75,40 +75,12 @@ impl Slots {
     }
 
     fn permutations (self) -> SlotPermutations{
-        SlotPermutations::new(self,self.len)
+        SlotPermutations::new(self,0,self.len)
     }
 
-    fn permutations_k (self,k:u8) -> SlotPermutations{
-        SlotPermutations::new(self,k)
+    fn permutations_within (self,start:u8,len:u8) -> SlotPermutations{
+        SlotPermutations::new(self,start,len)
     }
-
-
-    /* Works but not needed /// returns the number of unique "upper bonus totals" that could occur from these slots 
-    fn unique_upper_totals(self) -> u8 {
-        let mut tots : FxHashSet<u8> = Default::default();
-        let hit_perms = iproduct!(  0..6, 
-                                    [0,2,4,6,8,10].into_iter(), 
-                                    [0,3,6,9,12,15].into_iter(), 
-                                    [0,4,8,12,16,20].into_iter(), 
-                                    [0,5,10,15,20,25].into_iter(), 
-                                    [0,6,12,18,24,30].into_iter() )
-                                    .filter(|x| {
-                                        let uppers = self.into_iter().filter(|&x|x<=SIXES).collect_vec();
-                                        let mut retval = true;
-                                        retval = retval && if uppers.iter().contains(&1) {true} else {x.0 == 0};
-                                        retval = retval && if uppers.iter().contains(&2) {true} else {x.1 == 0};
-                                        retval = retval && if uppers.iter().contains(&3) {true} else {x.2 == 0};
-                                        retval = retval && if uppers.iter().contains(&4) {true} else {x.3 == 0};
-                                        retval = retval && if uppers.iter().contains(&5) {true} else {x.4 == 0};
-                                        retval = retval && if uppers.iter().contains(&6) {true} else {x.5 == 0};
-                                        retval 
-                                    });
-        for perm in hit_perms {
-            tots.insert(perm.0 + perm.1 + perm.2 + perm.3 + perm.4 + perm.5 );
-        }
-        tots.len() as u8
-    }*/
-
 
 }
 
@@ -176,43 +148,43 @@ Slot Permutations
 
 struct SlotPermutations{
     slots:Slots,
-    c:[usize;13],// c is an encoding of the stack state. c[k] encodes the for-loop counter for when generate(k - 1, A) is called
-    i:usize,// i acts similarly to a stack pointer
-    k:u8,   // k length of permutations 
+    c:[usize;13],   // c is an encoding of the stack state. c[k] encodes the for-loop counter for when generate(k - 1, A) is called
+    i:usize,        // i acts similarly to a stack pointer
+    start:u8,       // start index 
+    end:u8,         // end index exclusive 
 }
 impl SlotPermutations{
-    fn new(slots:Slots, k:u8) -> Self{
-        let length_mask:u64 = 2_u64.pow(4 * k as u32)-1; 
-        Self{ slots:Slots{data:slots.data & length_mask, len:k}, c:Default::default(), i:255, k}
+    fn new(slots:Slots, start:u8, len:u8) -> Self{
+        // let length_mask:u64 = 2_u64.pow(4 * k as u32)-1; :Slots{data:slots.data & length_mask, len:k}
+        Self{ slots, c:[start as usize;13], i:255, end:start+len, start}
     }
 }
 impl Iterator for SlotPermutations{
     type Item = Slots;
 
-    fn next(&mut self) -> Option<Self::Item> { //Heap's algorithm for generating permutations
-        if self.i==255 { self.i=0; return Some(self.slots); } // first run
-        if self.i == self.slots.len as usize {return None}; // last run
+    fn next(&mut self) -> Option<Self::Item> { //Heap's algorithm for generating permutations, modified for ranges
+        if self.i==255 { self.i=self.start as usize; return Some(self.slots); } // first run
+        if self.i == self.end as usize {return None}; // last run
         if self.c[self.i] < self.i { 
-            if self.i % 2 == 0 { // even 
+            if (self.i + (self.start as usize % 2)) % 2 == 0 { // first time, then alternating
                 let temp = self.slots.get(self.i as u8); // prep to swap
-                self.slots.set(self.i as u8, self.slots.get(0));
-                self.slots.set(0, temp);
-            } else { // odd
+                self.slots.set(self.i as u8, self.slots.get(self.start));
+                self.slots.set(self.start, temp);
+            } else { // second time, then alternating 
                 let temp = self.slots.get(self.c[self.i] as u8); //prep to swap
                 self.slots.set(self.c[self.i] as u8, self.slots.get(self.i as u8));
                 self.slots.set(self.i as u8, temp);
             } 
             self.c[self.i] += 1;// Swap has occurred ending the "for-loop". Simulate the increment of the for-loop counter
-            self.i = 0;// Simulate recursive call reaching the base case by bringing the pointer to the base case analog in the array
+            self.i = self.start as usize;// Simulate recursive call reaching the base case by bringing the pointer to the base case analog in the array
             Some(self.slots)
         } else { // Calling generate(i+1, A) has ended as the for-loop terminated. Reset the state and simulate popping the stack by incrementing the pointer.
-            self.c[self.i] = 0;
+            self.c[self.i] = self.start as usize;
             self.i += 1;
             self.next()
         } 
     }
 }
-
 
 
 /*-------------------------------------------------------------
@@ -631,7 +603,7 @@ fn best_slot_ev(game:GameState, app: &mut AppState) -> EVResult  {
 
         if slot_sequence.len > 0 { // proceed to include all the ev of remaining slots in this slot_sequence
 
-            //prune unneeded state duplication when there's no chance of reaching upper bonus
+            //prune unneeded state duplication when there's no chance of reaching upper bonus // TODO could maybe tune this a bit for speed
                 let mut best_deficit = upper_deficit_now;
                 for upper_slot in slot_sequence{ 
                     if upper_slot > 6 || best_deficit==0 {break};

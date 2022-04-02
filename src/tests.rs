@@ -194,7 +194,7 @@ fn progress_eta_test() {
     let result = best_choice_ev(game, app);
 }
 
-#[test]
+// #[test]
 fn test_permutations() {
 
     let mut hm = FxHashMap::<Slots,u8>::default();
@@ -220,7 +220,7 @@ fn test_permutations() {
     // c_.join().unwrap();
 
     let a:Slots = [1,2,3,4,5,6,7,8].into();
-    for perm in a.permutations_k(4) { 
+    for perm in a.permutations_within(8,4) { 
         if let Some(s) = hm.get(&perm) {
             eprintln!("{} {}", perm, s) ;
             tot+=*s as u64;
