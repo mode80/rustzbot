@@ -4,7 +4,7 @@
 use std::{cmp::max, fs::{self, File}, time::Duration, ops::Range, fmt::Display, panic};
 use itertools::{Itertools};
 use indicatif::{ProgressBar, ProgressStyle, ProgressFinish};
-use rustc_hash::{FxHashMap};
+use rustc_hash::FxHashMap;
 use once_cell::sync::Lazy;
 use std::io::Write; 
 
@@ -75,8 +75,13 @@ impl Slots {
     }
 
     fn permutations (self) -> SlotPermutations{
-        SlotPermutations::new(self)
+        SlotPermutations::new(self,self.len)
     }
+
+    fn permutations_k (self,k:u8) -> SlotPermutations{
+        SlotPermutations::new(self,k)
+    }
+
 
     /* Works but not needed /// returns the number of unique "upper bonus totals" that could occur from these slots 
     fn unique_upper_totals(self) -> u8 {
@@ -112,7 +117,8 @@ impl Display for Slots {
         let temp:[Slot;13] = self.into(); 
         let mut temp_vec = vec![0;13];
         temp_vec.copy_from_slice(&temp);
-        write!(f,"{:?}",temp.into_iter().filter(|x|*x!=0).collect_vec()) 
+        // write!(f,"{:?}",temp.into_iter().filter(|x|*x!=0).collect_vec()) 
+        write!(f,"{:?}",temp.into_iter().take(self.len as usize).collect_vec()) 
     }
 }
 
@@ -172,10 +178,12 @@ struct SlotPermutations{
     slots:Slots,
     c:[usize;13],// c is an encoding of the stack state. c[k] encodes the for-loop counter for when generate(k - 1, A) is called
     i:usize,// i acts similarly to a stack pointer
+    k:u8,   // k length of permutations 
 }
 impl SlotPermutations{
-    fn new(slots:Slots) -> Self{
-        Self{ slots, c:Default::default(), i:255, }
+    fn new(slots:Slots, k:u8) -> Self{
+        let length_mask:u64 = 2_u64.pow(4 * k as u32)-1; 
+        Self{ slots:Slots{data:slots.data & length_mask, len:k}, c:Default::default(), i:255, k}
     }
 }
 impl Iterator for SlotPermutations{
@@ -589,7 +597,6 @@ Expected Value Core Functions
 /// returns the best slot and corresponding ev for final dice, given the slot possibilities and other relevant state 
 fn best_slot_ev(game:GameState, app: &mut AppState) -> EVResult  {
 
-    // TODO consider slot_sequences.chunk(___) + multi-threading
     let mut best_ev = 0.0; 
     let mut best_slot=STUB; 
 

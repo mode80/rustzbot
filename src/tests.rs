@@ -156,15 +156,6 @@ fn make_permutations(){
 //        6171800 Mar 12 10:23 perms9
 
 // #[test]
-fn test_permutations() {
-
-    let a = SlotPermutations::new( [0,1,2].into() );
-    for perm in a { 
-        println!("{}", perm); 
-    }; 
-}
-
-// #[test]
 fn print_misc() {
     // eprint!("{:?}", selection_ranges() );
     // eprint!("{:?}", all_selection_outcomes() );
@@ -179,7 +170,7 @@ fn print_misc() {
 //     assert_eq!(s.unique_upper_totals(), 16);
 // }
 
-// #[test]
+#[test]
 fn bench_test() {
     let game = GameState{   rolls_remaining: 0, 
                             sorted_open_slots: [SIXES, FOUR_OF_A_KIND, YAHTZEE].into(), 
@@ -192,10 +183,10 @@ fn bench_test() {
     // save_cache(&app);
 }
 
-#[test]
+// #[test]
 fn progress_eta_test() {
-    let game = GameState{   rolls_remaining: 0, 
-                            sorted_open_slots: [1,2,3,4].into(), 
+    let game = GameState{   rolls_remaining: 3, 
+                            sorted_open_slots: [1,2,3,4,5,6,7,8,9,10,11,12,13].into(), 
                             sorted_dievals: Default::default(), 
                             upper_bonus_deficit: 30, 
                             yahtzee_is_wild: false, };
@@ -203,3 +194,45 @@ fn progress_eta_test() {
     let result = best_choice_ev(game, app);
 }
 
+#[test]
+fn test_permutations() {
+
+    let mut hm = FxHashMap::<Slots,u8>::default();
+    let mut tot:u64 = 0;
+
+    
+    // let b:slots = [1,2,3,4].into();
+    // let c:slots = [5,6,7,8].into();
+
+    // let b_ = std::thread::spawn(move || {
+    //     for perm in a.permutations() { 
+    //         eprintln!("{}", perm); 
+    //     };
+    // });
+
+    // let c_ = std::thread::spawn(move || {
+    //     for perm in a { 
+    //         eprintln!("{}", perm); 
+    //     };
+    // });
+
+    // b_.join().unwrap();
+    // c_.join().unwrap();
+
+    let a:Slots = [1,2,3,4,5,6,7,8].into();
+    for perm in a.permutations_k(4) { 
+        if let Some(s) = hm.get(&perm) {
+            eprintln!("{} {}", perm, s) ;
+            tot+=*s as u64;
+        } else {
+            let s = perm.into_iter().sum() ;
+            hm.insert(perm, s);
+            eprintln!("{} {}", perm, s) ;
+            tot+=s as u64;
+        }
+    }; 
+    eprintln!("{}", tot); // 1451520 1.40s
+
+ }
+
+ 
