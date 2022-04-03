@@ -1,12 +1,14 @@
 #![allow(dead_code)] #![allow(unused_imports)] #![allow(unused_variables)]
 #![allow(clippy::needless_range_loop)] #![allow(clippy::unusual_byte_groupings)] 
 
-use std::{cmp::max, fs::{self, File}, time::Duration, ops::Range, fmt::Display, panic};
+use std::{thread::{self, spawn, sleep}, sync::{Mutex, Arc}};
+use std::{cmp::{max, min}, fs::{self, File}, time::Duration, ops::Range, fmt::Display, panic};
 use itertools::{Itertools};
 use indicatif::{ProgressBar, ProgressStyle, ProgressFinish};
 use rustc_hash::FxHashMap;
 use once_cell::sync::Lazy;
 use std::io::Write; 
+use rayon::prelude::*;
 
 #[macro_use] extern crate serde_derive;
 extern crate bincode;
@@ -45,7 +47,7 @@ struct Slots{
 
 impl Slots {
 
-    fn set(&mut self, index:u8, val:Slot) { 
+    fn set(&mut self, index:u8, val:Slot) { //TODO try again implementing Index, IndexMut
         let bitpos = 4*index; // widths of 4 bits per value 
         let mask = ! (0b1111 << bitpos); // hole maker
         self.data = (self.data & mask) | ((val as u64) << bitpos ); // punch & fill hole
@@ -53,6 +55,12 @@ impl Slots {
 
     fn get(&self, index:u8)->Slot{
         ((self.data >> (index*4)) & 0b1111) as Slot 
+    }
+
+    fn truncate(&mut self, len:u8) {
+        let mask = (2_u64).pow(len as u32 * 4)-1;
+        self.data &= mask;
+        self.len=len;
     }
 
     fn sort(&mut self){ 
@@ -156,21 +164,21 @@ struct SlotPermutations{
 impl SlotPermutations{
     fn new(slots:Slots, start:u8, len:u8) -> Self{
         // let length_mask:u64 = 2_u64.pow(4 * k as u32)-1; :Slots{data:slots.data & length_mask, len:k}
-        Self{ slots, c:[start as usize;13], i:255, end:start+len, start}
+        Self{ slots, c:[start as usize;13], i:255, end:min(start+len,slots.len), start}
     }
 }
 impl Iterator for SlotPermutations{
     type Item = Slots;
 
-    fn next(&mut self) -> Option<Self::Item> { //Heap's algorithm for generating permutations, modified for ranges
+    fn next(&mut self) -> Option<Self::Item> { //Heap's algorithm for generating permutations, modified for permuting interior ranges
         if self.i==255 { self.i=self.start as usize; return Some(self.slots); } // first run
         if self.i == self.end as usize {return None}; // last run
         if self.c[self.i] < self.i { 
-            if (self.i + (self.start as usize % 2)) % 2 == 0 { // first time, then alternating
+            if (self.i + self.start as usize) & 1 == 0 { // odd iteration
                 let temp = self.slots.get(self.i as u8); // prep to swap
                 self.slots.set(self.i as u8, self.slots.get(self.start));
                 self.slots.set(self.start, temp);
-            } else { // second time, then alternating 
+            } else { // even iteration 
                 let temp = self.slots.get(self.c[self.i] as u8); //prep to swap
                 self.slots.set(self.c[self.i] as u8, self.slots.get(self.i as u8));
                 self.slots.set(self.i as u8, temp);
