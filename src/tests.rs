@@ -217,20 +217,24 @@ fn test_truncate() {
     let mut l:Slots = [1,2,3,4,5].into();
     l.truncate(3);
     let r:Slots = [1,2,3].into();
-    assert_eq!(l,r)
-}
+    assert_eq!(l,r);
+ }
+
+// #[test]
+fn test_subset() {
+    let slots:Slots = [1,2,3,4].into();
+    let l:Slots = [2,3].into();
+    assert_eq!(l,slots.subset(1,2));
+    let l:Slots = [2,3,4].into();
+    assert_eq!(l,slots.subset(1,4));
+  }
+
 
 // #[test]
 fn test_threaded_permutations() {
     let hm = Arc::new(Mutex::new(FxHashMap::<Slots,u8>::default()));
     let mut ret = 0;
-   
-    // TODO permutations_k, small ones first, split theads by header prefix
-
     let slots:Slots = [1,2,3,4,5,6,7,8].into();
-    // let mut span_lens:Vec<u8> = Vec::new();
-    // let mut i = slots.len; while i >= 2 { span_lens.push(i); i /= 2;} 
-    // let span_lens = span_lens.into_iter().unique().rev().collect_vec(); // spans are lenthgs that go like 2,4,8 or 3,6,13
     let mut span_lens = (2..=slots.len/2).collect_vec();
     span_lens.push(slots.len);
     // lens = vec![4,8];
@@ -265,9 +269,17 @@ fn test_threaded_permutations() {
     eprintln!("{}", ret); // 1451520 2.21s on debug 
  }
 
-#[test]
+// #[test]
 fn test_threaded_permutations_k() {
-    let s:Slots = [1,2,3,4,5,6,7,8,9].into();
-    println!("{}",s.truncated(4));
+    // TODO permutations_k, small ones first, split theads by header prefix
+    let slots:Slots = [1,2,3,4].into();
+    let mut sub_slots:Slots;
+    for span_len in 1..=slots.len{
+        for i in 0..slots.len {
+            sub_slots = slots.subset(i,span_len);
+            println!("{}",sub_slots);
+        }
+    }
+
 }
  

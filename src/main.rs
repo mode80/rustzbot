@@ -69,6 +69,13 @@ impl Slots {
         self_copy
     }
 
+    fn subset(self, start_idx: u8, max_len:u8) -> Self{
+        let mut self_copy = self;
+        self_copy.data >>= start_idx*4;
+        let len = min(max_len, self.len-start_idx);
+        self_copy.truncate(len);
+        self_copy
+    }
 
     fn sort(&mut self){ 
         for i in 1..self.len { // "insertion sort" is good for small arrays like this one
