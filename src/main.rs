@@ -1,7 +1,7 @@
 #![allow(dead_code)] #![allow(unused_imports)] #![allow(unused_variables)]
 #![allow(clippy::needless_range_loop)] #![allow(clippy::unusual_byte_groupings)] 
 
-use std::{thread::{self, spawn, sleep}, sync::{Mutex, Arc}};
+use std::{thread::{self, spawn, sleep}, sync::{Mutex, Arc}, ops::Index};
 use std::{cmp::{max, min}, fs::{self, File}, time::Duration, ops::Range, fmt::Display, panic};
 use itertools::{Itertools};
 use indicatif::{ProgressBar, ProgressStyle, ProgressFinish};
@@ -47,7 +47,7 @@ struct Slots{
 
 impl Slots {
 
-    fn set(&mut self, index:u8, val:Slot) { //TODO try again implementing Index, IndexMut
+    fn set(&mut self, index:u8, val:Slot) { 
         let bitpos = 4*index; // widths of 4 bits per value 
         let mask = ! (0b1111 << bitpos); // hole maker
         self.data = (self.data & mask) | ((val as u64) << bitpos ); // punch & fill hole
@@ -62,6 +62,13 @@ impl Slots {
         self.data &= mask;
         self.len=len;
     }
+
+    fn truncated(self, len:u8) -> Self {
+        let mut self_copy = self;
+        self_copy.truncate(len);
+        self_copy
+    }
+
 
     fn sort(&mut self){ 
         for i in 1..self.len { // "insertion sort" is good for small arrays like this one

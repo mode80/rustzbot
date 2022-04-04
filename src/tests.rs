@@ -212,7 +212,7 @@ fn test_permutations() {
     }; 
 }
 
-#[test]
+// #[test]
 fn test_truncate() {
     let mut l:Slots = [1,2,3,4,5].into();
     l.truncate(3);
@@ -264,3 +264,10 @@ fn test_threaded_permutations() {
     }
     eprintln!("{}", ret); // 1451520 2.21s on debug 
  }
+
+#[test]
+fn test_threaded_permutations_k() {
+    let s:Slots = [1,2,3,4,5,6,7,8,9].into();
+    println!("{}",s.truncated(4));
+}
+ 
