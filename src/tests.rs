@@ -1,8 +1,9 @@
 #![allow(dead_code)]
 
-use std::io::BufWriter;
+use std::{io::BufWriter, thread::JoinHandle, sync::mpsc, time::{self, Instant}};
 
 use assert_approx_eq::assert_approx_eq;
+use itertools::Chunk;
 
 use super::*;
 
@@ -269,17 +270,47 @@ fn test_threaded_permutations() {
     eprintln!("{}", ret); // 1451520 2.21s on debug 
  }
 
-// #[test]
-fn test_threaded_permutations_k() {
-    // TODO permutations_k, small ones first, split theads by header prefix
-    let slots:Slots = [1,2,3,4].into();
-    let mut sub_slots:Slots;
-    for span_len in 1..=slots.len{
-        for i in 0..slots.len {
-            sub_slots = slots.subset(i,span_len);
-            println!("{}",sub_slots);
-        }
-    }
+#[test]
+fn test_threaded_subsets() {
 
-}
- 
+    // NOTE bottom up (not recursive) approach means we can skip the cache lookup and sorting the key, since every new calc will be fresh?
+
+    const CORES:usize = 8;
+
+    let full_set:Slots = [1,2,3,4,5].into();
+    let mut cached_val:u8;
+    for set_len in 1..=full_set.len{ // each length 
+        let (tx, rx) = mpsc::channel();
+        let now = Instant::now();
+        for i in 0..=(full_set.len-set_len) { // each slot_set (of above length)
+            let slot_set = full_set.subset(i,set_len);
+            let chunk_size = fact(slot_set.len) as usize / CORES + 1 ; // +1 to "round up" 
+            println!("{}", chunk_size);
+            for chunk in slot_set.permutations().chunks(chunk_size).into_iter(){ // each chunk -- one per core
+                let slot_set_perms = chunk.collect_vec(); // TODO some way to pass iterator into thread instead?
+                let tx = tx.clone();
+                thread::spawn(move ||{
+                    let mut chunk_best_result:EVResult = Default::default();
+                    let mut chunk_best_perm:Slots = Default::default();
+                    for slot_perm in slot_set_perms { // each permutation
+                        let score:u8 = slot_perm.into_iter().sum(); sleep(Duration::new(1,0)); // not a real score calc, just simulating
+                        if score as f32 > chunk_best_result.ev { 
+                            chunk_best_result.choice = slot_perm.get(0) as u16; 
+                            chunk_best_result.ev = score as f32; 
+                            chunk_best_perm = slot_perm;
+                        } // remember best 
+                    }; // end for each permutation in chunk
+                    tx.send((chunk_best_perm, chunk_best_result)).unwrap();
+                }); //end thread 
+            } // end for each chunk
+        } // end for each slot_set 
+        drop(tx); // the cloned transmitter must be explicitly dropped since it never sends 
+        let mut span_best_result:EVResult = Default::default();
+        let mut span_best_perm:Slots = Default::default();
+        for rcvd in &rx { 
+            if rcvd.1.ev > span_best_result.ev {span_best_result = rcvd.1; span_best_perm = rcvd.0};
+        }
+        println!("{} {:?} {:.2?}",span_best_perm, span_best_result, now.elapsed()); 
+    } // end for each length
+
+ } // end fn

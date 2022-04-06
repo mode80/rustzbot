@@ -1,7 +1,7 @@
 #![allow(dead_code)] #![allow(unused_imports)] #![allow(unused_variables)]
 #![allow(clippy::needless_range_loop)] #![allow(clippy::unusual_byte_groupings)] 
 
-use std::{thread::{self, spawn, sleep}, sync::{Mutex, Arc}, ops::Index};
+use std::{thread::{self, spawn, sleep}, sync::{Mutex, Arc}, ops::Index, cmp::Ordering};
 use std::{cmp::{max, min}, fs::{self, File}, time::Duration, ops::Range, fmt::Display, panic};
 use itertools::{Itertools};
 use indicatif::{ProgressBar, ProgressStyle, ProgressFinish};
@@ -144,21 +144,20 @@ impl IntoIterator for Slots{
     type Item = Slot;
 
     fn into_iter(self) -> Self::IntoIter {
-        SlotIntoIter { data:self, next_idx:0 }
+        SlotIntoIter { slots:self, next_idx:0 }
     }
-
 }
 
 struct SlotIntoIter{
-    data: Slots,
+    slots: Slots,
     next_idx: u8,
 }
 
 impl Iterator for SlotIntoIter {
     type Item = Slot ;
     fn next(&mut self) -> Option<Self::Item> {
-        if self.next_idx == self.data.len {return None};
-        let retval = self.data.get(self.next_idx);
+        if self.next_idx == self.slots.len {return None};
+        let retval = self.slots.get(self.next_idx);
         self.next_idx +=1;
         Some(retval)
     }
@@ -299,11 +298,12 @@ impl Iterator for DieValsIntoIter {
 /*-------------------------------------------------------------
 EVResult
 -------------------------------------------------------------*/
-#[derive(Debug,Clone,Copy,Serialize, Deserialize)]
+#[derive(Debug,Clone,Copy,Serialize, Deserialize, Default)]
 struct EVResult {
     choice: Choice,
     ev: f32
 }
+
 
 /*-------------------------------------------------------------
 Outcome
