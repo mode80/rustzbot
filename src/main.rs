@@ -1,7 +1,7 @@
 #![allow(dead_code)] #![allow(unused_imports)] #![allow(unused_variables)]
 #![allow(clippy::needless_range_loop)] #![allow(clippy::unusual_byte_groupings)] 
 
-use std::{thread::{self, spawn, sleep}, sync::{Mutex, Arc}, ops::Index, cmp::Ordering};
+use std::{thread::{self, spawn, sleep}, sync::{Mutex, Arc, mpsc}, ops::Index, cmp::Ordering, time::Instant};
 use std::{cmp::{max, min}, fs::{self, File}, time::Duration, ops::Range, fmt::Display, panic};
 use itertools::{Itertools};
 use indicatif::{ProgressBar, ProgressStyle, ProgressFinish};
@@ -27,11 +27,11 @@ fn main() {
 }
 
 /*-------------------------------------------------------------*/
-type Choice = u16;      // represents EITHER the index of a chosen slot, OR a DieSet (below)
-type DieSet = u16;      // big endian widths of 3bits for each of 5 die values 
-type DieVal = u8;       // a single die value 0 to 6 where 0 means "unselected"
-type Slot = u8; 
-type Score = u8;
+type Choice = u8; // represents EITHER the index of a chosen slot, OR a DieSet selection (below)
+type DieSet = u8; // encodes a selection of which dice to roll where 0b11111 means "all five dice" and 0b00101 means "first and third"
+type DieVal = u8; // a single die value 0 to 6 where 0 means "unselected"
+type Slot   = u8; // a single slot with values ranging from ACES to CHANCE 
+type Score  = u8;
 
 
 /*-------------------------------------------------------------
@@ -41,7 +41,7 @@ Slots
 #[derive(Debug,Clone,Copy,PartialEq,Serialize,Deserialize,Eq,PartialOrd,Ord,Hash,Default)]
 
 struct Slots{
-    pub data:u64, // 13 slot indexis (0 to 12) can be encoded within these 8 bytes, each taking 4 bits
+    pub data:u64, // 13 Slot values of between 1 and 13 can be encoded within these 8 bytes, each taking 4 bits
     pub len:u8,
 }
 
@@ -312,7 +312,7 @@ Outcome
 struct Outcome {
     dievals: DieVals,
     mask: DieVals, // stores a pre-made mask for blitting this outcome onto a GameState.DieVals.data u16 later
-    arrangements_count: u8,
+    arrangements: u8, // how many indistinguisable ways can these dievals be arranged (ie swapping identical dievals)
 }
 
 /*-------------------------------------------------------------
@@ -406,13 +406,14 @@ const SCORE_FNS:[fn(sorted_dievals:DieVals)->Score;14] = [
 static SELECTION_RANGES:Lazy<[Range<usize>;32]> = Lazy::new(selection_ranges); 
 static SELECTION_OUTCOMES:Lazy<[Outcome;1683]> = Lazy::new(all_selection_outcomes); 
 static FACT:Lazy<[u64;21]> = Lazy::new(||{let mut a:[u64;21]=[0;21]; for i in 0..=20 {a[i]=fact(i as u8);} a});  // cached factorials
+static CORES:Lazy<usize> = Lazy::new(num_cpus::get);
 
 
 /*-------------------------------------------------------------
 INITIALIZERS
 -------------------------------------------------------------*/
 
-/// this generates the ranges that correspond to the outcomes for a given selection, within the set of all outcomes above
+/// this generates the ranges that correspond to the outcomes, within the set of all outcomes, indexed by a give selection 
 fn selection_ranges() ->[Range<usize>;32]  { 
     let mut sel_ranges:[Range<usize>;32] = Default::default();
     let mut s = 0;
@@ -439,7 +440,7 @@ fn all_selection_outcomes() ->[Outcome;1683]  {
                 outcome.dievals.set(idx,val) ; 
                 outcome.mask.set(idx,0);
             }
-            outcome.arrangements_count = distinct_arrangements_for(dievals_vec);
+            outcome.arrangements = distinct_arrangements_for(dievals_vec);
             retval[i]=outcome;
             i+=1;
         }
@@ -651,18 +652,18 @@ fn best_slot_ev(game:GameState, app: &mut AppState) -> EVResult  {
 
     } // end for slot_sequence...
 
-    EVResult{choice:best_slot as u16, ev:best_ev}
+    EVResult{choice:best_slot, ev:best_ev}
 }
 
 /// returns the best selection of dice and corresponding ev, given slots left, existing dice, and other relevant state 
 fn best_dice_ev(game:GameState, app: &mut AppState) -> EVResult { 
 
-    let mut best_selection:u16 = 0b11111; // default selection is "all dice"
+    let mut best_selection:DieSet = 0b11111; // default selection is "all dice"
     let mut best_ev = 0.0; 
     if game.rolls_remaining==3 {// special case .. we always roll all dice on initial roll
         best_ev = avg_ev_for_selection(game,app,best_selection);
     } else { // iterate over all the possible ways to select dice and take the best outcome 
-        for selection in 0_u16..=31 { // each selection is a u8 encoded bitfield
+        for selection in 0b00000..=0b11111 { // each selection is a u8 encoded bitfield
             let avg_ev = avg_ev_for_selection(game,app,selection);
             if avg_ev > best_ev {
                 best_ev = avg_ev; 
@@ -694,8 +695,8 @@ fn avg_ev_for_selection(game:GameState, app: &mut AppState, selection:DieSet) ->
             upper_bonus_deficit: game.upper_bonus_deficit,
             sorted_dievals: newvals, 
         }, app);
-        outcomes_count += outcome.arrangements_count as usize; // we loop through die "combos" but we must sum all "perumtations"
-        let added_ev = ev * outcome.arrangements_count as f32; // each combo's ev is weighted by its count of distinct arrangements
+        outcomes_count += outcome.arrangements as usize; // we loop through die "combos" but we must sum all "perumtations"
+        let added_ev = ev * outcome.arrangements as f32; // each combo's ev is weighted by its count of distinct arrangements
         total_ev += added_ev;
         //############################
         // eprintln!("{} {} {} {} {} {}", game.rolls_remaining, outcome.dievals, outcome.arrangements_count, newvals, ev, added_ev); 
@@ -733,3 +734,68 @@ fn best_choice_ev(game:GameState,app: &mut AppState) -> EVResult  {
     app.ev_cache.insert(game, result);
     result 
 }
+
+// /// gather up expected values in a multithreaded bottom-up fashion
+// fn build_cache(full_set:SlotSet) {
+
+//     // for each length
+//     for set_len in 1..=full_set.len{ 
+//         let (tx, rx) = mpsc::channel();
+//         let now = Instant::now();
+//             // for each slot_set (of above length)
+//             for i in 0..=(full_set.len-set_len) {
+//             let slot_set = full_set.subset(i,set_len);
+//             let chunk_size = fact(slot_set.len) as usize / *CORES + 1 ; // +1 to "round up" 
+//                 // for each chunk (one per core)
+//                 for chunk in slot_set.permutations().chunks(chunk_size).into_iter(){ 
+//                 let slot_set_perms = chunk.collect_vec().into_iter(); // TODO some way to avoid collect_vec? https://stackoverflow.com/questions/42134874/are-there-equivalents-to-slicechunks-windows-for-iterators-to-loop-over-pairs
+//                 let tx = tx.clone();
+//                 thread::spawn(move ||{ // one thread per chunk
+
+//                     let mut chunk_best_result:EVResult = Default::default();
+//                     let mut chunk_best_perm:SlotSet = Default::default();
+
+//                     // for each permutation                    
+//                     for slot_perm in slot_set_perms { 
+
+//                         // for each dievals... 
+//                         for &Outcome{dievals,mask,arrangements: arrangements} in SELECTION_OUTCOMES[SELECTION_RANGES[0b11111]].iter(){
+//                             let result = best_choice_ev(GameState{
+//                                 sorted_open_slots: slot_set,
+//                                 sorted_dievals: dievals,
+//                                 rolls_remaining: 0, 
+//                                 upper_bonus_deficit: todo!(),
+//                                 yahtzee_is_wild: todo!(),
+//                             }, &mut AppState{
+                                
+//                             });
+//                         }
+//                         //...
+
+//                         // not a real score calc, just simulating
+//                         // let score:u8 = slot_perm.into_iter().sum(); sleep(Duration::new(1,0)); 
+
+//                         // remember best 
+//                         if score as f32 > chunk_best_result.ev { 
+//                             chunk_best_result.choice = slot_perm.get(0) as u16; 
+//                             chunk_best_result.ev = score as f32; 
+//                             chunk_best_perm = slot_perm;
+//                         } 
+
+//                     }; // end for each permutation in chunk
+
+//                     tx.send((chunk_best_perm, chunk_best_result)).unwrap();
+
+//                 }); //end thread 
+//             } // end for each chunk
+//         } // end for each slot_set 
+//         drop(tx); // the cloned transmitter must be explicitly dropped since it never sends 
+//         let mut span_best_result:EVResult = Default::default();
+//         let mut span_best_perm:SlotSet = Default::default();
+//         for rcvd in &rx { 
+//             if rcvd.1.ev > span_best_result.ev {span_best_result = rcvd.1; span_best_perm = rcvd.0};
+//         }
+//         println!("{} {:?} {:.2?}",span_best_perm, span_best_result, now.elapsed()); 
+//     } // end for each length
+// 
+//  } // end fn

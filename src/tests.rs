@@ -171,18 +171,17 @@ fn print_misc() {
 //     assert_eq!(s.unique_upper_totals(), 16);
 // }
 
-// #[test]
+#[test]
 fn bench_test() {
-    let game = GameState{   rolls_remaining: 3, 
-                            sorted_open_slots: [1,2,3,7,9,10,11,12].into(), 
+    let game = GameState{   rolls_remaining: 0, 
+                            sorted_open_slots: [SIXES, FOUR_OF_A_KIND, YAHTZEE].into(), 
                             sorted_dievals: Default::default(), 
                             upper_bonus_deficit: 30, 
                             yahtzee_is_wild: false, };
     let app = &mut AppState::new(&game);
     let result = best_choice_ev(game, app);
-    // assert_eq!(rounded(result.ev,2),  29.65);
-    // save_cache(&app);
-}   //17.15s
+    assert_eq!(rounded(result.ev,2),  21.8);
+} 
 
 // #[test]
 fn progress_eta_test() {
@@ -270,7 +269,7 @@ fn test_threaded_permutations() {
     eprintln!("{}", ret); // 1451520 2.21s on debug 
  }
 
-#[test]
+// #[test]
 fn test_threaded_subsets() {
 
     // NOTE bottom up (not recursive) approach means we can skip the cache lookup and sorting the key, since every new calc will be fresh?
@@ -295,7 +294,7 @@ fn test_threaded_subsets() {
                     for slot_perm in slot_set_perms { // each permutation
                         let score:u8 = slot_perm.into_iter().sum(); sleep(Duration::new(1,0)); // not a real score calc, just simulating
                         if score as f32 > chunk_best_result.ev { 
-                            chunk_best_result.choice = slot_perm.get(0) as u16; 
+                            chunk_best_result.choice = slot_perm.get(0); 
                             chunk_best_result.ev = score as f32; 
                             chunk_best_perm = slot_perm;
                         } // remember best 
