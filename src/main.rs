@@ -132,8 +132,8 @@ impl Slots {
         retval
     }
  
-    /// returns the unique "upper bonus totals" that could have occurred from the missing upper slots 
-    fn unique_upper_totals(self) -> Vec<u8> { //impl Iterator<Item=u8> {  // TODO implement without allocating?
+    /// returns the unique "upper bonus totals" shortfalls that could have occurred from the missing upper slots 
+    fn unique_upper_deficits(self) -> Vec<u8> { //impl Iterator<Item=u8> {  // TODO implement without allocating?
         let mut unique_totals:FxHashSet<u8> = Default::default();
         // these are all the possible score entries for each upper slot
         const UPPER_SCORES:[[u8;6];7] = [ 
@@ -155,7 +155,7 @@ impl Slots {
             // add the total to the set of unique totals 
             unique_totals.insert(tot);
         }
-        unique_totals.into_iter().collect_vec()
+        unique_totals.into_iter().map(|x|63_u8.saturating_sub(x)).collect_vec()
     }
 
 }
@@ -806,14 +806,14 @@ fn best_choice_ev(game:GameState,app: &mut AppState) -> ChoiceEV  {
 //             let slotset = full_set.subset(i,set_len);
 //             let yahtzee_may_be_wild = !slotset.into_iter().any(|x|x==YAHTZEE); // yahtzee dice aren't wild when yahtzee slot is available 
 //             let chunk_size = fact(slotset.len) as usize / *CORES + 1 ; // +1 to "round up" 
-//             let upper_totals = slotset.missing_upper_slots().unique_upper_totals(); 
+//             let upper_deficits = slotset.missing_upper_slots().unique_upper_deficits(); 
 
 //             // for each chunk (one per core)
 //             for chunk in slotset.permutations().chunks(chunk_size).into_iter(){ 
 
 //                 let slotset_perms = chunk.collect_vec().into_iter(); // TODO some way to avoid collect_vec? https://stackoverflow.com/questions/42134874/are-there-equivalents-to-slicechunks-windows-for-iterators-to-loop-over-pairs
 //                 let tx = tx.clone();
-//                 let upper_totals = upper_totals.clone(); 
+//                 let upper_deficits = upper_deficits.clone(); 
 //                 thread::spawn(move ||{ // one thread per chunk
 
 //                     let mut chunk_best_result:ChoiceEV = Default::default();
@@ -826,7 +826,7 @@ fn best_choice_ev(game:GameState,app: &mut AppState) -> ChoiceEV  {
 //                         for yahtzee_wild in &[false,yahtzee_may_be_wild] {
 
 //                             // for each upper bonus total 
-//                             for upper_total in upper_totals.clone(){
+//                             for upper_total in upper_deficits.clone(){
 
 //                                 // for each dievals... 
 //                                 for outcome in SELECTION_OUTCOMES[SELECTION_RANGES[0b11111].clone()].iter(){
@@ -835,7 +835,7 @@ fn best_choice_ev(game:GameState,app: &mut AppState) -> ChoiceEV  {
 //                                         sorted_dievals: outcome.dievals,
 //                                         rolls_remaining: 0, 
 //                                         yahtzee_is_wild: *yahtzee_wild,
-//                                         upper_bonus_deficit: 63 - upper_total, 
+//                                         upper_bonus_deficit:  upper_total, 
 //                                     };
 //                                     let best_choice = best_choice_ev(game ,&mut AppState::new(&game) );
 //                                 } 
