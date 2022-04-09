@@ -171,7 +171,7 @@ fn print_misc() {
 //     assert_eq!(s.unique_upper_totals(), 16);
 // }
 
-// #[test]
+#[test]
 fn bench_test() {
     let game = GameState{   rolls_remaining: 0, 
                             sorted_open_slots: [SIXES, FOUR_OF_A_KIND, YAHTZEE].into(), 
@@ -315,7 +315,7 @@ fn test_threaded_subsets() {
  } // end fn
 
 
-#[test]
+// #[test]
 fn unique_upper_deficits_test() {
     let slots:Slots = [3,4,5,6,7].into();
     let mut sorted_totals = slots.missing_upper_slots().unique_upper_deficits();

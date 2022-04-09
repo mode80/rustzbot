@@ -101,9 +101,9 @@ impl Slots {
     }
 
     fn pop(&mut self) -> Slot {
-        self.len -=1; // will panic if needed
-        let retval = self.get(self.len);
-        self.set(self.len,0); 
+        let retval = self.get(self.len-1);
+        self.set(self.len-1,0); 
+        self.len -=1; 
         retval
     }
 
