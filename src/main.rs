@@ -52,6 +52,8 @@ struct Slots{
 impl Slots {
 
     fn set(&mut self, index:u8, val:Slot) { 
+        debug_assert!(index < self.len); 
+        debug_assert!(index < 13); 
         let bitpos = 4*index; // widths of 4 bits per value 
         let mask = ! (0b1111 << bitpos); // hole maker
         self.data = (self.data & mask) | ((val as u64) << bitpos ); // punch & fill hole
@@ -59,6 +61,11 @@ impl Slots {
 
     fn get(&self, index:u8)->Slot{
         ((self.data >> (index*4)) & 0b1111) as Slot 
+    }
+
+    fn push(&mut self, val:Slot){
+        self.len +=1;
+        self.set(self.len-1,val);
     }
 
     fn truncate(&mut self, len:u8) {
@@ -108,8 +115,27 @@ impl Slots {
         SlotPermutations::new(self,start,len)
     }
 
-    /// returns the unique "upper bonus totals" that could occur from these slots 
-    fn unique_upper_totals(self) -> Vec<u8> { //impl Iterator<Item=u8> { 
+    // // given this set of slots, what set of slots have previously been played? (ie the inverse set)
+    // fn previously_played (self) -> Self{
+    //     let mut ret:Self = Default::default();
+    //     let mut i=0;
+    //     for s in ACES..CHANCE {
+    //         if !self.into_iter().contains(&s) {ret.set(i,s); i+=1;}
+    //     };
+    //     ret
+    // }
+
+    fn missing_upper_slots(self) -> Self{
+        let upper_slots= FxHashSet::<u8>::from_iter(self.into_iter().filter(|&x|x<=SIXES));
+        let mut retval:Slots = Default::default();
+        for s in ACES..=SIXES { if !upper_slots.contains(&s) {retval.push(s)}; }
+        retval
+    }
+ 
+    /// returns the unique "upper bonus totals" that could have occurred from the missing upper slots 
+    fn unique_upper_totals(self) -> Vec<u8> { //impl Iterator<Item=u8> {  // TODO implement without allocating?
+        let mut unique_totals:FxHashSet<u8> = Default::default();
+        // these are all the possible score entries for each upper slot
         const UPPER_SCORES:[[u8;6];7] = [ 
             [0,0,0,0,0,0],      // STUB
             [0,1,2,3,4,5],      // ACES
@@ -119,14 +145,17 @@ impl Slots {
             [0,5,10,15,20,25],  // FIVES
             [0,6,12,18,24,30],  // SIXES
         ];
+        // only upper slots could have contributed to the upper total 
         let slot_idxs = self.into_iter().filter(|&x|x<=SIXES).map(|x| x as usize).collect_vec();
         let score_idx_perms= repeat_n(0..6, slot_idxs.len()).multi_cartesian_product();
-        let mut totals:FxHashSet<u8> = Default::default();
+        // for every permutation of entry indexes
         for score_idxs in score_idx_perms {
+            // covert the list of entry indecis to a list of entry -scores-, then total them
             let tot = slot_idxs.iter().zip(score_idxs).map(|(i,ii)| UPPER_SCORES[*i][ii]).sum();
-            totals.insert(tot);
+            // add the total to the set of unique totals 
+            unique_totals.insert(tot);
         }
-        totals.into_iter().collect_vec()
+        unique_totals.into_iter().collect_vec()
     }
 
 }
@@ -144,9 +173,8 @@ impl Display for Slots {
 impl <const N:usize> From<[Slot; N]> for Slots{
     fn from(a: [Slot; N]) -> Self {
         if a.len() as usize > 13 { panic!(); }
-        let mut retval:Slots = Default::default();
+        let mut retval = Slots{ len:a.len() as u8, data:Default::default()};
         for i in 0..N { retval.set(i as u8, a[i as usize]); }
-        retval.len = a.len() as u8;
         retval 
     }
 }
@@ -778,7 +806,7 @@ fn best_choice_ev(game:GameState,app: &mut AppState) -> ChoiceEV  {
 //             let slotset = full_set.subset(i,set_len);
 //             let yahtzee_may_be_wild = !slotset.into_iter().any(|x|x==YAHTZEE); // yahtzee dice aren't wild when yahtzee slot is available 
 //             let chunk_size = fact(slotset.len) as usize / *CORES + 1 ; // +1 to "round up" 
-//             let upper_totals = slotset.unique_upper_totals(); 
+//             let upper_totals = slotset.missing_upper_slots().unique_upper_totals(); 
 
 //             // for each chunk (one per core)
 //             for chunk in slotset.permutations().chunks(chunk_size).into_iter(){ 
@@ -835,5 +863,4 @@ fn best_choice_ev(game:GameState,app: &mut AppState) -> ChoiceEV  {
 //     println!("{} {:?} {:.2?}",span_best_perm, span_best_result, now.elapsed()); 
 
 //     } // end for each length
-
-//  } // end fn
+// }
