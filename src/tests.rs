@@ -171,7 +171,7 @@ fn print_misc() {
 //     assert_eq!(s.unique_upper_totals(), 16);
 // }
 
-#[test]
+// #[test]
 fn bench_test() {
     let game = GameState{   rolls_remaining: 0, 
                             sorted_open_slots: [SIXES, FOUR_OF_A_KIND, YAHTZEE].into(), 
@@ -289,7 +289,7 @@ fn test_threaded_subsets() {
                 let slot_set_perms = chunk.collect_vec(); // TODO some way to pass iterator into thread instead?
                 let tx = tx.clone();
                 thread::spawn(move ||{
-                    let mut chunk_best_result:EVResult = Default::default();
+                    let mut chunk_best_result:ChoiceEV = Default::default();
                     let mut chunk_best_perm:Slots = Default::default();
                     for slot_perm in slot_set_perms { // each permutation
                         let score:u8 = slot_perm.into_iter().sum(); sleep(Duration::new(1,0)); // not a real score calc, just simulating
@@ -304,7 +304,7 @@ fn test_threaded_subsets() {
             } // end for each chunk
         } // end for each slot_set 
         drop(tx); // the cloned transmitter must be explicitly dropped since it never sends 
-        let mut span_best_result:EVResult = Default::default();
+        let mut span_best_result:ChoiceEV = Default::default();
         let mut span_best_perm:Slots = Default::default();
         for rcvd in &rx { 
             if rcvd.1.ev > span_best_result.ev {span_best_result = rcvd.1; span_best_perm = rcvd.0};
@@ -313,3 +313,19 @@ fn test_threaded_subsets() {
     } // end for each length
 
  } // end fn
+
+
+#[test]
+fn unique_upper_totals_test() {
+    let slots:Slots = [ACES,TWOS].into();
+    let mut sorted_totals = slots.unique_upper_totals();
+    sorted_totals.sort_unstable();
+    // eprintln!("{:?}",sorted_totals);
+    assert_eq!(sorted_totals, vec![0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]);
+}
+
+// #[test]
+// fn multi_cartesian_product_test() {
+//     let it = repeat_n(1..=6,2).multi_cartesian_product().for_each(|x| eprintln!("{:?}",x));
+// }
+ 

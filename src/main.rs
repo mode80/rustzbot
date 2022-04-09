@@ -3,9 +3,9 @@
 
 use std::{thread::{self, spawn, sleep}, sync::{Mutex, Arc, mpsc}, ops::Index, cmp::Ordering, time::Instant};
 use std::{cmp::{max, min}, fs::{self, File}, time::Duration, ops::Range, fmt::Display, panic};
-use itertools::{Itertools};
+use itertools::{Itertools, iproduct, repeat_n};
 use indicatif::{ProgressBar, ProgressStyle, ProgressFinish};
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 use once_cell::sync::Lazy;
 use std::io::Write; 
 use rayon::prelude::*;
@@ -16,17 +16,21 @@ extern crate bincode;
 #[cfg(test)] 
 #[path = "./tests.rs"]
 mod tests;
-//-------------------------------------------------------------*/
 
+/*------------------------------------------------------------
+MAIN
+-------------------------------------------------------------*/
 fn main() {
     
     let game = GameState::default();
     let app = & mut AppState::new(&game);
 
-    let EVResult{choice, ev} = best_choice_ev(game, app);
+    let ChoiceEV{choice, ev} = best_choice_ev(game, app);
 }
 
-/*-------------------------------------------------------------*/
+/*-------------------------------------------------------------
+TYPE ALIASES
+-------------------------------------------------------------*/
 type Choice = u8; // represents EITHER the index of a chosen slot, OR a DieSet selection (below)
 type DieSet = u8; // encodes a selection of which dice to roll where 0b11111 means "all five dice" and 0b00101 means "first and third"
 type DieVal = u8; // a single die value 0 to 6 where 0 means "unselected"
@@ -102,6 +106,27 @@ impl Slots {
 
     fn permutations_within (self,start:u8,len:u8) -> SlotPermutations{
         SlotPermutations::new(self,start,len)
+    }
+
+    /// returns the unique "upper bonus totals" that could occur from these slots 
+    fn unique_upper_totals(self) -> Vec<u8> { //impl Iterator<Item=u8> { 
+        const UPPER_SCORES:[[u8;6];7] = [ 
+            [0,0,0,0,0,0],      // STUB
+            [0,1,2,3,4,5],      // ACES
+            [0,2,4,6,8,10],     // TWOS
+            [0,3,6,9,12,15],    // THREES 
+            [0,4,8,12,16,20],   // FOURS
+            [0,5,10,15,20,25],  // FIVES
+            [0,6,12,18,24,30],  // SIXES
+        ];
+        let slot_idxs = self.into_iter().filter(|&x|x<=SIXES).map(|x| x as usize).collect_vec();
+        let score_idx_perms= repeat_n(0..6, slot_idxs.len()).multi_cartesian_product();
+        let mut totals:FxHashSet<u8> = Default::default();
+        for score_idxs in score_idx_perms {
+            let tot = slot_idxs.iter().zip(score_idxs).map(|(i,ii)| UPPER_SCORES[*i][ii]).sum();
+            totals.insert(tot);
+        }
+        totals.into_iter().collect_vec()
     }
 
 }
@@ -296,10 +321,10 @@ impl Iterator for DieValsIntoIter {
 }
 
 /*-------------------------------------------------------------
-EVResult
+ChoiceEV
 -------------------------------------------------------------*/
 #[derive(Debug,Clone,Copy,Serialize, Deserialize, Default)]
-struct EVResult {
+struct ChoiceEV {
     choice: Choice,
     ev: f32
 }
@@ -339,7 +364,7 @@ AppState
 -------------------------------------------------------------*/
 struct AppState{
     progress_bar:ProgressBar, 
-    ev_cache:FxHashMap<GameState,EVResult>,
+    ev_cache:FxHashMap<GameState,ChoiceEV>,
     checkpoint: Duration,
     // done:FxHashSet<Slots>,
 }
@@ -512,6 +537,11 @@ fn console_log(game:&GameState, app:&AppState, choice:Choice, ev:f32 ){
     );
 }
 
+
+/*-------------------------------------------------------------
+SCORING FNs
+-------------------------------------------------------------*/
+
 fn score_upperbox(boxnum:Slot, sorted_dievals:DieVals)->Score{
    sorted_dievals.into_iter().filter(|x| *x==boxnum).sum()
 }
@@ -590,7 +620,7 @@ Expected Value Core Functions
 -------------------------------------------------------------*/
 
 /// returns the best slot and corresponding ev for final dice, given the slot possibilities and other relevant state 
-fn best_slot_ev(game:GameState, app: &mut AppState) -> EVResult  {
+fn best_slot_ev(game:GameState, app: &mut AppState) -> ChoiceEV  {
 
     let mut best_ev = 0.0; 
     let mut best_slot=STUB; 
@@ -638,7 +668,7 @@ fn best_slot_ev(game:GameState, app: &mut AppState) -> EVResult  {
                 slot_sequence.sort(); 
 
             // gather the collective ev for the remaining slots recursively
-                EVResult{choice:_choice, ev:tail_ev} = best_choice_ev( GameState{
+                ChoiceEV{choice:_choice, ev:tail_ev} = best_choice_ev( GameState{
                     yahtzee_is_wild: yahtzee_wild_now,
                     sorted_open_slots: slot_sequence, 
                     rolls_remaining: 3,
@@ -652,11 +682,11 @@ fn best_slot_ev(game:GameState, app: &mut AppState) -> EVResult  {
 
     } // end for slot_sequence...
 
-    EVResult{choice:best_slot, ev:best_ev}
+    ChoiceEV{choice:best_slot, ev:best_ev}
 }
 
 /// returns the best selection of dice and corresponding ev, given slots left, existing dice, and other relevant state 
-fn best_dice_ev(game:GameState, app: &mut AppState) -> EVResult { 
+fn best_dice_ev(game:GameState, app: &mut AppState) -> ChoiceEV { 
 
     let mut best_selection:DieSet = 0b11111; // default selection is "all dice"
     let mut best_ev = 0.0; 
@@ -671,7 +701,7 @@ fn best_dice_ev(game:GameState, app: &mut AppState) -> EVResult {
             }
         }
     }
-    EVResult{choice:best_selection, ev:best_ev}
+    ChoiceEV{choice:best_selection, ev:best_ev}
 }
 
 /// returns the average of all the expected values for rolling a selection of dice, given the game and app state
@@ -688,7 +718,7 @@ fn avg_ev_for_selection(game:GameState, app: &mut AppState, selection:DieSet) ->
         newvals = Default::default(); 
         newvals.data = (game.sorted_dievals.data & outcome.mask.data) | outcome.dievals.data; // blit for the result after rolling selected dice. faster than looping
         newvals.sort();
-        let EVResult{choice: _choice, ev} = best_choice_ev( GameState{ 
+        let ChoiceEV{choice: _choice, ev} = best_choice_ev( GameState{ 
             yahtzee_is_wild: game.yahtzee_is_wild, 
             sorted_open_slots: game.sorted_open_slots, 
             rolls_remaining: game.rolls_remaining-1,
@@ -706,7 +736,7 @@ fn avg_ev_for_selection(game:GameState, app: &mut AppState, selection:DieSet) ->
 
 
 /// returns the best game Choice along with its expected value, given relevant game state.
-fn best_choice_ev(game:GameState,app: &mut AppState) -> EVResult  { 
+fn best_choice_ev(game:GameState,app: &mut AppState) -> ChoiceEV  { 
 
     if let Some(result) = app.ev_cache.get(&game) { return *result }; // return cached result if we have one 
     // cache contention here during constant cache writing effectively caps us to single threaded speeds
@@ -736,51 +766,59 @@ fn best_choice_ev(game:GameState,app: &mut AppState) -> EVResult  {
 }
 
 // /// gather up expected values in a multithreaded bottom-up fashion
-// fn build_cache(full_set:SlotSet) {
+// fn build_cache(full_set:Slots) {
 
 //     // for each length
 //     for set_len in 1..=full_set.len{ 
 //         let (tx, rx) = mpsc::channel();
 //         let now = Instant::now();
-//             // for each slot_set (of above length)
-//             for i in 0..=(full_set.len-set_len) {
-//             let slot_set = full_set.subset(i,set_len);
-//             let chunk_size = fact(slot_set.len) as usize / *CORES + 1 ; // +1 to "round up" 
-//                 // for each chunk (one per core)
-//                 for chunk in slot_set.permutations().chunks(chunk_size).into_iter(){ 
-//                 let slot_set_perms = chunk.collect_vec().into_iter(); // TODO some way to avoid collect_vec? https://stackoverflow.com/questions/42134874/are-there-equivalents-to-slicechunks-windows-for-iterators-to-loop-over-pairs
+
+//         // for each slot_set (of above length)
+//         for i in 0..=(full_set.len-set_len) {
+//             let slotset = full_set.subset(i,set_len);
+//             let yahtzee_may_be_wild = !slotset.into_iter().any(|x|x==YAHTZEE); // yahtzee dice aren't wild when yahtzee slot is available 
+//             let chunk_size = fact(slotset.len) as usize / *CORES + 1 ; // +1 to "round up" 
+//             let upper_totals = slotset.unique_upper_totals(); 
+
+//             // for each chunk (one per core)
+//             for chunk in slotset.permutations().chunks(chunk_size).into_iter(){ 
+
+//                 let slotset_perms = chunk.collect_vec().into_iter(); // TODO some way to avoid collect_vec? https://stackoverflow.com/questions/42134874/are-there-equivalents-to-slicechunks-windows-for-iterators-to-loop-over-pairs
 //                 let tx = tx.clone();
+//                 let upper_totals = upper_totals.clone(); 
 //                 thread::spawn(move ||{ // one thread per chunk
 
-//                     let mut chunk_best_result:EVResult = Default::default();
-//                     let mut chunk_best_perm:SlotSet = Default::default();
+//                     let mut chunk_best_result:ChoiceEV = Default::default();
+//                     let mut chunk_best_perm:Slots = Default::default();
 
-//                     // for each permutation                    
-//                     for slot_perm in slot_set_perms { 
+//                     // for each slot permutation                    
+//                     for slot_perm in slotset_perms { 
 
-//                         // for each dievals... 
-//                         for &Outcome{dievals,mask,arrangements: arrangements} in SELECTION_OUTCOMES[SELECTION_RANGES[0b11111]].iter(){
-//                             let result = best_choice_ev(GameState{
-//                                 sorted_open_slots: slot_set,
-//                                 sorted_dievals: dievals,
-//                                 rolls_remaining: 0, 
-//                                 upper_bonus_deficit: todo!(),
-//                                 yahtzee_is_wild: todo!(),
-//                             }, &mut AppState{
-                                
-//                             });
-//                         }
-//                         //...
+//                         // for each yahtzee wild possibility
+//                         for yahtzee_wild in &[false,yahtzee_may_be_wild] {
 
-//                         // not a real score calc, just simulating
-//                         // let score:u8 = slot_perm.into_iter().sum(); sleep(Duration::new(1,0)); 
+//                             // for each upper bonus total 
+//                             for upper_total in upper_totals.clone(){
+
+//                                 // for each dievals... 
+//                                 for outcome in SELECTION_OUTCOMES[SELECTION_RANGES[0b11111].clone()].iter(){
+//                                     let game = GameState{
+//                                         sorted_open_slots: slotset,
+//                                         sorted_dievals: outcome.dievals,
+//                                         rolls_remaining: 0, 
+//                                         yahtzee_is_wild: *yahtzee_wild,
+//                                         upper_bonus_deficit: 63 - upper_total, 
+//                                     };
+//                                     let best_choice = best_choice_ev(game ,&mut AppState::new(&game) );
+//                                 } 
+
+//                             } //end for each upper total
+                            
+//                         }//end for each yahtzee_is_wild
+
 
 //                         // remember best 
-//                         if score as f32 > chunk_best_result.ev { 
-//                             chunk_best_result.choice = slot_perm.get(0) as u16; 
-//                             chunk_best_result.ev = score as f32; 
-//                             chunk_best_perm = slot_perm;
-//                         } 
+//                         //  ... 
 
 //                     }; // end for each permutation in chunk
 
@@ -789,13 +827,13 @@ fn best_choice_ev(game:GameState,app: &mut AppState) -> EVResult  {
 //                 }); //end thread 
 //             } // end for each chunk
 //         } // end for each slot_set 
-//         drop(tx); // the cloned transmitter must be explicitly dropped since it never sends 
-//         let mut span_best_result:EVResult = Default::default();
-//         let mut span_best_perm:SlotSet = Default::default();
-//         for rcvd in &rx { 
-//             if rcvd.1.ev > span_best_result.ev {span_best_result = rcvd.1; span_best_perm = rcvd.0};
-//         }
-//         println!("{} {:?} {:.2?}",span_best_perm, span_best_result, now.elapsed()); 
+
+//     drop(tx); // would hang waiting for the cloned transmitter if it isn't explicity dropped 
+//     let mut span_best_result:ChoiceEV = Default::default();
+//     let mut span_best_perm:Slots= Default::default();
+//     for rcvd in &rx { if rcvd.1.ev > span_best_result.ev {span_best_result = rcvd.1; span_best_perm = rcvd.0}; }
+//     println!("{} {:?} {:.2?}",span_best_perm, span_best_result, now.elapsed()); 
+
 //     } // end for each length
-// 
+
 //  } // end fn
