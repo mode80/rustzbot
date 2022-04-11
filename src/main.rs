@@ -298,8 +298,7 @@ impl DieVals {
 
 impl Display for DieVals {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let temp:[DieVal;5] = self.into(); 
-        write!(f,"{:?}",temp) 
+        write!(f,"{}{}{}{}{}",self.get(0), self.get(1),self.get(2),self.get(3),self.get(4)) 
     }
 }
 
@@ -495,7 +494,7 @@ fn all_selection_outcomes() ->[Outcome;1683]  {
         for dievals_vec in [1,2,3,4,5,6_u8].into_iter().combinations_with_replacement(combo.len()){ 
             outcome.mask = [0b111,0b111,0b111,0b111,0b111].into();
             for (j, &val ) in dievals_vec.iter().enumerate() { 
-                let idx = 4-combo[j] as u8; // count down the indexes such that 0 represts selecting none and 31 all 
+                let idx = combo[j] as u8; 
                 outcome.dievals.set(idx,val) ; 
                 outcome.mask.set(idx,0);
             }
