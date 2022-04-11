@@ -317,6 +317,12 @@ impl From<& DieVals> for [DieVal; 5]{
     }
 }
 
+impl From<DieVals> for [DieVal; 5]{ 
+    fn from(dievals: DieVals) -> Self {
+        <[DieVal;5]>::from(&dievals)
+    }
+}
+
 impl From<&mut DieVals> for [DieVal; 5]{ 
     fn from(dievals: &mut DieVals) -> Self {
         <[DieVal;5]>::from(&*dievals)
@@ -801,25 +807,26 @@ fn best_choice_ev(game:GameState,app: &mut AppState) -> ChoiceEV  {
 //         let (tx, rx) = mpsc::channel();
 //         let now = Instant::now();
 
-//         // for each slot_set (of above length)
+//         // for each slotset (of above length)
 //         for i in 0..=(full_set.len-set_len) {
 //             let slotset = full_set.subset(i,set_len);
-//             let yahtzee_may_be_wild = !slotset.into_iter().any(|x|x==YAHTZEE); // yahtzee dice aren't wild when yahtzee slot is available 
-//             let chunk_size = fact(slotset.len) as usize / *CORES + 1 ; // +1 to "round up" 
+//             let yahtzee_may_be_wild = !slotset.into_iter().contains(&YAHTZEE); // yahtzees aren't wild whenever yahtzee slot is still available 
+//             let chunk_size = fact(slotset.len) as usize / *CORES + 1 ; // one chunk per core (+1 chunk_size to "round up") 
 //             let upper_deficits = slotset.missing_upper_slots().unique_upper_deficits(); 
 
-//             // for each chunk (one per core)
+//             // for each chunk of slot permutations 
 //             for chunk in slotset.permutations().chunks(chunk_size).into_iter(){ 
 
+//                 // thread "params"
 //                 let slotset_perms = chunk.collect_vec().into_iter(); // TODO some way to avoid collect_vec? https://stackoverflow.com/questions/42134874/are-there-equivalents-to-slicechunks-windows-for-iterators-to-loop-over-pairs
 //                 let tx = tx.clone();
 //                 let upper_deficits = upper_deficits.clone(); 
-//                 thread::spawn(move ||{ // one thread per chunk
 
-//                     let mut chunk_best_result:ChoiceEV = Default::default();
-//                     let mut chunk_best_perm:Slots = Default::default();
+//                 thread::spawn(move ||{ 
 
-//                     // for each slot permutation                    
+//                     let mut ev = 0.0;
+
+//                     // for each slot permutation in chunk
 //                     for slot_perm in slotset_perms { 
 
 //                         // for each yahtzee wild possibility
@@ -828,24 +835,76 @@ fn best_choice_ev(game:GameState,app: &mut AppState) -> ChoiceEV  {
 //                             // for each upper bonus total 
 //                             for upper_total in upper_deficits.clone(){
 
-//                                 // for each dievals... 
-//                                 for outcome in SELECTION_OUTCOMES[SELECTION_RANGES[0b11111].clone()].iter(){
-//                                     let game = GameState{
-//                                         sorted_open_slots: slotset,
-//                                         sorted_dievals: outcome.dievals,
-//                                         rolls_remaining: 0, 
-//                                         yahtzee_is_wild: *yahtzee_wild,
-//                                         upper_bonus_deficit:  upper_total, 
-//                                     };
-//                                     let best_choice = best_choice_ev(game ,&mut AppState::new(&game) );
-//                                 } 
+//                                 // for each rolls remaining
+//                                 for rolls in 0..=3 {
+
+//                                     match rolls {
+
+//                                         0 => {
+
+//                                             // for each slot in permutation
+//                                             for slot in slot_perm
+                                            
+//                                                 // for each dievals... //TODO we really want weighted dieval combos here 
+//                                                 for die_vals in SELECTION_OUTCOMES[SELECTION_RANGES[0b11111].clone()].iter(){
+                                                        
+//                                                     ev = score_slot(slot, die_vals); 
+
+
+//                                                     // LEAF CALCS 
+//                                                         // prep vars
+//                                                             let mut tail_ev = 0.0;
+//                                                             let head_slot = slot_sequence.pop();
+//                                                             let mut _choice;
+//                                                             let mut upper_deficit_now = game.upper_bonus_deficit ;
+//                                                             let mut yahtzee_wild_now:bool = game.yahtzee_is_wild;
+
+//                                                         // score slot itself w/o regard to game state 
+//                                                             let mut head_ev = score_slot(head_slot, game.sorted_dievals); 
+
+//                                                         // add upper bonus when needed total is reached
+//                                                             if head_slot <= SIXES && upper_deficit_now>0 && head_ev>0 { 
+//                                                                 if head_ev >= upper_deficit_now {head_ev += 35}; 
+//                                                                 upper_deficit_now = upper_deficit_now.saturating_sub(head_ev) ;
+//                                                             } 
+
+//                                                         // special handling of "extra yahtzees" 
+//                                                             let yahtzee_rolled = {score_yahtzee(game.sorted_dievals)==50}; 
+//                                                             if yahtzee_rolled && game.yahtzee_is_wild { // extra yahtzee situation
+//                                                                 if head_slot==SM_STRAIGHT {head_ev=30}; // extra yahtzees are valid in any lower slot, per wildcard rules
+//                                                                 if head_slot==LG_STRAIGHT {head_ev=40}; 
+//                                                                 if head_slot==FULL_HOUSE  {head_ev=25}; 
+//                                                                 head_ev+=100; // extra yahtzee bonus per rules
+//                                                             }
+//                                                             if head_slot==YAHTZEE && yahtzee_rolled {yahtzee_wild_now = true} ;
+//                                                 }
+
+//                                         },
+//                                         1 | 2 => {},
+//                                         3 => {}
+//                                         _ => {}
+//                                     }
+                                    
+//                                     // for each dievals... 
+//                                     for outcome in SELECTION_OUTCOMES[SELECTION_RANGES[0b11111].clone()].iter(){
+//                                         let game = GameState{
+//                                             sorted_open_slots: slotset,
+//                                             sorted_dievals: outcome.dievals,
+//                                             rolls_remaining: 0, 
+//                                             yahtzee_is_wild: *yahtzee_wild,
+//                                             upper_bonus_deficit:  upper_total, 
+//                                         };
+//                                         let best_choice = best_choice_ev(game ,&mut AppState::new(&game) ); //TODO bottom up doesn't mesh with current AppState approach
+//                                     } 
+
+//                                 } // end for each rolls
 
 //                             } //end for each upper total
                             
 //                         }//end for each yahtzee_is_wild
 
 
-//                         // remember best 
+//                         // remember best slot_perm in chunk
 //                         //  ... 
 
 //                     }; // end for each permutation in chunk
@@ -853,7 +912,9 @@ fn best_choice_ev(game:GameState,app: &mut AppState) -> ChoiceEV  {
 //                     tx.send((chunk_best_perm, chunk_best_result)).unwrap();
 
 //                 }); //end thread 
+
 //             } // end for each chunk
+
 //         } // end for each slot_set 
 
 //     drop(tx); // would hang waiting for the cloned transmitter if it isn't explicity dropped 
@@ -863,4 +924,5 @@ fn best_choice_ev(game:GameState,app: &mut AppState) -> ChoiceEV  {
 //     println!("{} {:?} {:.2?}",span_best_perm, span_best_result, now.elapsed()); 
 
 //     } // end for each length
+
 // }

@@ -171,18 +171,6 @@ fn print_misc() {
 //     assert_eq!(s.unique_upper_totals(), 16);
 // }
 
-#[test]
-fn bench_test() {
-    let game = GameState{   rolls_remaining: 0, 
-                            sorted_open_slots: [SIXES, FOUR_OF_A_KIND, YAHTZEE].into(), 
-                            sorted_dievals: Default::default(), 
-                            upper_bonus_deficit: 30, 
-                            yahtzee_is_wild: false, };
-    let app = &mut AppState::new(&game);
-    let result = best_choice_ev(game, app);
-    assert_eq!(rounded(result.ev,2),  21.8);
-} 
-
 // #[test]
 fn progress_eta_test() {
     let game = GameState{   rolls_remaining: 3, 
@@ -328,4 +316,26 @@ fn unique_upper_deficits_test() {
 // fn multi_cartesian_product_test() {
 //     let it = repeat_n(1..=6,2).multi_cartesian_product().for_each(|x| eprintln!("{:?}",x));
 // }
- 
+
+// #[test]
+fn bench_test() {
+    let game = GameState{   rolls_remaining: 0, 
+                            sorted_open_slots: [SIXES, FOUR_OF_A_KIND, YAHTZEE].into(), 
+                            sorted_dievals: Default::default(), 
+                            upper_bonus_deficit: 30, 
+                            yahtzee_is_wild: false, };
+    let app = &mut AppState::new(&game);
+    let result = best_choice_ev(game, app);
+    assert_eq!(rounded(result.ev,2),  21.8);
+} 
+
+
+#[test]
+fn all_selection_outcomes_test() { //TODO std::SIMD ?
+    for outcome in all_selection_outcomes(){
+    let dievals:[DieVal;5] = outcome.dievals.into();
+    let mask:[DieVal;5] = outcome.mask.into();
+    eprintln!("{:?} {:?} {:?}",dievals, mask, outcome.arrangements);
+    }
+}
+  
