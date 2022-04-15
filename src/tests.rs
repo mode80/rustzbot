@@ -303,13 +303,13 @@ fn test_threaded_subsets() {
  } // end fn
 
 
-// #[test]
+#[test]
 fn unique_upper_deficits_test() {
-    let slots:Slots = [3,4,5,6,7].into();
+    let slots:Slots = [1].into();
     let mut sorted_totals = slots.missing_upper_slots().unique_upper_deficits();
     sorted_totals.sort_unstable();
-    // eprintln!("{:?}",sorted_totals);
-    assert_eq!(sorted_totals, vec![48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63]);
+    eprintln!("{:?} {}",sorted_totals, sorted_totals.len());
+    // assert_eq!(sorted_totals, vec![48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63]);
 }
 
 // #[test]
@@ -317,7 +317,7 @@ fn unique_upper_deficits_test() {
 //     let it = repeat_n(1..=6,2).multi_cartesian_product().for_each(|x| eprintln!("{:?}",x));
 // }
 
-#[test]
+// #[test]
 fn bench_test() {
     let game = GameState{   rolls_remaining: 0, 
                             sorted_open_slots: [SIXES, FOUR_OF_A_KIND, YAHTZEE].into(), 

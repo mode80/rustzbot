@@ -147,7 +147,7 @@ impl Slots {
         ];
         // only upper slots could have contributed to the upper total 
         let slot_idxs = self.into_iter().filter(|&x|x<=SIXES).map(|x| x as usize).collect_vec();
-        let score_idx_perms= repeat_n(0..6, slot_idxs.len()).multi_cartesian_product();
+        let score_idx_perms= repeat_n(0..=5, slot_idxs.len()).multi_cartesian_product();
         // for every permutation of entry indexes
         for score_idxs in score_idx_perms {
             // covert the list of entry indecis to a list of entry -scores-, then total them
@@ -155,7 +155,7 @@ impl Slots {
             // add the total to the set of unique totals 
             unique_totals.insert(tot);
         }
-        unique_totals.into_iter().map(|x|63_u8.saturating_sub(x)).collect_vec()
+        unique_totals.into_iter().map(|x|63_u8.saturating_sub(x)).unique().collect_vec()
     }
 
 }
@@ -798,104 +798,157 @@ fn best_choice_ev(game:GameState,app: &mut AppState) -> ChoiceEV  {
     result 
 }
 
+
+// fn score_slot_in_context(slot:Slot,dievals:DieVals,yahtzee_wild:bool,upper_deficit:u8) -> u8 {
+
+//     // score slot itself w/o regard to game state 
+//         let score = score_slot(slot, dievals); 
+
+//     // add upper bonus when needed total is reached
+//         if slot<=SIXES && upper_deficit>0 { 
+//             upper_deficit = upper_deficit.saturating_sub(score) ;
+//             if upper_deficit==0 {score += 35}; 
+//         } 
+
+//     // special handling of "extra yahtzees" 
+//         let yahtzee_rolled = {score_yahtzee(dievals)==50}; 
+//         if yahtzee_rolled && yahtzee_wild { // extra yahtzee situation
+//             if slot==SM_STRAIGHT {score=30}; // extra yahtzees are valid in any lower slot, per wildcard rules
+//             if slot==LG_STRAIGHT {score=40}; 
+//             if slot==FULL_HOUSE  {score=25}; 
+//             score+=100; // extra yahtzee bonus per rules
+//         }
+//         if slot==YAHTZEE && yahtzee_rolled {yahtzee_wild = true} ;
+
+//     score
+// }
+
 // /// gather up expected values in a multithreaded bottom-up fashion
 // fn build_cache(full_set:Slots) {
 
+//     let cache:FxHashMap<GameState,ChoiceEV> = Default::default();
+
+//     // first handle special case of the most leafy leaf calcs
+
+//         // for each slot 
+//         for slot in full_set { 
+
+//             // for each yahtzee wild possibility
+//             for &yahtzee_is_wild in [false, slot==YAHTZEE].iter().unique() {
+
+//                 // for each upper bonus total 
+//                 for upper_bonus_deficit in 0..63{
+
+//                     // for each dievals outcome  
+//                     for outcome in SELECTION_OUTCOMES[SELECTION_RANGES[0b11111].clone()].iter(){
+//                         let game = GameState{
+//                             sorted_dievals: outcome.dievals, //pre-cached dievals should already be sorted here
+//                             rolls_remaining: 0,
+//                             upper_bonus_deficit,
+//                             yahtzee_is_wild,
+//                             sorted_open_slots: Slots{data:slot as u64, len:1}, // set of a single slot
+//                         };
+//                         let score = score_slot_in_context(slot, outcome.dievals, yahtzee_is_wild, upper_bonus_deficit) as f32;
+//                         cache.insert(game, ChoiceEV{ choice: slot, ev: score});
+//                     } // end for each dievals outcome 
+
+//                 } //end for each upper total
+
+//             }//end for each yahtzee_is_wild
+
+//         }//end for each slot 
+
+
+
+
+
 //     // for each length
-//     for set_len in 1..=full_set.len{ 
+//     for slots_len in 1..=full_set.len{ 
 //         let (tx, rx) = mpsc::channel();
 //         let now = Instant::now();
 
 //         // for each slotset (of above length)
-//         for i in 0..=(full_set.len-set_len) {
-//             let slotset = full_set.subset(i,set_len);
+//         for i in 0..=(full_set.len-slots_len) {
+//             let slotset = full_set.subset(i,slots_len);
 //             let yahtzee_may_be_wild = !slotset.into_iter().contains(&YAHTZEE); // yahtzees aren't wild whenever yahtzee slot is still available 
 //             let chunk_size = fact(slotset.len) as usize / *CORES + 1 ; // one chunk per core (+1 chunk_size to "round up") 
-//             let upper_deficits = slotset.missing_upper_slots().unique_upper_deficits(); 
+//             let upper_bonus_deficits = slotset.missing_upper_slots().unique_upper_deficits(); 
 
 //             // for each chunk of slot permutations 
 //             for chunk in slotset.permutations().chunks(chunk_size).into_iter(){ 
 
-//                 // thread "params"
+//                 // "params" to thread
 //                 let slotset_perms = chunk.collect_vec().into_iter(); // TODO some way to avoid collect_vec? https://stackoverflow.com/questions/42134874/are-there-equivalents-to-slicechunks-windows-for-iterators-to-loop-over-pairs
 //                 let tx = tx.clone();
-//                 let upper_deficits = upper_deficits.clone(); 
+//                 let upper_bonus_deficits = upper_bonus_deficits.clone(); 
 
 //                 thread::spawn(move ||{ 
 
-//                     let mut ev = 0.0;
+//                     let mut score:Score= 0;
+//                     let mut total:u32 = 0 ;
+//                     let mut upper_deficit_now:f32 = 0.0 ;
+//                     let mut best_choice:ChoiceEV = Default::default();
 
 //                     // for each slot permutation in chunk
 //                     for slot_perm in slotset_perms { 
 
 //                         // for each yahtzee wild possibility
-//                         for yahtzee_wild in &[false,yahtzee_may_be_wild] {
+//                         for &yahtzee_is_wild in &[false,yahtzee_may_be_wild] {
 
 //                             // for each upper bonus total 
-//                             for upper_total in upper_deficits.clone(){
+//                             for upper_bonus_deficit in upper_bonus_deficits.clone(){
 
 //                                 // for each rolls remaining
-//                                 for rolls in 0..=3 {
+//                                 for rolls_remaining in 0..=3 {
 
-//                                     match rolls {
-
-//                                         0 => {
-
-//                                             // for each slot in permutation
-//                                             for slot in slot_perm
-                                            
-//                                                 // for each dievals... //TODO we really want weighted dieval combos here 
-//                                                 for die_vals in SELECTION_OUTCOMES[SELECTION_RANGES[0b11111].clone()].iter(){
-                                                        
-//                                                     ev = score_slot(slot, die_vals); 
-
-
-//                                                     // LEAF CALCS 
-//                                                         // prep vars
-//                                                             let mut tail_ev = 0.0;
-//                                                             let head_slot = slot_sequence.pop();
-//                                                             let mut _choice;
-//                                                             let mut upper_deficit_now = game.upper_bonus_deficit ;
-//                                                             let mut yahtzee_wild_now:bool = game.yahtzee_is_wild;
-
-//                                                         // score slot itself w/o regard to game state 
-//                                                             let mut head_ev = score_slot(head_slot, game.sorted_dievals); 
-
-//                                                         // add upper bonus when needed total is reached
-//                                                             if head_slot <= SIXES && upper_deficit_now>0 && head_ev>0 { 
-//                                                                 if head_ev >= upper_deficit_now {head_ev += 35}; 
-//                                                                 upper_deficit_now = upper_deficit_now.saturating_sub(head_ev) ;
-//                                                             } 
-
-//                                                         // special handling of "extra yahtzees" 
-//                                                             let yahtzee_rolled = {score_yahtzee(game.sorted_dievals)==50}; 
-//                                                             if yahtzee_rolled && game.yahtzee_is_wild { // extra yahtzee situation
-//                                                                 if head_slot==SM_STRAIGHT {head_ev=30}; // extra yahtzees are valid in any lower slot, per wildcard rules
-//                                                                 if head_slot==LG_STRAIGHT {head_ev=40}; 
-//                                                                 if head_slot==FULL_HOUSE  {head_ev=25}; 
-//                                                                 head_ev+=100; // extra yahtzee bonus per rules
-//                                                             }
-//                                                             if head_slot==YAHTZEE && yahtzee_rolled {yahtzee_wild_now = true} ;
-//                                                 }
-
-//                                         },
-//                                         1 | 2 => {},
-//                                         3 => {}
-//                                         _ => {}
+//                                     // handle special case of the most leafy leaf calcs
+//                                     if slots_len==1 && rolls_remaining==0 {
+//                                         // for each dievals outcome 
+//                                         for outcome in SELECTION_OUTCOMES[SELECTION_RANGES[0b11111].clone()].iter(){ 
+//                                             let game = GameState{
+//                                                 sorted_dievals: outcome.dievals, //pre-cached dievals should already be sorted here
+//                                                 rolls_remaining,
+//                                                 upper_bonus_deficit,
+//                                                 yahtzee_is_wild,
+//                                                 sorted_open_slots: slot_perm, //set of a single slot doesn't need sorting
+//                                             };
+//                                             let slot = slot_perm.get(0);
+//                                             let score = score_slot_in_context(slot, outcome.dievals, yahtzee_is_wild, upper_bonus_deficit) as f32;
+//                                             cache.insert(game, ChoiceEV{ choice: slot, ev: score});
+//                                         } // end for each dievals outcome 
 //                                     }
-                                    
-//                                     // for each dievals... 
-//                                     for outcome in SELECTION_OUTCOMES[SELECTION_RANGES[0b11111].clone()].iter(){
-//                                         let game = GameState{
-//                                             sorted_open_slots: slotset,
-//                                             sorted_dievals: outcome.dievals,
-//                                             rolls_remaining: 0, 
-//                                             yahtzee_is_wild: *yahtzee_wild,
-//                                             upper_bonus_deficit:  upper_total, 
-//                                         };
-//                                         let best_choice = best_choice_ev(game ,&mut AppState::new(&game) ); //TODO bottom up doesn't mesh with current AppState approach
-//                                     } 
 
+//                                     // choose best slot
+//                                     else if rolls_remaining == 0 { 
+                                        
+//                                         // we'll permutate and find max ev on the inside down below, but we'll use this sorted sequence as the key when we cache the max 
+//                                             slot_sequence.sort(); 
+
+//                                         // gather the total ev for the all the slots in this order
+//                                             ChoiceEV{choice:_choice, ev:tail_ev} = best_choice_ev( GameState{
+//                                                 yahtzee_is_wild: yahtzee_wild_now,
+//                                                 sorted_open_slots: slot_sequence, 
+//                                                 rolls_remaining: 3,
+//                                                 upper_bonus_deficit: upper_deficit_now,
+//                                                 sorted_dievals: game.sorted_dievals, 
+//                                             },app);
+
+//                                         let ev = tail_ev + head_ev as f32 ; 
+//                                         if ev >= best_ev { best_ev = ev; best_slot = head_slot ; }
+
+//                                     }
+
+//                                     // choose best dice to roll 
+//                                     else if rolls_remaining == 1 || rolls_remaining ==2 {
+
+//                                     }
+
+//                                     // record ev at this state 
+//                                     else if rolls_remaining == 3 {
+
+//                                     }
+
+                                   
 //                                 } // end for each rolls
 
 //                             } //end for each upper total
