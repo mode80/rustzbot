@@ -303,7 +303,7 @@ fn test_threaded_subsets() {
  } // end fn
 
 
-#[test]
+// #[test]
 fn unique_upper_deficits_test() {
     let slots:Slots = [1].into();
     let mut sorted_totals = slots.missing_upper_slots().unique_upper_deficits();
@@ -338,4 +338,19 @@ fn all_selection_outcomes_test() { //TODO std::SIMD ?
         eprintln!("{} {} {} {}",outcome.dievals, outcome.mask, outcome.arrangements, sortedvals);
     }
 }
-  
+
+#[test]
+fn build_cache_test() {
+
+    // build_cache([1].into());
+
+    let game = GameState{   rolls_remaining: 0, 
+                            sorted_open_slots: [ACES].into(), 
+                            sorted_dievals: Default::default(), 
+                            upper_bonus_deficit: 30, 
+                            yahtzee_is_wild: false, };
+    let app = &mut AppState::new(&game);
+    let result = best_choice_ev(game, app);
+    eprintln!("{:?}",result);
+    // assert_eq!(lhs.ev,  21.8);
+}
