@@ -201,12 +201,12 @@ fn test_permutations() {
 }
 
 // #[test]
-fn test_truncate() {
-    let mut l:Slots = [1,2,3,4,5].into();
-    l.truncate(3);
-    let r:Slots = [1,2,3].into();
-    assert_eq!(l,r);
- }
+// fn test_truncate() {
+//     let mut l:Slots = [1,2,3,4,5].into();
+//     l.truncate(3);
+//     let r:Slots = [1,2,3].into();
+//     assert_eq!(l,r);
+//  }
 
 // #[test]
 fn test_subset() {
@@ -306,7 +306,7 @@ fn test_threaded_subsets() {
 // #[test]
 fn unique_upper_deficits_test() {
     let slots:Slots = [1].into();
-    let mut sorted_totals = slots.missing_upper_slots().unique_upper_deficits();
+    let mut sorted_totals = slots.missing_upper_slots().upper_total_deficits();
     sorted_totals.sort_unstable();
     eprintln!("{:?} {}",sorted_totals, sorted_totals.len());
     // assert_eq!(sorted_totals, vec![48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63]);
@@ -318,19 +318,6 @@ fn unique_upper_deficits_test() {
 // }
 
 // #[test]
-fn bench_test() {
-    let game = GameState{   rolls_remaining: 0, 
-                            sorted_open_slots: [SIXES, FOUR_OF_A_KIND, YAHTZEE].into(), 
-                            sorted_dievals: Default::default(), 
-                            upper_bonus_deficit: 30, 
-                            yahtzee_is_wild: false, };
-    let app = &mut AppState::new(&game);
-    let result = best_choice_ev(game, app);
-    assert_eq!(rounded(result.ev,2),  21.8);
-} 
-
-
-// #[test]
 fn all_selection_outcomes_test() { //TODO std::SIMD ?
     for outcome in all_selection_outcomes(){
         let mut sortedvals = outcome.dievals; 
@@ -339,18 +326,35 @@ fn all_selection_outcomes_test() { //TODO std::SIMD ?
     }
 }
 
-#[test]
-fn build_cache_test() {
-
-    // build_cache([1].into());
-
+// #[test]
+fn bench_test() {
     let game = GameState{   rolls_remaining: 0, 
-                            sorted_open_slots: [ACES].into(), 
-                            sorted_dievals: Default::default(), 
+                            sorted_open_slots: [SIXES, FOUR_OF_A_KIND, YAHTZEE].into(), 
+                            sorted_dievals: [1,2,3,4,5].into(), 
                             upper_bonus_deficit: 30, 
                             yahtzee_is_wild: false, };
     let app = &mut AppState::new(&game);
     let result = best_choice_ev(game, app);
     eprintln!("{:?}",result);
-    // assert_eq!(lhs.ev,  21.8);
+    eprintln!("{:?}",result);
+    // assert_eq!(rounded(result.ev,2),  21.8);
+} 
+
+
+#[test]
+fn build_cache_test() {
+
+    let game = GameState{   rolls_remaining: 0,
+                            sorted_open_slots: [SIXES, FOUR_OF_A_KIND, YAHTZEE].into(), 
+                            sorted_dievals: [1,2,3,4,5].into(), 
+                            upper_bonus_deficit: 30, // <--- 63 doesn't error but 30 is a valid UBD? 
+                            yahtzee_is_wild: false, };
+    let app = &mut AppState::new(&game);
+    let rhs = best_choice_ev(game, app);
+    let app = &mut AppState::new(&game);
+    build_cache(game,app);
+    let lhs = app.ev_cache.get(&game).unwrap();
+    eprintln!("lhs {:?}",lhs);
+    eprintln!("rhs {:?}",rhs); eprintln!("rhs {:?}",rhs);
+    assert_eq!(lhs.ev,  rhs.ev);
 }
