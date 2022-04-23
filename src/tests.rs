@@ -341,9 +341,8 @@ fn bench_test() {
 } 
 
 
-#[test]
+// #[test]
 fn build_cache_test() {
-
     let game = GameState{   rolls_remaining: 0,
                             sorted_open_slots: [SIXES, FOUR_OF_A_KIND, YAHTZEE].into(), 
                             sorted_dievals: [1,2,3,4,5].into(), 
@@ -358,3 +357,19 @@ fn build_cache_test() {
     eprintln!("rhs {:?}",rhs); eprintln!("rhs {:?}",rhs);
     assert_eq!(lhs.ev,  rhs.ev);
 }
+
+#[test]
+fn new_bench_test() {
+    let game = GameState{   rolls_remaining: 0,
+                            sorted_open_slots: [SIXES, FOUR_OF_A_KIND, YAHTZEE].into(), 
+                            sorted_dievals: [1,2,3,4,5].into(), 
+                            upper_bonus_deficit: 30, // <--- 63 doesn't error but 30 is a valid UBD? 
+                            yahtzee_is_wild: false, };
+    let app = &mut AppState::new(&game);
+    build_cache(game,app);
+    let lhs = app.ev_cache.get(&game).unwrap();
+    eprintln!("lhs {:?}",lhs); 
+    assert_eq!(lhs.ev,  21.80351);
+} 
+
+

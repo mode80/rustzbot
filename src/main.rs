@@ -147,7 +147,7 @@ impl Slots {
         retval
     }
  
-    /// returns the unique and relevant "upper bonus totals" shortfalls that could have occurred from the missing upper slots 
+    /// returns the unique and relevant "upper bonus total" shortfalls that could have occurred from the missing upper slots 
     fn upper_total_deficits(self) -> Vec<u8> { //impl Iterator<Item=u8> {  // TODO implement without allocating?
         let mut unique_totals:FxHashSet<u8> = default();
         // these are all the possible score entries for each upper slot
@@ -177,9 +177,9 @@ impl Slots {
         // filter out the deficits that aren't relevant because they can't be covered by the upper slots remaining 
         // NOTE doing this filters out a lot of unneeded state space but means the lookup function must separately map extraneous deficits to 63 using relevant_deficit()
         let best_total = self.best_total_from_open_upper_slots();
-        let mut retval = unique_deficits.filter(|x| *x == 63 || *x == 0 || *x < best_total).sorted().collect_vec(); //TODO 63 must be first but could remove sorted() somehow 
+        let mut retval = unique_deficits.filter(|x| *x == 63 || *x <= best_total).sorted().collect_vec(); //TODO 63 must be first but could remove sorted() somehow 
         retval.reverse();
-        retval
+        retval 
 
     }
 
@@ -203,6 +203,7 @@ impl Display for Slots {
         write!(f,"{:?}",temp.into_iter().take(self.len as usize).collect_vec()) 
     }
 }
+
 
 // impl <const N:usize> From<[Slot; N]> for &mut Slots{
 //     fn from(a: [Slot; N]) -> Self {
@@ -502,6 +503,23 @@ impl AppState{
                 // done: FxHashSet::default(), 
         }
     }
+
+    // fn smart_cache_insert(&mut self, game: &GameState, result:ChoiceEV){
+    //     self.ev_cache.insert(*game, result);
+    //     todo!()
+    // }
+
+    // fn smart_cache_update(&mut self, game: &GameState, result:ChoiceEV){
+    //     let cached = self.ev_cache.entry(*game).or_default();
+    //     if result.ev > cached.ev { *cached=result; } 
+    //     todo!()
+    // }
+
+    // fn smart_cache_lookup(&mut self, game: &GameState) -> ChoiceEV{
+    //     let mut smart_game = game.clone();
+    //     smart_game.upper_bonus_deficit = game.sorted_open_slots.relevant_deficit(game.upper_bonus_deficit);
+    //     *self.ev_cache.get(game).unwrap() 
+    // }
 
     fn save_periodically(&mut self , every_n_secs:u64){
         let current_duration = self.progress_bar.elapsed();
@@ -909,13 +927,11 @@ fn score_slot_in_context(slot:Slot,dievals:DieVals,yahtzee_wild:bool,upper_defic
 /// gather up expected values in a multithreaded bottom-up fashion
 fn build_cache(game:GameState, app: &mut AppState) {
                     
+    //TODO optimization: for slots where yahtzee_wild can't change and upperdeficits doesn't include 0, can permutating be skipped. thinking no... ie strategic use of chance
     let now = Instant::now();
-    let cache= &mut app.ev_cache;
-    *cache = default();
-    let given_slots = game.sorted_open_slots;
 
     // first handle special case of the most leafy leaf calcs -- where there's one slot left and no rolls remaining
-        for single_slot in given_slots {  // TODO: THREADS?
+        for single_slot in game.sorted_open_slots {  // TODO: THREADS?
             let slots:Slots = [single_slot].into();//Slots{data:single_slot as u64, len:1}; //set of a single slot 
             for &yahtzee_is_wild in [false, single_slot!=YAHTZEE].iter().unique() {
                 for upper_bonus_deficit in slots.upper_total_deficits(){
@@ -927,17 +943,18 @@ fn build_cache(game:GameState, app: &mut AppState) {
                         };
                         let score = score_slot_in_context(single_slot, outcome.dievals, yahtzee_is_wild, upper_bonus_deficit) as f32;
                         let choice_ev = ChoiceEV{ choice: single_slot, ev: score};
-                        cache.insert(game, choice_ev);
+                        // app.smart_cache_insert(&game, choice_ev);
+                        app.ev_cache.insert(game, choice_ev);
                         // println!("P {} {} {} {} {} {:.2?}", game.sorted_dievals, game.rolls_remaining, game.upper_bonus_deficit, game.yahtzee_is_wild, game.sorted_open_slots, choice_ev); 
          } } } }
 
 
     // for each length 
-    for subset_len in 1..=given_slots.len{ 
+    for subset_len in 1..=game.sorted_open_slots.len{ 
 
         // for each slotset (of above length)
-        // for i in 0..=(given_slots.len-slots_len) {
-        for subset in given_slots.into_iter().combinations(subset_len as usize) {
+        // for i in 0..=(game.sorted_open_slots.len-slots_len) {
+        for subset in game.sorted_open_slots.into_iter().combinations(subset_len as usize) {
             let mut subset:Slots = subset.into(); 
             subset.sort();
             let chunk_size = fact(subset.len) as usize / *CORES + 1 ; // one chunk per core (+1 chunk_size to "round up") 
@@ -992,7 +1009,8 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                                 yahtzee_is_wild: yahtzee_wild_now, 
                                                 upper_bonus_deficit: slots_piece.relevant_deficit(upper_deficit_now),
                                             };
-                                            let choice_ev = cache.get(&game).unwrap(); 
+                                            let choice_ev = app.ev_cache.get(&game).unwrap(); 
+                                            // let choice_ev = app.smart_cache_lookup(&game); 
                                             total += choice_ev.ev;
                                             if slots_piece==head {
                                                 if first_slot==YAHTZEE && choice_ev.ev>0.0 {yahtzee_wild_now=true;};
@@ -1017,7 +1035,8 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                     // NOTE goes under drop(tx) when changing to multithreaded
                                     // for (game, choice_ev) in &rx {  // receive transmissions from threads above with (GameState, ChoiceEV) tuples as candidates for best
                                     { let (game, choice_ev) = (gamestate, thread_best); 
-                                        let cached = cache.entry(game).or_default();
+                                        // app.smart_cache_update(&game, choice_ev);
+                                        let cached = app.ev_cache.entry(game).or_default();
                                         if choice_ev.ev > cached.ev { 
                                             *cached=choice_ev;
                                             // println!("S {} {} {} {} {} {:.2?}", game.sorted_dievals, game.rolls_remaining, game.upper_bonus_deficit, game.yahtzee_is_wild, game.sorted_open_slots, choice_ev); 
@@ -1047,6 +1066,7 @@ fn build_cache(game:GameState, app: &mut AppState) {
 
                      // for each rolls remaining
                     for rolls_remaining in [1,2,3] { // TODO calculating and recording 200+ lookup outcomes on the 3rd roll is pointless  
+                        let next_roll = rolls_remaining-1; 
                         let all_die_combos = &OUTCOMES[ SELECTION_RANGES[0b11111].clone()];
                         for starting_combo in all_die_combos {  // for every combo of all dice 
                             let debug = if rolls_remaining==2 && starting_combo.dievals.debug == [1,2,3,4,5] {1} else {0};
@@ -1059,7 +1079,6 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                     let mut newvals = starting_combo.dievals;
                                     newvals.blit(selection_outcome.dievals, selection_outcome.mask);
                                     newvals.sort(); // TODO lookup table? faster to check equalities first?
-                                    let next_roll = rolls_remaining-1; // TODO hoist
                                     let gamestate_for_upcoming_roll = &GameState{
                                         sorted_dievals: newvals, 
                                         sorted_open_slots: subset, 
@@ -1067,7 +1086,8 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                         yahtzee_is_wild,
                                         rolls_remaining: next_roll, // the trick is we average all the 'next roll' possibilities (which we calclated last)
                                     };
-                                    let ev_for_this_selection_outcome = cache.get(gamestate_for_upcoming_roll).unwrap().ev; 
+                                    // let ev_for_this_selection_outcome = app.smart_cache_lookup(gamestate_for_upcoming_roll).ev;
+                                    let ev_for_this_selection_outcome = app.ev_cache.get(gamestate_for_upcoming_roll).unwrap().ev; 
                                     total_evs_for_selection += ev_for_this_selection_outcome * selection_outcome.arrangements as f32;// bake into upcoming aveage
                                     outcomes_count += selection_outcome.arrangements as u64; // we loop through die "combos" but we'll average all "perumtations"
                                 }
@@ -1079,11 +1099,12 @@ fn build_cache(game:GameState, app: &mut AppState) {
                             let game = GameState{
                                 sorted_dievals: starting_combo.dievals,  //presorted
                                 sorted_open_slots: subset, 
-                                upper_bonus_deficit: subset.relevant_deficit(upper_bonus_deficit), 
+                                upper_bonus_deficit, 
                                 yahtzee_is_wild,
                                 rolls_remaining, // this sitch
                             };
-                            cache.insert(game, best_selection_result);
+                            // app.smart_cache_insert(&game, best_selection_result);
+                            app.ev_cache.insert(game, best_selection_result);
                         }
 
                     } // end for rolls_remaining
