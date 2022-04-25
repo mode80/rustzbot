@@ -945,7 +945,7 @@ fn build_cache(game:GameState, app: &mut AppState) {
                         let choice_ev = ChoiceEV{ choice: single_slot, ev: score};
                         // app.smart_cache_insert(&game, choice_ev);
                         app.ev_cache.insert(game, choice_ev);
-                        // println!("P {} {} {} {} {} {:.2?}", game.sorted_dievals, game.rolls_remaining, game.upper_bonus_deficit, game.yahtzee_is_wild, game.sorted_open_slots, choice_ev); 
+                        println!("P {} {} {} {} {} {:.2?}", game.sorted_dievals, game.rolls_remaining, game.upper_bonus_deficit, game.yahtzee_is_wild, game.sorted_open_slots, choice_ev); 
          } } } }
 
 
@@ -1039,7 +1039,7 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                         let cached = app.ev_cache.entry(game).or_default();
                                         if choice_ev.ev > cached.ev { 
                                             *cached=choice_ev;
-                                            // println!("S {} {} {} {} {} {:.2?}", game.sorted_dievals, game.rolls_remaining, game.upper_bonus_deficit, game.yahtzee_is_wild, game.sorted_open_slots, choice_ev); 
+                                            println!("S {} {} {} {} {} {:.2?}", game.sorted_dievals, game.rolls_remaining, game.upper_bonus_deficit, game.yahtzee_is_wild, game.sorted_open_slots, choice_ev); 
                                         } 
                                     } 
 
@@ -1105,6 +1105,7 @@ fn build_cache(game:GameState, app: &mut AppState) {
                             };
                             // app.smart_cache_insert(&game, best_selection_result);
                             app.ev_cache.insert(game, best_selection_result);
+                            println!("P {} {} {} {} {} {:.2?}", game.sorted_dievals, game.rolls_remaining, game.upper_bonus_deficit, game.yahtzee_is_wild, game.sorted_open_slots, best_selection_result); 
                         }
 
                     } // end for rolls_remaining

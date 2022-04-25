@@ -305,8 +305,8 @@ fn test_threaded_subsets() {
 
 // #[test]
 fn unique_upper_deficits_test() {
-    let slots:Slots = [1].into();
-    let mut sorted_totals = slots.missing_upper_slots().upper_total_deficits();
+    let slots:Slots = [1,2,4,5].into();
+    let mut sorted_totals = slots.upper_total_deficits();
     sorted_totals.sort_unstable();
     eprintln!("{:?} {}",sorted_totals, sorted_totals.len());
     // assert_eq!(sorted_totals, vec![48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63]);
@@ -346,7 +346,7 @@ fn build_cache_test() {
     let game = GameState{   rolls_remaining: 0,
                             sorted_open_slots: [SIXES, FOUR_OF_A_KIND, YAHTZEE].into(), 
                             sorted_dievals: [1,2,3,4,5].into(), 
-                            upper_bonus_deficit: 30, // <--- 63 doesn't error but 30 is a valid UBD? 
+                            upper_bonus_deficit: 30, 
                             yahtzee_is_wild: false, };
     let app = &mut AppState::new(&game);
     let rhs = best_choice_ev(game, app);
@@ -368,7 +368,7 @@ fn new_bench_test() {
     let app = &mut AppState::new(&game);
     build_cache(game,app);
     let lhs = app.ev_cache.get(&game).unwrap();
-    eprintln!("lhs {:?}",lhs); 
+    println!("lhs {:?}",lhs); 
     assert_eq!(lhs.ev,  21.80351);
 } 
 
