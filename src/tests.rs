@@ -328,7 +328,7 @@ fn all_selection_outcomes_test() { //TODO std::SIMD ?
 
 // #[test]
 fn bench_test() {
-    let game = GameState{   rolls_remaining: 0, 
+    let game = GameState{   rolls_remaining: 3, 
                             sorted_open_slots: [SIXES, FOUR_OF_A_KIND, YAHTZEE].into(), 
                             sorted_dievals: [1,2,3,4,5].into(), 
                             upper_bonus_deficit: 30, 
@@ -343,7 +343,7 @@ fn bench_test() {
 
 // #[test]
 fn build_cache_test() {
-    let game = GameState{   rolls_remaining: 0,
+    let game = GameState{   rolls_remaining: 3,
                             sorted_open_slots: [SIXES, FOUR_OF_A_KIND, YAHTZEE].into(), 
                             sorted_dievals: [1,2,3,4,5].into(), 
                             upper_bonus_deficit: 30, 
@@ -363,7 +363,7 @@ fn new_bench_test() {
     let game = GameState{   rolls_remaining: 0,
                             sorted_open_slots: [SIXES, FOUR_OF_A_KIND, YAHTZEE].into(), 
                             sorted_dievals: [1,2,3,4,5].into(), 
-                            upper_bonus_deficit: 30, // <--- 63 doesn't error but 30 is a valid UBD? 
+                            upper_bonus_deficit: 30, 
                             yahtzee_is_wild: false, };
     let app = &mut AppState::new(&game);
     build_cache(game,app);
@@ -371,5 +371,3 @@ fn new_bench_test() {
     println!("lhs {:?}",lhs); 
     assert_eq!(lhs.ev,  21.80351);
 } 
-
-
