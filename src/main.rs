@@ -48,7 +48,7 @@ SLOTS
 #[derive(Debug,Clone,Copy,PartialEq,Serialize,Deserialize,Eq,PartialOrd,Ord,Hash,Default)]
 
 struct Slots{
-    pub debug:[Slot;13],
+    // pub debug:[Slot;13],
     pub data:u64, // 13 Slot values of between 1 and 13 can be encoded within these 8 bytes, each taking 4 bits
     pub len:u8,
 }
@@ -62,8 +62,8 @@ impl Slots {
         let bitpos = 4*index; // widths of 4 bits per value 
         let mask = ! (0b1111_u64 << bitpos); // hole maker
         self.data = (self.data & mask) | ((val as u64) << bitpos ); // punch & fill hole
-        //for debugging only
-        self.debug[index as usize]=val;
+        // //for debugging only
+        // self.debug[index as usize]=val;
     }
 
     fn get(&self, index:u8)->Slot{
@@ -73,16 +73,16 @@ impl Slots {
     fn push(&mut self, val:Slot){
         self.len +=1;
         self.set(self.len-1,val);
-        //for debugging only
-        self.debug[self.len as usize-1]=val;
+        // //for debugging only
+        // self.debug[self.len as usize-1]=val;
      }
 
     fn truncate(&mut self, len:u8) {
         let mask = (2_u64).pow(len as u32 * 4)-1;
         self.data &= mask;
         self.len=len;
-        //for debugging only
-        self.debug.iter_mut().skip(len as usize).for_each(|x|*x=0); 
+        // //for debugging only
+        // self.debug.iter_mut().skip(len as usize).for_each(|x|*x=0); 
     }
 
     fn truncated(self, len:u8) -> Self {
@@ -96,10 +96,9 @@ impl Slots {
         self_copy.data >>= start_idx*4;
         let len = min(max_len, self.len-start_idx);
         self_copy.truncate(len);
-        //for debugging only
-            for i in 0..self_copy.len as usize {self_copy.debug[i] = self_copy.get(i as u8)};
-            self_copy.truncate(self_copy.len);
-        //
+        // //for debugging only
+        //     for i in 0..self_copy.len as usize {self_copy.debug[i] = self_copy.get(i as u8)};
+        // //
         self_copy
     }
 
@@ -217,8 +216,10 @@ impl Display for Slots {
 impl From<Vec<Slot>> for Slots{
     fn from(vec: Vec<Slot>) -> Self {
         assert! (vec.len() <= 13);
-        let mut retval = Slots{ len:vec.len() as u8, data:default(), debug:default()};
-        retval.debug[..vec.len()].copy_from_slice(&vec);
+        let mut retval = Slots{ len:vec.len() as u8, data:default()};//, debug:default()};
+        // //debug only
+        // retval.debug[..vec.len()].copy_from_slice(&vec);
+        // //
         for i in 0..vec.len() { retval.set(i as u8, vec[i as usize]); }
         retval 
     }
@@ -226,8 +227,10 @@ impl From<Vec<Slot>> for Slots{
 impl <const N:usize> From<[Slot; N]> for Slots{
     fn from(a: [Slot; N]) -> Self {
         assert! (a.len() <= 13);
-        let mut retval = Slots{ len:a.len() as u8, data:default(), debug:default()};
-        retval.debug[..N].copy_from_slice(&a);
+        let mut retval = Slots{ len:a.len() as u8, data:default()};//, debug:default()};
+        // // debug only
+        // retval.debug[..N].copy_from_slice(&a);
+        // // 
         for i in 0..N { retval.set(i as u8, a[i as usize]); }
         retval 
     }
@@ -322,7 +325,7 @@ DieVals
 #[derive(Debug,Clone,Copy,PartialEq,Serialize,Deserialize,Eq,PartialOrd,Ord,Hash,Default)]
 
 struct DieVals{
-    debug:[u8;5],
+    // debug:[u8;5],
     data:u16, // 5 dievals, each from 0 to 6, can be encoded in 2 bytes total, each taking 3 bits
 }
 
@@ -332,24 +335,24 @@ impl DieVals {
         let bitpos = 3*index; // widths of 3 bits per value
         let mask = ! (0b111_u16 << bitpos); // hole maker
         self.data = (self.data & mask) | ((val as u16) << bitpos ); // punch & fill hole
-        //for debug only
-        self.debug[index as usize]=val;
+        // //for debug only
+        // self.debug[index as usize]=val;
     }
 
     /// blit the 'from' dievals into the 'self' dievals with the help of a mask where 0 indicates incoming 'from' bits and 1 indicates none incoming 
     fn blit(&mut self, from:DieVals, mask:DieVals,){
         self.data = (self.data & mask.data) | from.data;
-        //for debugging only...
-        let debug:[DieVal;5] = self.into(); 
-        self.debug = debug;
+        // //for debugging only...
+        // let debug:[DieVal;5] = self.into(); 
+        // self.debug = debug;
     }
 
     /// merge the 'from' dievals into the 'self' using a bitwise OR 
     fn merge(&mut self, from:DieVals){
         self.data |= from.data;
-        //for debugging only...
-        let debug:[DieVal;5] = self.into(); 
-        self.debug = debug;
+        // //for debugging only...
+        // let debug:[DieVal;5] = self.into(); 
+        // self.debug = debug;
     }
 
 
@@ -380,7 +383,7 @@ impl From<[DieVal; 5]> for DieVals{
     fn from(a: [DieVal; 5]) -> Self {
         DieVals{
             data: (a[4] as u16) << 12 | (a[3] as u16) <<9 | (a[2] as u16) <<6 | (a[1] as u16) <<3 | (a[0] as u16), 
-            debug:a
+            // debug:a
         }
     }
 }
@@ -1069,7 +1072,6 @@ fn build_cache(game:GameState, app: &mut AppState) {
                         let next_roll = rolls_remaining-1; 
                         let all_die_combos = &OUTCOMES[ SELECTION_RANGES[0b11111].clone()];
                         for starting_combo in all_die_combos {  // for every combo of all dice 
-                            let debug = if rolls_remaining==2 && starting_combo.dievals.debug == [1,2,3,4,5] {1} else {0};
                             let selections = if rolls_remaining ==3 { 0b11111..=0b11111 } else { 0b00000..=0b11111 }; //always select all dice on the initial roll
                             let mut best_selection_result = ChoiceEV::default();
                             for selection in selections.clone() { // try every selection against this starting_combo . TODO redundancies?
