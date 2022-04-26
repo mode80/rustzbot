@@ -192,15 +192,6 @@ fn test_permutations_within() {
 }
 
 // #[test]
-fn test_permutations() {
-
-    let a:Slots = [1,2,3].into();
-    for perm in a.permutations() { 
-        println!("{}", perm); 
-    }; 
-}
-
-// #[test]
 // fn test_truncate() {
 //     let mut l:Slots = [1,2,3,4,5].into();
 //     l.truncate(3);
@@ -358,6 +349,23 @@ fn build_cache_test() {
     assert_eq!(lhs.ev,  rhs.ev);
 }
 
+// #[test]
+fn swap_test(){
+    let mut s:Slots = [0,1,2,3,4,5,6,7,8,9,10,11,12].into(); 
+    s.swap(5,10);
+    assert_eq!(s,[0,1,2,3,4,10,6,7,8,9,5,11,12].into());
+}
+// TODO see https://internals.rust-lang.org/t/bit-twiddling-pre-rfc/7072
+
+// #[test]
+fn test_permutations() {
+
+    let a:Slots = [1,2,3,4,5,6,7,8,9,10].into();
+    for perm in a.permutations() { 
+        println!("{}", perm); 
+    }; 
+}
+
 #[test]
 fn new_bench_test() {
     let game = GameState{   rolls_remaining: 0,
@@ -371,3 +379,4 @@ fn new_bench_test() {
     println!("lhs {:?}",lhs); 
     assert_eq!(lhs.ev,  21.80351);
 } 
+

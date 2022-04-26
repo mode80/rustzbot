@@ -23,10 +23,10 @@ MAIN
 fn main() {
     
     
-    // let game = GameState::default();
-    // let app = & mut AppState::new(&game);
+    let game = GameState::default();
+    let app = & mut AppState::new(&game);
 
-    // build_cache(game,app);
+    build_cache(game,app);
 
     // let _ = best_choice_ev(game, app);
 }
@@ -68,6 +68,18 @@ impl Slots {
     fn get(&self, index:u8)->Slot{
         ((self.data >> (index*4)) & 0b1111_u64) as Slot 
     }
+
+
+    /// swaps value at index a for index b using bit hack at https://graphics.stanford.edu/~seander/bithacks.html#SwappingValuesXOR
+    fn swap(&mut self, a:u8, b:u8){ //no performance gain but looks cleaner in calling code
+        let i = a*4; let j = b*4;// positions of bit sequences to swap 
+        let x = ((self.data >> i) ^ (self.data >> j)) & 0b1111; // XOR temporary
+        self.data ^= (x << i) | (x << j);
+        // //for debugging only
+        // let temp_a = self.debug[a];
+        // self.debug[a]=self.debug[b];
+        // self.debug[b]=temp_a;
+     }
 
     fn push(&mut self, val:Slot){
         self.len +=1;
@@ -113,7 +125,6 @@ impl Slots {
         }
     }
 
-    #[inline]
     fn pop(&mut self) -> Slot {
         let retval = self.get(self.len-1);
         self.set(self.len-1,0); 
@@ -298,13 +309,15 @@ impl Iterator for SlotPermutations{
         if self.i == self.end as usize {return None}; // last run
         if self.c[self.i] < self.i { 
             if (self.i + self.start as usize) & 1 == 0 { // odd iteration
-                let temp = self.slots.get(self.i as u8); // prep to swap
-                self.slots.set(self.i as u8, self.slots.get(self.start));
-                self.slots.set(self.start, temp);
+                self.slots.swap(self.i as u8, self.start);
+                // let temp = self.slots.get(self.i as u8); // prep to swap
+                // self.slots.set(self.i as u8, self.slots.get(self.start));
+                // self.slots.set(self.start, temp);
             } else { // even iteration 
-                let temp = self.slots.get(self.c[self.i] as u8); //prep to swap
-                self.slots.set(self.c[self.i] as u8, self.slots.get(self.i as u8));
-                self.slots.set(self.i as u8, temp);
+                self.slots.swap(self.c[self.i] as u8, self.i as u8);
+                // let temp = self.slots.get(self.c[self.i] as u8); //prep to swap
+                // self.slots.set(self.c[self.i] as u8, self.slots.get(self.i as u8));
+                // self.slots.set(self.i as u8, temp);
             } 
             self.c[self.i] += 1;// Swap has occurred ending the "for-loop". Simulate the increment of the for-loop counter
             self.i = self.start as usize;// Simulate recursive call reaching the base case by bringing the pointer to the base case analog in the array
@@ -1054,9 +1067,9 @@ fn build_cache(game:GameState, app: &mut AppState) {
 
                      // for each rolls remaining
                     for rolls_remaining in [1,2,3] { // TODO calculating and recording 200+ lookup outcomes on the 3rd roll is pointless  
-                        let next_roll = rolls_remaining-1; 
-                        let all_die_combos = if rolls_remaining==3 {&OUTCOMES[0..1]} else {&OUTCOMES[ SELECTION_RANGES[0b11111].clone()]}; //OUTCOMES[0] has Dievals::default()
-                        for starting_combo in all_die_combos {  // for every combo of all dice (except on first roll when we only need the default representative one)
+                        let next_roll = rolls_remaining-1; //TODO other wildcard lookup opportunities like below? 
+                        let die_combos = if rolls_remaining==3 {&OUTCOMES[0..1]} else {&OUTCOMES[ SELECTION_RANGES[0b11111].clone()]}; //OUTCOMES[0] has Dievals::default()
+                        for starting_combo in die_combos {  // for every combo of all dice (except on first roll when we only need the default representative one)
                             let selections = if rolls_remaining ==3 { 0b11111..=0b11111 } else { 0b00000..=0b11111 }; //always select all dice on the initial roll
                             let mut best_selection_result = ChoiceEV::default();
                             for selection in selections.clone() { // try every selection against this starting_combo . TODO redundancies?
