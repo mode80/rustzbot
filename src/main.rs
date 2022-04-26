@@ -392,6 +392,14 @@ impl Display for DieVals {
     }
 }
 
+impl From<Vec<DieVal>> for DieVals{
+    fn from(v: Vec<DieVal>) -> Self {
+        let mut a:[DieVal;5]=default();
+        a.copy_from_slice(&v[0..5]);
+        a.into()
+    }
+}
+
 impl From<[DieVal; 5]> for DieVals{
     fn from(a: [DieVal; 5]) -> Self {
         DieVals{
@@ -558,11 +566,21 @@ static SELECTION_RANGES:Lazy<[Range<usize>;32]> = Lazy::new(selection_ranges);
 static OUTCOMES:Lazy<[Outcome;1683]> = Lazy::new(all_selection_outcomes); 
 static FACT:Lazy<[u64;21]> = Lazy::new(||{let mut a:[u64;21]=[0;21]; for i in 0..=20 {a[i]=fact(i as u8);} a});  // cached factorials
 static CORES:Lazy<usize> = Lazy::new(num_cpus::get);
-
+static SORTED_DIEVALS:Lazy<FxHashMap<DieVals,DieVals>> = Lazy::new(sorted_dievals); 
 
 /*-------------------------------------------------------------
 INITIALIZERS
 -------------------------------------------------------------*/
+
+fn sorted_dievals() -> FxHashMap<DieVals, DieVals> {
+    let mut map = FxHashMap::default();
+    repeat_n( 0_u8..=6 , 5).multi_cartesian_product().for_each(|x| {
+        let mut sorted = x.clone();
+        sorted.sort_unstable();
+        map.insert(x.into(), sorted.into() );
+    });
+    map
+}
 
 /// this generates the ranges that correspond to the outcomes, within the set of all outcomes, indexed by a give selection 
 fn selection_ranges() ->[Range<usize>;32]  { 
@@ -622,6 +640,11 @@ UTILS
 pub fn default<T: Default>() -> T {
    Default::default() 
 }
+
+// /// so wrong but so right 
+// #[inline]
+// pub fn __() -> IntoIterator{
+// }
 
 /// rudimentary factorial suitable for our purposes here.. handles up to fact(20) 
 fn fact(n: u8) -> u64{
@@ -1078,7 +1101,7 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                 for selection_outcome in &OUTCOMES[ SELECTION_RANGES[selection].clone() ] {
                                     let mut newvals = starting_combo.dievals;
                                     newvals.blit(selection_outcome.dievals, selection_outcome.mask);
-                                    newvals.sort(); // TODO lookup table? TODO faster to check equalities first?
+                                    newvals = SORTED_DIEVALS[&newvals]; // TODO lookup table? TODO faster to check equalities first?
                                     let gamestate_for_upcoming_roll = &GameState{
                                         sorted_dievals: newvals, 
                                         sorted_open_slots: subset, 
