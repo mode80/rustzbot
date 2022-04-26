@@ -950,7 +950,13 @@ fn score_slot_in_context(slot:Slot,dievals:DieVals,yahtzee_wild:bool,upper_defic
 fn build_cache(game:GameState, app: &mut AppState) {
                     
     //TODO optimization: for slots where yahtzee_wild can't change and upperdeficits doesn't include 0, can permutating be skipped. thinking no... ie strategic use of chance
+
     let now = Instant::now();
+    let sorted_dievals = SORTED_DIEVALS.clone();
+    // let SELECTION_RANGES = SELECTION_RANGES.clone(); 
+    // let OUTCOMES = *OUTCOMES; 
+    // let FACT = *FACT;
+    // let CORES = *CORES;
 
     // first handle special case of the most leafy leaf calcs -- where there's one slot left and no rolls remaining
         for single_slot in game.sorted_open_slots {  // TODO: THREADS?
@@ -979,7 +985,7 @@ fn build_cache(game:GameState, app: &mut AppState) {
         for subset in game.sorted_open_slots.into_iter().combinations(subset_len as usize) {
             let mut subset:Slots = subset.into(); 
             subset.sort();
-            let chunk_size = fact(subset.len) as usize / *CORES + 1 ; // one chunk per core (+1 chunk_size to "round up") 
+            let chunk_size = FACT[subset.len as usize] as usize / *CORES + 1 ; // one chunk per core (+1 chunk_size to "round up") 
             let yahtzee_may_be_wild = !subset.into_iter().contains(&YAHTZEE); // yahtzees aren't wild whenever yahtzee slot is still available 
 
             // for each upper bonus deficit 
@@ -1088,7 +1094,7 @@ fn build_cache(game:GameState, app: &mut AppState) {
 
                     /* HANDLE DICE SELECTION */    //TODO Threads for this section?
 
-                     // for each rolls remaining
+                    // for each rolls remaining
                     for rolls_remaining in [1,2,3] { // TODO calculating and recording 200+ lookup outcomes on the 3rd roll is pointless  
                         let next_roll = rolls_remaining-1; //TODO other wildcard lookup opportunities like below? 
                         let die_combos = if rolls_remaining==3 {&OUTCOMES[0..1]} else {&OUTCOMES[ SELECTION_RANGES[0b11111].clone()]}; //OUTCOMES[0] has Dievals::default()
@@ -1101,7 +1107,7 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                 for selection_outcome in &OUTCOMES[ SELECTION_RANGES[selection].clone() ] {
                                     let mut newvals = starting_combo.dievals;
                                     newvals.blit(selection_outcome.dievals, selection_outcome.mask);
-                                    newvals = SORTED_DIEVALS[&newvals]; // TODO lookup table? TODO faster to check equalities first?
+                                    newvals = sorted_dievals[&newvals]; 
                                     let gamestate_for_upcoming_roll = &GameState{
                                         sorted_dievals: newvals, 
                                         sorted_open_slots: subset, 
