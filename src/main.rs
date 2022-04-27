@@ -1120,8 +1120,9 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                     outcomes_count += selection_outcome.arrangements as u64; // we loop through die "combos" but we'll average all "perumtations"
                                 }
                                 let avg_ev_for_selection = total_evs_for_selection / outcomes_count as f32;
+                                let actual_selection = [0,1,2,4,8,16,3,5,6,9,10,12,17,18,20,24,7,11,13,14,19,21,22,25,26,28,15,23,27,29,30,31][selection];
                                 if avg_ev_for_selection > best_selection_result.ev{
-                                    best_selection_result = ChoiceEV{choice:selection as u8, ev:avg_ev_for_selection};
+                                    best_selection_result = ChoiceEV{choice:actual_selection as u8, ev:avg_ev_for_selection};
                                 }
                             }
                             let game = GameState{
