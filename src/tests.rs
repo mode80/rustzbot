@@ -369,7 +369,7 @@ fn test_permutations() {
 #[test]
 fn new_bench_test() {
     let game = GameState{   rolls_remaining: 3,
-                            sorted_open_slots: [1,2,3,4,5,6,7,8,9,10,11,12,13].into(), 
+                            sorted_open_slots: [1,7,8,9,10,11,12,13].into(), 
                             sorted_dievals: [0,0,0,0,0].into(), 
                             upper_bonus_deficit: 63, 
                             yahtzee_is_wild: false, };

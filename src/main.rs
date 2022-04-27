@@ -23,7 +23,8 @@ MAIN
 fn main() {
     
     
-    let game = GameState::default();
+    let mut game = GameState::default();
+    game.sorted_open_slots = [1,7,8,9,10,11,12,13].into();
     let app = & mut AppState::new(&game);
 
     build_cache(game,app);
@@ -950,21 +951,21 @@ fn score_slot_in_context(slot:Slot,dievals:DieVals,yahtzee_wild:bool,upper_defic
 /// gather up expected values in a multithreaded bottom-up fashion
 fn build_cache(game:GameState, app: &mut AppState) {
                     
-    //TODO optimization: for slots where yahtzee_wild can't change and upperdeficits doesn't include 0, can permutating be skipped. thinking no... ie strategic use of chance
-
     let now = Instant::now();
     let sorted_dievals = SORTED_DIEVALS.clone();
+    let all_die_combos=&OUTCOMES[SELECTION_RANGES[0b11111].clone()];
     // let SELECTION_RANGES = SELECTION_RANGES.clone(); 
     // let OUTCOMES = *OUTCOMES; 
     // let FACT = *FACT;
     // let CORES = *CORES;
+    // let mut leaf_cache = FxHashMap::<GameState,ChoiceEV>::default();
 
     // first handle special case of the most leafy leaf calcs -- where there's one slot left and no rolls remaining
         for single_slot in game.sorted_open_slots {  // TODO: THREADS?
             let slots:Slots = [single_slot].into();//Slots{data:single_slot as u64, len:1}; //set of a single slot 
             for &yahtzee_is_wild in [false, single_slot!=YAHTZEE].iter().unique() {
                 for upper_bonus_deficit in slots.upper_total_deficits(){
-                    for outcome in OUTCOMES[SELECTION_RANGES[0b11111].clone()].iter(){
+                    for outcome in all_die_combos{
                         let game = GameState{
                             sorted_dievals: outcome.dievals, //pre-cached dievals should already be sorted here
                             sorted_open_slots: slots, 
@@ -972,9 +973,8 @@ fn build_cache(game:GameState, app: &mut AppState) {
                         };
                         let score = score_slot_in_context(single_slot, outcome.dievals, yahtzee_is_wild, upper_bonus_deficit) as f32;
                         let choice_ev = ChoiceEV{ choice: single_slot, ev: score};
-                        // app.smart_cache_insert(&game, choice_ev);
                         app.ev_cache.insert(game, choice_ev);
-                        println!("P {} {:2?} {:2?} {} {: >5} {} {: >6.2?}", game.sorted_dievals, game.rolls_remaining, game.upper_bonus_deficit, game.sorted_open_slots, choice_ev.choice, game.yahtzee_is_wild as u8, choice_ev.ev); 
+                        println!("L {} {:2?} {:2?} {} {: >5} {} {: >6.2?}", game.sorted_dievals, game.rolls_remaining, game.upper_bonus_deficit, game.sorted_open_slots, choice_ev.choice, game.yahtzee_is_wild as u8, choice_ev.ev); 
          } } } }
 
 
@@ -982,7 +982,6 @@ fn build_cache(game:GameState, app: &mut AppState) {
     for subset_len in 1..=game.sorted_open_slots.len{ 
 
         // for each slotset (of above length)
-        // for i in 0..=(game.sorted_open_slots.len-slots_len) {
         for subset in game.sorted_open_slots.into_iter().combinations(subset_len as usize) {
             let mut subset:Slots = subset.into(); 
             subset.sort();
@@ -1002,19 +1001,17 @@ fn build_cache(game:GameState, app: &mut AppState) {
         
                         let (tx, rx) = mpsc::channel();
 
-                        let all_die_combos=&OUTCOMES[SELECTION_RANGES[0b11111].clone()];
                         for outcome in all_die_combos{
 
                             // for each chunk of slot permutations 
                             for chunk in subset.permutations().chunks(chunk_size).into_iter(){ 
 
                                 // heap "arguments" to be passed into the thread
-                                let slotset_perms = chunk.collect_vec().into_iter(); // TODO some way to avoid collect_vec? https://stackoverflow.com/questions/42134874/are-there-equivalents-to-slicechunks-windows-for-iterators-to-loop-over-pairs
+                                let slotset_perms = chunk.collect_vec().into_iter(); // converts unthreadable Chunk<_> to IntoIter<_> 
                                 let tx = tx.clone();
-                                let app = app.clone(); // TODO needed?
+                                let cache = app.ev_cache.clone(); // TODO kills performance
 
                                 thread::spawn(move ||{ 
-
                                     let mut thread_best:ChoiceEV = default();
 
                                     // for each slot permutation in chunk
@@ -1040,7 +1037,7 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                                 yahtzee_is_wild: yahtzee_wild_now, 
                                                 upper_bonus_deficit: slots_piece.relevant_deficit(upper_deficit_now),
                                             };
-                                            let choice_ev = app.ev_cache.get(&game).unwrap(); 
+                                            let choice_ev = cache.get(&game).unwrap(); 
                                             total += choice_ev.ev;
                                             if slots_piece==head {
                                                 if first_slot==YAHTZEE && choice_ev.ev>0.0 {yahtzee_wild_now=true;};
@@ -1060,7 +1057,7 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                     let gamestate = GameState {
                                         sorted_dievals: outcome.dievals, 
                                         sorted_open_slots: subset,
-                                        rolls_remaining: 0, upper_bonus_deficit, yahtzee_is_wild,
+                                        rolls_remaining: 0, upper_bonus_deficit, yahtzee_is_wild ,
                                     };
                             
                                     tx.send((gamestate, thread_best)).unwrap(); //when is the right time to send?
