@@ -388,7 +388,7 @@ impl DieVals {
 
 impl Display for DieVals {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f,"{}{}{}{}{}",self.get(0), self.get(1),self.get(2),self.get(3),self.get(4)) 
+        write!(f,"{}{}{}{}{}",self.get(4), self.get(3),self.get(2),self.get(1),self.get(0)) 
     }
 }
 
@@ -953,6 +953,7 @@ fn build_cache(game:GameState, app: &mut AppState) {
 
     let now = Instant::now();
     let sorted_dievals = SORTED_DIEVALS.clone();
+    let all_die_combos = &OUTCOMES[SELECTION_RANGES[0b11111].clone()];
     // let SELECTION_RANGES = SELECTION_RANGES.clone(); 
     // let OUTCOMES = *OUTCOMES; 
     // let FACT = *FACT;
@@ -963,7 +964,7 @@ fn build_cache(game:GameState, app: &mut AppState) {
             let slots:Slots = [single_slot].into();//Slots{data:single_slot as u64, len:1}; //set of a single slot 
             for &yahtzee_is_wild in [false, single_slot!=YAHTZEE].iter().unique() {
                 for upper_bonus_deficit in slots.upper_total_deficits(){
-                    for outcome in OUTCOMES[SELECTION_RANGES[0b11111].clone()].iter(){
+                    for outcome in all_die_combos{
                         let game = GameState{
                             sorted_dievals: outcome.dievals, //pre-cached dievals should already be sorted here
                             sorted_open_slots: slots, 
@@ -973,8 +974,8 @@ fn build_cache(game:GameState, app: &mut AppState) {
                         let choice_ev = ChoiceEV{ choice: single_slot, ev: score};
                         // app.smart_cache_insert(&game, choice_ev);
                         app.ev_cache.insert(game, choice_ev);
-                        println!("P {} {} {} {} {} {:.2?}", game.sorted_dievals, game.rolls_remaining, game.upper_bonus_deficit, game.yahtzee_is_wild, game.sorted_open_slots, choice_ev); 
-         } } } }
+                        println!("P {} {:2?} {:2?} {} {: >5} {} {: >6.2?}", game.sorted_dievals, game.rolls_remaining, game.upper_bonus_deficit, game.sorted_open_slots, choice_ev.choice, game.yahtzee_is_wild as u8, choice_ev.ev); 
+        } } } }
 
 
     // for each length 
@@ -1001,7 +1002,6 @@ fn build_cache(game:GameState, app: &mut AppState) {
         
                         // let (tx, rx) = mpsc::channel();
 
-                        let all_die_combos=&OUTCOMES[SELECTION_RANGES[0b11111].clone()];
                         for outcome in all_die_combos{
 
                             // for each chunk of slot permutations 
@@ -1069,7 +1069,7 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                         let cached = app.ev_cache.entry(game).or_default();
                                         if choice_ev.ev > cached.ev { 
                                             *cached=choice_ev;
-                                            println!("S {} {} {} {} {} {:.2?}", game.sorted_dievals, game.rolls_remaining, game.upper_bonus_deficit, game.yahtzee_is_wild, game.sorted_open_slots, choice_ev); 
+                                            println!("S {} {:2?} {:2?} {} {: >5} {} {: >6.2?}", game.sorted_dievals, game.rolls_remaining, game.upper_bonus_deficit, game.sorted_open_slots, choice_ev.choice, game.yahtzee_is_wild as u8, choice_ev.ev); 
                                         } 
                                     } 
 
@@ -1095,9 +1095,9 @@ fn build_cache(game:GameState, app: &mut AppState) {
                     /* HANDLE DICE SELECTION */    //TODO Threads for this section?
 
                     // for each rolls remaining
-                    for rolls_remaining in [1,2,3] { // TODO calculating and recording 200+ lookup outcomes on the 3rd roll is pointless  
+                    for rolls_remaining in [1,2,3] { 
                         let next_roll = rolls_remaining-1; //TODO other wildcard lookup opportunities like below? 
-                        let die_combos = if rolls_remaining==3 {&OUTCOMES[0..1]} else {&OUTCOMES[ SELECTION_RANGES[0b11111].clone()]}; //OUTCOMES[0] has Dievals::default()
+                        let die_combos = if rolls_remaining==3 {&OUTCOMES[0..1]} else {all_die_combos}; //OUTCOMES[0] has Dievals::default()
                         for starting_combo in die_combos {  // for every combo of all dice (except on first roll when we only need the default representative one)
                             let selections = if rolls_remaining ==3 { 0b11111..=0b11111 } else { 0b00000..=0b11111 }; //always select all dice on the initial roll
                             let mut best_selection_result = ChoiceEV::default();
@@ -1132,7 +1132,7 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                 rolls_remaining, // this sitch
                             };
                             app.ev_cache.insert(game, best_selection_result);
-                            println!("P {} {} {} {} {} {:.2?}", game.sorted_dievals, game.rolls_remaining, game.upper_bonus_deficit, game.yahtzee_is_wild, game.sorted_open_slots, best_selection_result); 
+                            println!("D {} {:2?} {:2?} {} {:05b} {} {: >6.2?}", game.sorted_dievals, game.rolls_remaining, game.upper_bonus_deficit, game.sorted_open_slots, best_selection_result.choice, game.yahtzee_is_wild as u8, best_selection_result.ev); 
                         }
 
                     } // end for rolls_remaining
