@@ -388,7 +388,7 @@ impl DieVals {
 
 impl Display for DieVals {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f,"{}{}{}{}{}",self.get(0), self.get(1),self.get(2),self.get(3),self.get(4)) 
+        write!(f,"{}{}{}{}{}",self.get(4), self.get(3),self.get(2),self.get(1),self.get(0)) 
     }
 }
 
@@ -496,6 +496,7 @@ impl Default for GameState{
 /*-------------------------------------------------------------
 AppState
 -------------------------------------------------------------*/
+#[derive(Clone)]
 struct AppState{
     progress_bar:ProgressBar, 
     ev_cache:FxHashMap<GameState,ChoiceEV>,
@@ -973,7 +974,7 @@ fn build_cache(game:GameState, app: &mut AppState) {
                         let choice_ev = ChoiceEV{ choice: single_slot, ev: score};
                         // app.smart_cache_insert(&game, choice_ev);
                         app.ev_cache.insert(game, choice_ev);
-                        println!("P {} {} {} {} {} {:.2?}", game.sorted_dievals, game.rolls_remaining, game.upper_bonus_deficit, game.yahtzee_is_wild, game.sorted_open_slots, choice_ev); 
+                        println!("P {} {:2?} {:2?} {} {: >5} {} {: >6.2?}", game.sorted_dievals, game.rolls_remaining, game.upper_bonus_deficit, game.sorted_open_slots, choice_ev.choice, game.yahtzee_is_wild as u8, choice_ev.ev); 
          } } } }
 
 
@@ -999,7 +1000,7 @@ fn build_cache(game:GameState, app: &mut AppState) {
     
                     if subset_len>1 { //only select among > 1 slot
         
-                        // let (tx, rx) = mpsc::channel();
+                        let (tx, rx) = mpsc::channel();
 
                         let all_die_combos=&OUTCOMES[SELECTION_RANGES[0b11111].clone()];
                         for outcome in all_die_combos{
@@ -1009,10 +1010,10 @@ fn build_cache(game:GameState, app: &mut AppState) {
 
                                 // heap "arguments" to be passed into the thread
                                 let slotset_perms = chunk.collect_vec().into_iter(); // TODO some way to avoid collect_vec? https://stackoverflow.com/questions/42134874/are-there-equivalents-to-slicechunks-windows-for-iterators-to-loop-over-pairs
-                                // let tx = tx.clone();
-                                // let cache = cache.clone(); // TODO needed?
+                                let tx = tx.clone();
+                                let app = app.clone(); // TODO needed?
 
-                                // thread::spawn(move ||{ 
+                                thread::spawn(move ||{ 
 
                                     let mut thread_best:ChoiceEV = default();
 
@@ -1062,33 +1063,23 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                         rolls_remaining: 0, upper_bonus_deficit, yahtzee_is_wild,
                                     };
                             
-                                    // tx.send((gamestate, thread_best)).unwrap(); //when is the right time to send?
-                                    // NOTE goes under drop(tx) when changing to multithreaded
-                                    // for (game, choice_ev) in &rx {  // receive transmissions from threads above with (GameState, ChoiceEV) tuples as candidates for best
-                                    { let (game, choice_ev) = (gamestate, thread_best); 
-                                        let cached = app.ev_cache.entry(game).or_default();
-                                        if choice_ev.ev > cached.ev { 
-                                            *cached=choice_ev;
-                                            println!("S {} {} {} {} {} {:.2?}", game.sorted_dievals, game.rolls_remaining, game.upper_bonus_deficit, game.yahtzee_is_wild, game.sorted_open_slots, choice_ev); 
-                                        } 
-                                    } 
+                                    tx.send((gamestate, thread_best)).unwrap(); //when is the right time to send?
 
-                                // });//end thread 
+                                });//end thread 
                             } // end for each chunk
 
                         } // end for outcome
                         
                         /* PROCESS THREAD OUTPUT */
 
-                        // drop(tx); // would hang waiting for this template transmitter if not dropped 
-
-                        // // save best from chunk
-                        // for (game, choice_ev) in &rx {  // receive transmissions from threads above with (GameState, ChoiceEV) tuples as candidates for best
-                        //     let cached = cache.entry(game).or_default();
-                        //     if choice_ev.ev > cached.ev { *cached=choice_ev } 
-                        //     println!("dievals: {} rr: {} ubd: {} yw: {} sos: {} {:?} {:.2?}",
-                        //         game.sorted_dievals, game.rolls_remaining, game.upper_bonus_deficit, game.yahtzee_is_wild, game.sorted_open_slots, choice_ev, now.elapsed()); 
-                        // } 
+                        drop(tx); // would hang waiting for this template transmitter if not dropped 
+                        for (game, choice_ev) in &rx {  // receive transmissions from threads above with (GameState, ChoiceEV) tuples as candidates for best
+                            let cached = app.ev_cache.entry(game).or_default();
+                            if choice_ev.ev > cached.ev { 
+                                *cached=choice_ev;
+                                println!("S {} {:2?} {:2?} {} {: >5} {} {: >6.2?}", game.sorted_dievals, game.rolls_remaining, game.upper_bonus_deficit, game.sorted_open_slots, choice_ev.choice, game.yahtzee_is_wild as u8, choice_ev.ev); 
+                            } 
+                        } 
 
                     } // end if slot_len > 1
 
@@ -1132,7 +1123,7 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                 rolls_remaining, // this sitch
                             };
                             app.ev_cache.insert(game, best_selection_result);
-                            println!("P {} {} {} {} {} {:.2?}", game.sorted_dievals, game.rolls_remaining, game.upper_bonus_deficit, game.yahtzee_is_wild, game.sorted_open_slots, best_selection_result); 
+                            println!("D {} {:2?} {:2?} {} {:05b} {} {: >6.2?}", game.sorted_dievals, game.rolls_remaining, game.upper_bonus_deficit, game.sorted_open_slots, best_selection_result.choice, game.yahtzee_is_wild as u8, best_selection_result.ev); 
                         }
 
                     } // end for rolls_remaining
