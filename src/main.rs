@@ -1005,10 +1005,10 @@ fn build_cache(game:GameState, app: &mut AppState) {
                         for outcome in all_die_combos{
 
                             // for each chunk of slot permutations 
-                            for chunk in subset.permutations().chunks(chunk_size).into_iter(){ 
+                            // for chunk in subset.permutations().chunks(chunk_size).into_iter(){ 
 
                                 // heap "arguments" to be passed into the thread
-                                let slotset_perms = chunk.collect_vec().into_iter(); // TODO some way to avoid collect_vec? https://stackoverflow.com/questions/42134874/are-there-equivalents-to-slicechunks-windows-for-iterators-to-loop-over-pairs
+                                // let slotset_perms = chunk.collect_vec().into_iter(); // TODO some way to avoid collect_vec? https://stackoverflow.com/questions/42134874/are-there-equivalents-to-slicechunks-windows-for-iterators-to-loop-over-pairs
                                 // let tx = tx.clone();
                                 // let cache = cache.clone(); // TODO needed?
 
@@ -1017,13 +1017,13 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                     let mut thread_best:ChoiceEV = default();
 
                                     // for each slot permutation in chunk
-                                    for slot_perm in slotset_perms { 
+                                    for slot_perm in subset.permutations() { 
                                                         
                                         let mut total = 0.0;
                                         let first_slot = slot_perm.get(0);
                                         let mut yahtzee_wild_now = yahtzee_is_wild;
                                         let mut upper_deficit_now = upper_bonus_deficit;
-                                        thread_best = default();
+                                        // thread_best = default();
                                         let head = slot_perm.subset(0, 1);
                                         let mut tail = if slot_perm.len > 1 {slot_perm.subset(1, slot_perm.len-1)} else {head};
                                         tail.sort();
@@ -1052,7 +1052,9 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                             }
                                         } //end for slot_piece
                                         
-                                        if total >= thread_best.ev { thread_best = ChoiceEV{ choice: first_slot, ev: total }};
+                                        if total >= thread_best.ev { 
+                                            thread_best = ChoiceEV{ choice: first_slot, ev: total }
+                                        };
 
                                     } // end for slot_perm 
 
@@ -1074,7 +1076,7 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                     } 
 
                                 // });//end thread 
-                            } // end for each chunk
+                            // } // end for each chunk
 
                         } // end for outcome
                         
