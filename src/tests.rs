@@ -380,16 +380,16 @@ fn ev_of_yahtzee_in_1_roll_using_cache() {
 
 #[test]
 fn build_cache_test() {
-    let game = GameState{   rolls_remaining: 3,
-                            sorted_open_slots: [ACES, FOUR_OF_A_KIND, YAHTZEE].into(), 
+    let game = GameState{   rolls_remaining: 0,
+                            sorted_open_slots: [7, 8, 9].into(), 
                             sorted_dievals: [1,2,3,4,5].into(), 
                             upper_bonus_deficit: 63, 
                             yahtzee_is_wild: false, };
-    let app = &mut AppState::new(&game);
-    let rhs = best_choice_ev(game, app);
-    let app = &mut AppState::new(&game);
-    build_cache(game,app);
-    let lhs = app.ev_cache.get(&game).unwrap();
+    let app1 = &mut AppState::new(&game);
+    let rhs = best_choice_ev(game, app1);
+    let app2 = &mut AppState::new(&game);
+    build_cache(game,app2);
+    let lhs = app2.ev_cache.get(&game).unwrap();
     eprintln!("lhs {:?}",lhs);
     eprintln!("rhs {:?}",rhs); eprintln!("rhs {:?}",rhs);
     assert_eq!(lhs.ev,  rhs.ev);
