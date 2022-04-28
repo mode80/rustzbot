@@ -1030,7 +1030,6 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                     let first_slot = slot_perm.get(0);
                                     let mut yahtzee_wild_now = yahtzee_is_wild;
                                     let mut upper_deficit_now = upper_bonus_deficit;
-                                    choice_ev = default();
                                     let head = slot_perm.subset(0, 1);
                                     let mut tail = if slot_perm.len > 1 {slot_perm.subset(1, slot_perm.len-1)} else {head};
                                     let mut sorted_dievals = SORTED_DIEVALS[&die_combo.dievals]; // TODO already sorted?
