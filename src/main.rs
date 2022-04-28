@@ -1021,7 +1021,6 @@ fn build_cache(game:GameState, app: &mut AppState) {
                             /* HANDLE SLOT SELECTION */
                             if rolls_remaining==0 { //only select among > 1 slot
 
-                                let mut sorted_dievals = die_combo.dievals; 
                                 let mut choice_ev:ChoiceEV = default();
                 
                                 // for each slot permutation 
@@ -1034,6 +1033,7 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                     choice_ev = default();
                                     let head = slot_perm.subset(0, 1);
                                     let mut tail = if slot_perm.len > 1 {slot_perm.subset(1, slot_perm.len-1)} else {head};
+                                    let mut sorted_dievals = SORTED_DIEVALS[&die_combo.dievals]; // TODO already sorted?
                                     tail.sort(); //TODO lookup?
 
                                     // find the collective ev for the all the slots when arranged like this 
