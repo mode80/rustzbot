@@ -964,36 +964,18 @@ fn build_cache(game:GameState, app: &mut AppState) {
     let all_die_combos=&OUTCOMES[SELECTION_RANGES[0b11111].clone()];
     // let mut leaf_cache = FxHashMap::<GameState,ChoiceEV>::default();
 
-    // first handle special case of the most leafy leaf calcs -- where there's one slot left and no rolls remaining
-        for single_slot in game.sorted_open_slots {  // TODO: THREADS?
-            let slots:Slots = [single_slot].into();//Slots{data:single_slot as u64, len:1}; //set of a single slot 
-            for &yahtzee_is_wild in [false, single_slot!=YAHTZEE].iter().unique() {
-                for upper_bonus_deficit in slots.upper_total_deficits(){
-                    for outcome in all_die_combos{
-                        let state = GameState{
-                            sorted_dievals: outcome.dievals, //pre-cached dievals should already be sorted here
-                            sorted_open_slots: slots, 
-                            rolls_remaining: 0, upper_bonus_deficit, yahtzee_is_wild,
-                        };
-                        let score = score_slot_in_context(single_slot, outcome.dievals, yahtzee_is_wild, upper_bonus_deficit) as f32;
-                        let choice_ev = ChoiceEV{ choice: single_slot, ev: score};
-                        app.ev_cache.insert(state, choice_ev);
-                        println!("L {} {:2?} {:2?} {} {: >5} {} {: >6.2?}", state.sorted_dievals, state.rolls_remaining, state.upper_bonus_deficit, state.sorted_open_slots, choice_ev.choice, state.yahtzee_is_wild as u8, choice_ev.ev); 
-         } } } }
-
-
     // for each length 
     for subset_len in 1..=game.sorted_open_slots.len{ 
 
         // for each slotset (of above length)
-        for subset in game.sorted_open_slots.into_iter().combinations(subset_len as usize) {
-            let mut subset:Slots = subset.into(); 
-            subset.sort(); //TODO avoidable?
-            let chunk_size = FACT[subset.len as usize] as usize / *CORES + 1 ; // one chunk per core (+1 chunk_size to "round up") 
-            let yahtzee_may_be_wild = !subset.into_iter().contains(&YAHTZEE); // yahtzees aren't wild whenever yahtzee slot is still available 
+        for slots_vec in game.sorted_open_slots.into_iter().combinations(subset_len as usize) {
+            let mut slots:Slots = slots_vec.into(); 
+            slots.sort(); //TODO avoidable?
+            let chunk_size = FACT[slots.len as usize] as usize / *CORES + 1 ; // one chunk per core (+1 chunk_size to "round up") 
+            let yahtzee_may_be_wild = !slots.into_iter().contains(&YAHTZEE); // yahtzees aren't wild whenever yahtzee slot is still available 
 
             // for each upper bonus deficit 
-            for upper_bonus_deficit in subset.upper_total_deficits() {
+            for upper_bonus_deficit in slots.upper_total_deficits() {
 
                 // for each yahtzee wild possibility
                 for yahtzee_is_wild in [false,yahtzee_may_be_wild].into_iter().unique() {
@@ -1001,7 +983,6 @@ fn build_cache(game:GameState, app: &mut AppState) {
                     // for each rolls remaining
                     for rolls_remaining in [0,1,2,3] { 
 
-                        if rolls_remaining==0 && subset_len==1 {continue}; // leaf calcs were handled above. TODO move here?
                         let die_combos = if rolls_remaining==3 {&OUTCOMES[0..=0]} else {&OUTCOMES[ SELECTION_RANGES[0b11111].clone()]}; //OUTCOMES[0] has Dievals::default()
                         
                         // let (tx, rx) = mpsc::channel();
@@ -1017,14 +998,29 @@ fn build_cache(game:GameState, app: &mut AppState) {
                         // let mut thread_best:ChoiceEV = default();
 
                         for die_combo in die_combos {  // for every combo of all dice (except on first roll when we only need the default representative one)
- 
+
+                            if rolls_remaining==0 && subset_len==1 {
+                            /* LEAF CALCS */
+
+                                let single_slot = slots.get(0);
+                                let score = score_slot_in_context(single_slot, die_combo.dievals, yahtzee_is_wild, upper_bonus_deficit) as f32;
+                                app.ev_cache.insert( 
+                                    GameState{
+                                        sorted_dievals: die_combo.dievals, //pre-cached dievals should already be sorted here
+                                        sorted_open_slots: slots, 
+                                        rolls_remaining: 0, upper_bonus_deficit, yahtzee_is_wild,
+                                    }, 
+                                    ChoiceEV{ choice: single_slot, ev: score}
+                                );
+                                println!("L {} {:2?} {:2?} {} {: >5} {} {: >6.2?}", die_combo.dievals, 0, upper_bonus_deficit, slots, single_slot, yahtzee_is_wild as u8, score); 
+
+                            } else if rolls_remaining==0 { //only select among > 1 slot
                             /* HANDLE SLOT SELECTION */
-                            if rolls_remaining==0 { //only select among > 1 slot
 
                                 let mut choice_ev:ChoiceEV = default();
                 
                                 // for each slot permutation 
-                                for slot_perm in subset.permutations() { 
+                                for slot_perm in slots.permutations() { 
                                                     
                                     let mut total = 0.0;
                                     let first_slot = slot_perm.get(0);
@@ -1032,20 +1028,19 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                     let mut upper_deficit_now = upper_bonus_deficit;
                                     let head = slot_perm.subset(0, 1);
                                     let mut tail = if slot_perm.len > 1 {slot_perm.subset(1, slot_perm.len-1)} else {head};
-                                    let mut sorted_dievals = SORTED_DIEVALS[&die_combo.dievals]; // TODO already sorted?
+                                    let mut sorted_dievals = die_combo.dievals; 
                                     tail.sort(); //TODO lookup?
 
                                     // find the collective ev for the all the slots when arranged like this 
                                     let mut rolls_remaining = 0;
                                     for slots_piece in [head,tail].into_iter().unique(){
-                                        let game = GameState{
+                                        let choice_ev = app.ev_cache.get(&GameState{
                                             sorted_dievals, 
                                             sorted_open_slots: slots_piece,
                                             rolls_remaining, 
                                             yahtzee_is_wild: yahtzee_wild_now, 
                                             upper_bonus_deficit: slots_piece.relevant_deficit(upper_deficit_now),
-                                        };
-                                        let choice_ev = app.ev_cache.get(&game).unwrap(); 
+                                        }).unwrap(); 
                                         total += choice_ev.ev;
                                         if slots_piece==head {
                                             if first_slot==YAHTZEE && choice_ev.ev>0.0 {yahtzee_wild_now=true;};
@@ -1062,20 +1057,19 @@ fn build_cache(game:GameState, app: &mut AppState) {
 
                                 } // end for slot_perm 
 
-                                let state = GameState {
-                                    sorted_dievals: die_combo.dievals, 
-                                    sorted_open_slots: subset,
-                                    rolls_remaining: 0, upper_bonus_deficit, yahtzee_is_wild ,
-                                };
                                 // tx.send((gamestate, best)).unwrap(); //when is the right time to send?
-                                let cached = app.ev_cache.entry(state).or_default();
+                                let cached = app.ev_cache.entry( GameState {
+                                    sorted_dievals: die_combo.dievals, 
+                                    sorted_open_slots: slots,
+                                    rolls_remaining: 0, upper_bonus_deficit, yahtzee_is_wild ,
+                                }).or_default();
+
                                 if choice_ev.ev > cached.ev { 
                                     *cached=choice_ev;
-                                    println!("S {} {:2?} {:2?} {} {: >5} {} {: >6.2?}", state.sorted_dievals, state.rolls_remaining, state.upper_bonus_deficit, state.sorted_open_slots, choice_ev.choice, state.yahtzee_is_wild as u8, choice_ev.ev); 
+                                    println!("S {} {:2?} {:2?} {} {: >5} {} {: >6.2?}", die_combo.dievals, rolls_remaining, upper_bonus_deficit, slots, choice_ev.choice, yahtzee_is_wild as u8, choice_ev.ev); 
                                 } 
 
                             } else {  // rolls_remaining > 0
-
                             /* HANDLE DICE SELECTION */    
 
                                 let next_roll = rolls_remaining-1; //TODO other wildcard lookup opportunities like below? 
@@ -1088,14 +1082,14 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                         let mut newvals = die_combo.dievals;
                                         newvals.blit(selection_outcome.dievals, selection_outcome.mask);
                                         newvals = sorted_dievals[&newvals]; 
-                                        let gamestate_for_upcoming_roll = &GameState{
+                                        let ev_for_this_selection_outcome = app.ev_cache.get(&GameState{
                                             sorted_dievals: newvals, 
-                                            sorted_open_slots: subset, 
-                                            upper_bonus_deficit: subset.relevant_deficit(upper_bonus_deficit), // TODO optimize
+                                            sorted_open_slots: slots, 
+                                            upper_bonus_deficit: slots.relevant_deficit(upper_bonus_deficit), // TODO optimize
                                             yahtzee_is_wild,
                                             rolls_remaining: next_roll, // the trick is we average all the 'next roll' possibilities (which we calclated last)
-                                        };
-                                        let ev_for_this_selection_outcome = app.ev_cache.get(gamestate_for_upcoming_roll).unwrap().ev; 
+                                        }).unwrap().ev; 
+                                        let gamestate_for_upcoming_roll = 
                                         total_ev_for_selection += ev_for_this_selection_outcome * selection_outcome.arrangements as f32;// bake into upcoming aveage
                                         outcomes_count += selection_outcome.arrangements as u64; // we loop through die "combos" but we'll average all "perumtations"
                                     }
@@ -1105,15 +1099,16 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                         best_selection_result = ChoiceEV{choice:actual_selection as u8, ev:avg_ev_for_selection};
                                     }
                                 }
-                                let state = GameState{
-                                    sorted_dievals: die_combo.dievals,  
-                                    sorted_open_slots: subset, 
-                                    upper_bonus_deficit, 
-                                    yahtzee_is_wild,
-                                    rolls_remaining, // this sitch
-                                };
-                                app.ev_cache.insert(state, best_selection_result);
-                                println!("D {} {:2?} {:2?} {} {:05b} {} {: >6.2?}", state.sorted_dievals, state.rolls_remaining, state.upper_bonus_deficit, state.sorted_open_slots, best_selection_result.choice, state.yahtzee_is_wild as u8, best_selection_result.ev); 
+                                app.ev_cache.insert( GameState{
+                                        sorted_dievals: die_combo.dievals,  
+                                        sorted_open_slots: slots, 
+                                        upper_bonus_deficit, 
+                                        yahtzee_is_wild,
+                                        rolls_remaining, 
+                                    }, 
+                                    best_selection_result
+                                );
+                                println!("D {} {:2?} {:2?} {} {:05b} {} {: >6.2?}", die_combo.dievals, rolls_remaining, upper_bonus_deficit, slots, best_selection_result.choice, yahtzee_is_wild as u8, best_selection_result.ev); 
 
                             } // endif roll_remaining == 0
 

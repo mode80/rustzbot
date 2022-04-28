@@ -349,7 +349,7 @@ fn test_permutations() {
     }; 
 }
 
-#[test]
+// #[test]
 fn new_bench_test() {
     let game = GameState{   rolls_remaining: 3,
                             sorted_open_slots: [1,7,8,9,10,11,12,13].into(), 
@@ -363,10 +363,10 @@ fn new_bench_test() {
     // assert_eq!(lhs.ev,  21.80351);
 } 
 
-// #[test]
+#[test]
 fn build_cache_test() {
-    let game = GameState{   rolls_remaining: 0,
-                            sorted_open_slots: [7, 8, 9].into(), 
+    let game = GameState{   rolls_remaining: 2,
+                            sorted_open_slots: [1,7,8,9].into(), 
                             sorted_dievals: [1,2,3,4,5].into(), 
                             upper_bonus_deficit: 63, 
                             yahtzee_is_wild: false, };
