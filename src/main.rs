@@ -1013,6 +1013,8 @@ fn build_cache(game:GameState, app: &mut AppState) {
 
                                 thread::spawn(move ||{ 
 
+                                    let mut this_cache = FxHashMap::<GameState,ChoiceEV>::default();
+
                                     for die_combo in die_combo_chunk {  
 
                                         if rolls_remaining==0 && subset_len==1 {
@@ -1020,15 +1022,16 @@ fn build_cache(game:GameState, app: &mut AppState) {
 
                                             let single_slot = slots.get(0);
                                             let score = score_slot_in_context(single_slot, die_combo.dievals, yahtzee_is_wild, upper_bonus_deficit) as f32;
-                                            tx.send(( 
+                                            // tx.send(( 
+                                            this_cache.insert(
                                                 GameState{
                                                     sorted_dievals: die_combo.dievals, //pre-cached dievals should already be sorted here
                                                     sorted_open_slots: slots, 
                                                     rolls_remaining: 0, upper_bonus_deficit, yahtzee_is_wild,
                                                 }, 
                                                 ChoiceEV{ choice: single_slot, ev: score}
-                                            )).unwrap();
-                                            println!("L {} {:2?} {:2?} {} {: >5} {} {: >6.2?}", die_combo.dievals, 0, upper_bonus_deficit, slots, single_slot, yahtzee_is_wild as u8, score); 
+                                            );
+                                            // )).unwrap(); //TODO it might be faster to build the whole cache here then send that 
 
                                         } else if rolls_remaining==0 { //only select among > 1 slot
                                         /* HANDLE SLOT SELECTION */
@@ -1075,15 +1078,17 @@ fn build_cache(game:GameState, app: &mut AppState) {
 
                                             } // end for slot_perm 
 
-                                            tx.send((
-                                                GameState {
+                                            // tx.send((
+                                            this_cache.insert(
+                                                 GameState {
                                                     sorted_dievals: die_combo.dievals, 
                                                     sorted_open_slots: slots,
                                                     rolls_remaining: 0, 
                                                     upper_bonus_deficit, yahtzee_is_wild ,
                                                 },
                                                 choice_ev
-                                            )).unwrap();
+                                            );
+                                            // )).unwrap();
 
                                         } else {  // rolls_remaining > 0
                                         /* HANDLE DICE SELECTION */    
@@ -1114,21 +1119,24 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                                     best_selection_result = ChoiceEV{choice:actual_selection as u8, ev:avg_ev_for_selection};
                                                 }
                                             }
-                                            tx.send((GameState{
+                                            //  tx.send((
+                                            this_cache.insert(GameState{
                                                     sorted_dievals: die_combo.dievals,  
                                                     sorted_open_slots: slots, 
                                                     upper_bonus_deficit, yahtzee_is_wild, 
                                                     rolls_remaining, 
                                                 }, 
                                                 best_selection_result
-                                            )).unwrap();
+                                            );
+                                            // )).unwrap();
 
                                         } // endif roll_remaining...  
 
                                     } // end for each die_combo
 
-                                }); //end thread
+                                    tx.send(this_cache).unwrap();
 
+                                }); //end thread
                             } // end for each chunk 
 
                             last_cache.clear(); // we empty the cache in prep for filling it up below during processing of thread output
@@ -1136,15 +1144,13 @@ fn build_cache(game:GameState, app: &mut AppState) {
                             /* PROCESS THREAD OUTPUT */
 
                             drop(tx); // would hang waiting for this template transmitter if not dropped 
-                            for (state, choice_ev) in &rx {  // receive transmissions from threads above with (GameState, ChoiceEV) 
-                                last_cache.insert(state, choice_ev);
-                                print_state_choice(&state, choice_ev);
-                                // let cached = last_cache.entry(state).or_default(); //TODO try insert instead for speed
-                                // if choice_ev.ev > cached.ev { 
-                                //     *cached=choice_ev; // save it 
-                                //     print_state_choice(&state, choice_ev);
-                                // } 
-                            } 
+                            for thread_cache in &rx {
+                                last_cache.extend(&thread_cache);
+                            }
+                            // for (state, choice_ev) in &rx {  // receive transmissions from threads above with (GameState, ChoiceEV) 
+                            //     last_cache.insert(state, choice_ev);
+                            //     print_state_choice(&state, choice_ev);
+                            // } 
                             app.ev_cache.extend(&last_cache);
                             if rolls_remaining==0 && slots.len==1 {leaf_cache=last_cache.clone()};
 
