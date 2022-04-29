@@ -24,7 +24,7 @@ fn main() {
     
     
     let game = GameState::default();
-    // game.sorted_open_slots = [1,7,8,9,10,11,12,13].into();
+    // game.sorted_open_slots = [7,8,9,10,11,12,13].into();
     let app = & mut AppState::new(&game);
 
     build_cache(game,app);
@@ -144,13 +144,13 @@ impl Slots {
     //     let mut ret:Self = default();
     //     let mut i=0;
     //     for s in ACES..CHANCE {
-    //         if !self.into_iter().contains(&s) {ret.set(i,s); i+=1;}
+    //         if !self.ii().contains(&s) {ret.set(i,s); i+=1;}
     //     };
     //     ret
     // }
 
     fn missing_upper_slots(self) -> Self{
-        let upper_slots= FxHashSet::<u8>::from_iter(self.into_iter().filter(|&x|x<=SIXES));
+        let upper_slots= FxHashSet::<u8>::from_iter(self.it().filter(|&x|x<=SIXES));
         let mut retval:Slots = default();
         for s in ACES..=SIXES { if !upper_slots.contains(&s) {retval.push(s)}; }
         retval
@@ -170,7 +170,7 @@ impl Slots {
             [0,6,12,18,24,30],  // SIXES
         ];
         // only upper slots could have contributed to the upper total 
-        let slot_idxs = self.missing_upper_slots().into_iter().filter(|&x|x<=SIXES).map(|x| x as usize).collect_vec();
+        let slot_idxs = self.missing_upper_slots().it().filter(|&x|x<=SIXES).map(|x| x as usize).collect_vec();
         let score_idx_perms= repeat_n(0..=5, slot_idxs.len()).multi_cartesian_product();
         // for every permutation of entry indexes
         for score_idxs in score_idx_perms {
@@ -181,7 +181,7 @@ impl Slots {
         }
 
         //convert upper totals to upper deficits 
-        let unique_deficits = unique_totals.into_iter().map(|x|63_u8.saturating_sub(x)).unique();
+        let unique_deficits = unique_totals.it().map(|x|63_u8.saturating_sub(x)).unique();
 
         // filter out the deficits that aren't relevant because they can't be covered by the upper slots remaining 
         // NOTE doing this filters out a lot of unneeded state space but means the lookup function must separately map extraneous deficits to 63 using relevant_deficit()
@@ -198,7 +198,7 @@ impl Slots {
     }
 
     fn best_total_from_open_upper_slots (self) -> u8{
-        self.into_iter().fold(0,|a,x| if x<=SIXES {a + x*5} else {a}) 
+        self.it().fold(0,|a,x| if x<=SIXES {a + x*5} else {a}) 
     }
 
 }
@@ -208,8 +208,8 @@ impl Display for Slots {
         let temp:[Slot;13] = self.into(); 
         let mut temp_vec = vec![0;13];
         temp_vec.copy_from_slice(&temp);
-        // write!(f,"{:?}",temp.into_iter().filter(|x|*x!=0).collect_vec()) 
-        write!(f,"{:?}",temp.into_iter().take(self.len as usize).collect_vec()) 
+        // write!(f,"{:?}",temp.ii().filter(|x|*x!=0).collect_vec()) 
+        write!(f,"{:?}",temp.it().take(self.len as usize).collect_vec()) 
     }
 }
 
@@ -518,8 +518,8 @@ impl AppState{
         } else {
             FxHashMap::with_capacity_and_hasher(init_capacity,default())
         };
-        let cache_keys:Vec<&GameState> = cachemap.keys().into_iter().collect_vec();
-        let former_ticks:u64 = cache_keys.into_iter().filter(|x|x.rolls_remaining ==0).map(|x|FACT[x.sorted_open_slots.len as usize] ).sum();
+        let cache_keys:Vec<&GameState> = cachemap.keys().it().collect_vec();
+        let former_ticks:u64 = cache_keys.it().filter(|x|x.rolls_remaining ==0).map(|x|FACT[x.sorted_open_slots.len as usize] ).sum();
         // pb.inc(former_ticks);
         Self{   progress_bar : pb, 
                 ev_cache : cachemap,
@@ -587,7 +587,7 @@ fn selection_ranges() ->[Range<usize>;32]  {
     let mut sel_ranges:[Range<usize>;32] = default();
     let mut s = 0;
     sel_ranges[0] = 0..1;
-    for (i,combo) in die_index_combos().into_iter().enumerate(){
+    for (i,combo) in die_index_combos().it().enumerate(){
         let count = n_take_r(6, combo.len(), false, true) ;
         sel_ranges[i] = s..(s+count as usize);
         s += count as usize; 
@@ -602,7 +602,7 @@ fn all_selection_outcomes() ->[Outcome;1683]  {
     let mut i=0;
     for combo in die_index_combos(){
         outcome.dievals = default();
-        for dievals_vec in [1,2,3,4,5,6_u8].into_iter().combinations_with_replacement(combo.len()){ 
+        for dievals_vec in [1,2,3,4,5,6_u8].it().combinations_with_replacement(combo.len()){ 
             outcome.mask = [0b111,0b111,0b111,0b111,0b111].into();
             for (j, &val ) in dievals_vec.iter().enumerate() { 
                 let idx = combo[j] as u8; 
@@ -634,16 +634,16 @@ fn die_index_combos() ->[Vec<u8>;32]  {
 /*-------------------------------------------------------------
 UTILS
 -------------------------------------------------------------*/
-/// so wrong but so right 
-    trait IShortcut {
+/// allow use of it() where into_iter() is normally required. so wrong but so right. 
+    trait ItShortcut {
         type Item;
         type IntoIter: Iterator<Item = Self::Item>;
-        fn ii(self) -> Self::IntoIter; 
+        fn it(self) -> Self::IntoIter; 
     }
-    impl<T: IntoIterator> IShortcut for T{ 
+    impl<T: IntoIterator> ItShortcut for T{ 
         type Item=T::Item;
         type IntoIter= T::IntoIter;//Iterator<Item = T::Item>;
-        fn ii(self) -> Self::IntoIter { self.into_iter() }
+        fn it(self) -> Self::IntoIter { self.into_iter() }
     }
 
 /// my own deafult_free_fn
@@ -711,7 +711,7 @@ SCORING FNs
 -------------------------------------------------------------*/
 
 fn score_upperbox(boxnum:Slot, sorted_dievals:DieVals)->Score{
-   sorted_dievals.into_iter().filter(|x| *x==boxnum).sum()
+   sorted_dievals.it().filter(|x| *x==boxnum).sum()
 }
 
 fn score_n_of_a_kind(n:u8,sorted_dievals:DieVals)->Score{
@@ -755,7 +755,7 @@ fn score_lg_str8(sorted_dievals:    DieVals)->Score{ if straight_len(sorted_diev
 
 // The official rule is that a Full House is "three of one number and two of another"
 fn score_fullhouse(sorted_dievals:DieVals) -> Score { 
-    let mut iter=sorted_dievals.into_iter();
+    let mut iter=sorted_dievals.it();
     let val = iter.next().unwrap();
     let val1=val; 
     let mut val1count =1; 
@@ -771,7 +771,7 @@ fn score_fullhouse(sorted_dievals:DieVals) -> Score {
     if (val1count==3 && val2count==2) || (val2count==3 && val1count==2) {25} else {0}
 }
 
-fn score_chance(sorted_dievals:DieVals)->Score { sorted_dievals.into_iter().sum()  }
+fn score_chance(sorted_dievals:DieVals)->Score { sorted_dievals.it().sum()  }
 
 fn score_yahtzee(sorted_dievals:DieVals)->Score { 
     if sorted_dievals.get(0) == sorted_dievals.get(4) && sorted_dievals.get(0) != 0 {50} else {0}
@@ -995,16 +995,16 @@ fn build_cache(game:GameState, app: &mut AppState) {
     for subset_len in 1..=game.sorted_open_slots.len{ 
 
         // for each slotset (of above length)
-        for slots_vec in game.sorted_open_slots.into_iter().combinations(subset_len as usize) {
+        for slots_vec in game.sorted_open_slots.it().combinations(subset_len as usize) {
             let mut slots:Slots = slots_vec.into(); 
             slots.sort(); //TODO avoidable?
-            let yahtzee_may_be_wild = !slots.into_iter().contains(&YAHTZEE); // yahtzees aren't wild whenever yahtzee slot is still available 
+            let yahtzee_may_be_wild = !slots.it().contains(&YAHTZEE); // yahtzees aren't wild whenever yahtzee slot is still available 
 
             // for each upper bonus deficit 
             for upper_bonus_deficit in slots.upper_total_deficits() {
 
                 // for each yahtzee wild possibility
-                for yahtzee_is_wild in [false,yahtzee_may_be_wild].into_iter().unique() {
+                for yahtzee_is_wild in [false,yahtzee_may_be_wild].it().unique() {
 
                     // for each rolls remaining
                     for rolls_remaining in [0,1,2,3] { 
@@ -1050,7 +1050,7 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                                 // find the collective ev for the all the slots when arranged like this , 
                                                 // do this by summing the ev for the first (head) slot with the ev value that we look up for the remaining (tail) slots
                                                 let mut rolls_remaining = 0;
-                                                for slots_piece in [head,tail].into_iter().unique(){
+                                                for slots_piece in [head,tail].it().unique(){
                                                     let state = &GameState{
                                                         sorted_dievals: next_dievals_or_wildcard, 
                                                         sorted_open_slots: slots_piece,
