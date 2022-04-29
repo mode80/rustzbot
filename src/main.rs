@@ -1,7 +1,7 @@
 #![allow(dead_code)] #![allow(unused_imports)] #![allow(unused_variables)]
 #![allow(clippy::needless_range_loop)] #![allow(clippy::unusual_byte_groupings)] 
 
-use std::{thread::{self, spawn, sleep, ThreadId}, sync::{Mutex, Arc, mpsc}, ops::Index, cmp::Ordering, time::Instant, default};
+use std::{thread::{self, spawn, sleep, ThreadId}, sync::{Mutex, Arc, mpsc, RwLock}, ops::Index, cmp::Ordering, time::Instant, default};
 use std::{cmp::{max, min}, fs::{self, File}, time::Duration, ops::Range, fmt::Display, panic};
 use itertools::{Itertools, iproduct, repeat_n};
 use indicatif::{ProgressBar, ProgressStyle, ProgressFinish};
@@ -967,7 +967,7 @@ BUILD CACHE
 fn build_cache(game:GameState, app: &mut AppState) {
                     // TODO saving zero roll state we don't need when slots are all bottoms
     let now = Instant::now();
-    // let sorted_dievals = SORTED_DIEVALS.clone();
+    let sorted = Arc::new(SORTED_DIEVALS.clone());
     let all_die_combos=&OUTCOMES[SELECTION_RANGES[0b11111].clone()];
     let placeholder_dievals= &OUTCOMES[0..=0]; //OUTCOMES[0] == [Dievals::default()]
     let mut leaf_cache = FxHashMap::<GameState,ChoiceEV>::default();
@@ -989,7 +989,8 @@ fn build_cache(game:GameState, app: &mut AppState) {
                     leaf_cache.insert(state, choice_ev);
                     print_state_choice(&state, choice_ev);
     } } } }
-    let mut last_cache = leaf_cache.clone(); // first min_cache will be this leaf_cache
+    let last_cache = Arc::new(RwLock::new(leaf_cache.clone())); // first last_cache will be this leaf_cache
+    let leaf_cache = Arc::new(leaf_cache); 
 
     // for each length 
     for subset_len in 1..=game.sorted_open_slots.len{ 
@@ -1020,13 +1021,15 @@ fn build_cache(game:GameState, app: &mut AppState) {
 
                                 // heap "arguments" to be passed into the thread
                                 let tx = tx.clone();
-                                let leaf_cache_copy = leaf_cache.clone(); // we need a copy of this for each thread // TODO faster to Arc rather than clone? 
-                                let last_cache_copy = last_cache.clone(); // together with leaf_cache, embodies the minimal needed lookup table for calcs below  
+                                let leaf_cache = leaf_cache.clone(); // we need a "copy" of this for each thread -- really just a refcount bump since it's Arc<_> 
+                                let last_cache= last_cache.clone(); // together with leaf_cache, should embody the minimal needed lookup tables for the calcs below  
+                                let sorted = sorted.clone();
                                 let app = 0; // shadow-hide unthreadable AppState. TODO kinda hacky. better way?
 
                                 threads.push(thread::spawn(move ||{  // one thread per chunk of die_combos
 
                                     let mut thread_built_cache = FxHashMap::<GameState,ChoiceEV>::default();
+                                    let last_cache = last_cache.read().unwrap(); 
 
                                     for die_combo in die_combo_chunk {  
 
@@ -1058,7 +1061,7 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                                         yahtzee_is_wild: yahtzee_wild_now, 
                                                         upper_bonus_deficit: slots_piece.relevant_deficit(upper_deficit_now),
                                                     };
-                                                    let cache = if slots_piece==head { &leaf_cache_copy } else { &last_cache_copy };
+                                                    let cache = if slots_piece==head { &*leaf_cache } else { &last_cache };
                                                     let choice_ev = cache.get(state).unwrap(); 
                                                     total += choice_ev.ev;
                                                     if slots_piece==head {
@@ -1097,8 +1100,8 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                                 for selection_outcome in &OUTCOMES[ SELECTION_RANGES[selection].clone() ] {
                                                     let mut newvals = die_combo.dievals;
                                                     newvals.blit(selection_outcome.dievals, selection_outcome.mask);
-                                                    newvals = SORTED_DIEVALS[&newvals]; 
-                                                    let ev_for_this_selection_outcome = last_cache_copy.get(&GameState{
+                                                    newvals = sorted[&newvals]; 
+                                                    let ev_for_this_selection_outcome = last_cache.get(&GameState{
                                                         sorted_dievals: newvals, 
                                                         sorted_open_slots: slots, 
                                                         upper_bonus_deficit: slots.relevant_deficit(upper_bonus_deficit), // TODO optimize
@@ -1138,9 +1141,9 @@ fn build_cache(game:GameState, app: &mut AppState) {
                             for thread in threads {thread.join().unwrap();}; // wait for threads to finish up. TODO removable?
                             drop(tx); // drop the template transmitter so it's not waited upon 
                             for thread_built_cache in &rx { // this blocks while waiting for each one of the tx clones to send something
-                                last_cache.extend(&thread_built_cache); // extend min_cache which (along with leaf_cache) will contain just enough lookup state for the next iteration of rolls_remaining
+                                last_cache.write().unwrap().extend(&thread_built_cache); // extend min_cache which (along with leaf_cache) will contain just enough lookup state for the next iteration of rolls_remaining
                             }
-                            app.ev_cache.extend(&last_cache); // update the master cache from the newly gathered data from threads above
+                            app.ev_cache.extend(&*last_cache.read().unwrap()); // update the master cache from the newly gathered data from threads above
 
                     } // end for rolls_remaining
 
