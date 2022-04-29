@@ -698,11 +698,11 @@ fn console_log(game:&GameState, app:&AppState, choice:Choice, ev:f32 ){
     );
 }
 
-fn print_state_choice(state: &GameState, choice_ev:ChoiceEV, thread_id:ThreadId){
+fn print_state_choice(state: &GameState, choice_ev:ChoiceEV){
     if state.rolls_remaining==0 {
-        println!("S {} {:2?} {:2?} {} {: >5} {} {: >6.2?} {:?}",state.sorted_dievals, state.rolls_remaining, state.upper_bonus_deficit, state.sorted_open_slots, choice_ev.choice, state.yahtzee_is_wild as u8, choice_ev.ev, thread_id); 
+        println!("S {} {:2?} {:2?} {} {: >5} {} {: >6.2?} {:?}",state.sorted_dievals, state.rolls_remaining, state.upper_bonus_deficit, state.sorted_open_slots, choice_ev.choice, state.yahtzee_is_wild as u8, choice_ev.ev, thread::current().id()); 
     } else {
-        println!("D {} {:2?} {:2?} {} {:05b} {} {: >6.2?} {:?}",state.sorted_dievals, state.rolls_remaining, state.upper_bonus_deficit, state.sorted_open_slots, choice_ev.choice, state.yahtzee_is_wild as u8, choice_ev.ev, thread_id); 
+        println!("D {} {:2?} {:2?} {} {:05b} {} {: >6.2?} {:?}",state.sorted_dievals, state.rolls_remaining, state.upper_bonus_deficit, state.sorted_open_slots, choice_ev.choice, state.yahtzee_is_wild as u8, choice_ev.ev, thread::current().id()); 
     };
 }
 
@@ -965,13 +965,31 @@ BUILD CACHE
 
 /// gather up expected values in a multithreaded bottom-up fashion
 fn build_cache(game:GameState, app: &mut AppState) {
-                    
+                    // TODO saving zero roll state we don't need when slots are all bottoms
     let now = Instant::now();
     // let sorted_dievals = SORTED_DIEVALS.clone();
     let all_die_combos=&OUTCOMES[SELECTION_RANGES[0b11111].clone()];
     let placeholder_dievals= &OUTCOMES[0..=0]; //OUTCOMES[0] == [Dievals::default()]
     let mut leaf_cache = FxHashMap::<GameState,ChoiceEV>::default();
-    let mut min_cache = FxHashMap::<GameState,ChoiceEV>::default();
+
+    // first handle special case of the most leafy leaf calcs -- where there's one slot left and no rolls remaining
+    for single_slot in game.sorted_open_slots {  // TODO: THREADS?
+        let slots:Slots = [single_slot].into();//Slots{data:single_slot as u64, len:1}; //set of a single slot 
+        for &yahtzee_is_wild in [false, single_slot!=YAHTZEE].iter().unique() {
+            for upper_bonus_deficit in slots.upper_total_deficits(){
+                for outcome in all_die_combos{
+                    let state = GameState{
+                        sorted_dievals: outcome.dievals, //pre-cached dievals should already be sorted here
+                        sorted_open_slots: slots, 
+                        rolls_remaining: 0, 
+                        upper_bonus_deficit, yahtzee_is_wild,
+                    };
+                    let score = score_slot_in_context(single_slot, outcome.dievals, yahtzee_is_wild, upper_bonus_deficit) as f32;
+                    let choice_ev = ChoiceEV{ choice: single_slot, ev: score};
+                    leaf_cache.insert(state, choice_ev);
+                    print_state_choice(&state, choice_ev);
+    } } } }
+    let mut last_cache = leaf_cache.clone(); // first min_cache will be this leaf_cache
 
     // for each length 
     for subset_len in 1..=game.sorted_open_slots.len{ 
@@ -1002,8 +1020,8 @@ fn build_cache(game:GameState, app: &mut AppState) {
 
                                 // heap "arguments" to be passed into the thread
                                 let tx = tx.clone();
-                                let leaf_cache_copy = leaf_cache.clone();
-                                let last_cache_copy = min_cache.clone();
+                                let leaf_cache_copy = leaf_cache.clone(); // we need a copy of this for each thread // TODO faster to Arc rather than clone? 
+                                let last_cache_copy = last_cache.clone(); // together with leaf_cache, embodies the minimal needed lookup table for calcs below  
                                 let app = 0; // shadow-hide unthreadable AppState. TODO kinda hacky. better way?
 
                                 threads.push(thread::spawn(move ||{  // one thread per chunk of die_combos
@@ -1012,21 +1030,7 @@ fn build_cache(game:GameState, app: &mut AppState) {
 
                                     for die_combo in die_combo_chunk {  
 
-                                        if rolls_remaining==0 && subset_len==1 {
-                                        /* LEAF CALCS */
-
-                                            let single_slot = slots.get(0);
-                                            let score = score_slot_in_context(single_slot, die_combo.dievals, yahtzee_is_wild, upper_bonus_deficit) as f32;
-                                            let state = GameState{
-                                                    sorted_dievals: die_combo.dievals, //pre-cached dievals should already be sorted here
-                                                    sorted_open_slots: slots, 
-                                                    rolls_remaining: 0, upper_bonus_deficit, yahtzee_is_wild,
-                                            }; 
-                                            let leaf_state_ev = ChoiceEV{ choice: single_slot, ev: score};
-                                            thread_built_cache.insert(state, leaf_state_ev);
-                                            print_state_choice(&state, leaf_state_ev,thread::current().id());
- 
-                                        } else if rolls_remaining==0 { //only select among > 1 slot
+                                        if rolls_remaining==0  { //&& (subset_len > 1) //only need to choose among > 1 slot
                                         /* HANDLE SLOT SELECTION */
 
                                             let mut slot_choice_ev:ChoiceEV = default();
@@ -1035,11 +1039,11 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                             for slot_perm in slots.permutations() { 
                                                                 
                                                 let mut total = 0.0;
-                                                let first_slot = slot_perm.get(0);
+                                                let first_slot:Slot = slot_perm.get(0);
                                                 let mut yahtzee_wild_now = yahtzee_is_wild;
                                                 let mut upper_deficit_now = upper_bonus_deficit;
-                                                let head = slot_perm.subset(0, 1);
-                                                let mut tail = if slot_perm.len > 1 {slot_perm.subset(1, slot_perm.len-1)} else {head};
+                                                let head:Slots = slot_perm.subset(0, 1);
+                                                let mut tail:Slots = if slot_perm.len > 1 {slot_perm.subset(1, slot_perm.len-1)} else {head};
                                                 let mut next_dievals_or_wildcard = die_combo.dievals; 
                                                 tail.sort(); //TODO lookup?
 
@@ -1079,9 +1083,9 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                                 upper_bonus_deficit, yahtzee_is_wild ,
                                             };
                                             thread_built_cache.insert( state, slot_choice_ev);
-                                            print_state_choice(&state, slot_choice_ev,thread::current().id());
+                                            print_state_choice(&state, slot_choice_ev);
   
-                                        } else {  // rolls_remaining > 0
+                                        } else { //if rolls_remaining > 0  
                                         /* HANDLE DICE SELECTION */    
 
                                             let next_roll = rolls_remaining-1; //TODO other wildcard lookup opportunities like below? 
@@ -1118,7 +1122,7 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                                     rolls_remaining, 
                                                 }; 
                                             thread_built_cache.insert(state,best_dice_choice_ev);
-                                            print_state_choice(&state, best_dice_choice_ev,thread::current().id());
+                                            print_state_choice(&state, best_dice_choice_ev);
 
                                         } // endif roll_remaining...  
 
@@ -1129,26 +1133,24 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                 })); //end thread
                             } // end for each chunk 
 
-                            min_cache.clear(); // we empty the cache in prep for filling it up below during processing of thread output
-
                             /* PROCESS THREAD OUTPUT */
-
+                            
+                            for thread in threads {thread.join().unwrap();}; // wait for threads to finish up. TODO removable?
                             drop(tx); // drop the template transmitter so it's not waited upon 
                             for thread_built_cache in &rx { // this blocks while waiting for each one of the tx clones to send something
-                                min_cache.extend(&thread_built_cache); // extend min_cache which (along with leaf_cache) will contain just enough lookup state for the next iteration of rolls_remaining
+                                last_cache.extend(&thread_built_cache); // extend min_cache which (along with leaf_cache) will contain just enough lookup state for the next iteration of rolls_remaining
                             }
-                            app.ev_cache.extend(&min_cache); // update the master cache from the newly gathered data from threads above
-                            if rolls_remaining==0 && slots.len==1 {leaf_cache.extend(&min_cache)};
-
-                            for thread in threads {thread.join().unwrap();}; // wait for threads to finish up
+                            app.ev_cache.extend(&last_cache); // update the master cache from the newly gathered data from threads above
 
                     } // end for rolls_remaining
 
                 } //end for each yahtzee_is_wild
             } //end for each upper deficit
 
-
         } // end for each slot_set 
+
+        // last_cache.clear(); // clear the minimal cache between slotlengths
+
     } // end for each length
 
 } // end fn
