@@ -365,7 +365,7 @@ fn new_bench_test() {
 
 #[test]
 fn build_cache_test() {
-    let game = GameState{   rolls_remaining: 1,
+    let game = GameState{   rolls_remaining: 3,
                             sorted_open_slots: [8,12].into(), 
                             sorted_dievals: [1,2,3,4,5].into(), 
                             upper_bonus_deficit: 63, 

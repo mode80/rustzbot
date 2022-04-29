@@ -1,7 +1,7 @@
 #![allow(dead_code)] #![allow(unused_imports)] #![allow(unused_variables)]
 #![allow(clippy::needless_range_loop)] #![allow(clippy::unusual_byte_groupings)] 
 
-use std::{thread::{self, spawn, sleep}, sync::{Mutex, Arc, mpsc}, ops::Index, cmp::Ordering, time::Instant, default};
+use std::{thread::{self, spawn, sleep, ThreadId}, sync::{Mutex, Arc, mpsc}, ops::Index, cmp::Ordering, time::Instant, default};
 use std::{cmp::{max, min}, fs::{self, File}, time::Duration, ops::Range, fmt::Display, panic};
 use itertools::{Itertools, iproduct, repeat_n};
 use indicatif::{ProgressBar, ProgressStyle, ProgressFinish};
@@ -698,11 +698,11 @@ fn console_log(game:&GameState, app:&AppState, choice:Choice, ev:f32 ){
     );
 }
 
-fn print_state_choice(state: &GameState, choice_ev:ChoiceEV){
+fn print_state_choice(state: &GameState, choice_ev:ChoiceEV, thread_id:ThreadId){
     if state.rolls_remaining==0 {
-        println!("S {} {:2?} {:2?} {} {: >5} {} {: >6.2?}",state.sorted_dievals, state.rolls_remaining, state.upper_bonus_deficit, state.sorted_open_slots, choice_ev.choice, state.yahtzee_is_wild as u8, choice_ev.ev); 
+        println!("S {} {:2?} {:2?} {} {: >5} {} {: >6.2?} {:?}",state.sorted_dievals, state.rolls_remaining, state.upper_bonus_deficit, state.sorted_open_slots, choice_ev.choice, state.yahtzee_is_wild as u8, choice_ev.ev, thread_id); 
     } else {
-        println!("D {} {:2?} {:2?} {} {:05b} {} {: >6.2?}",state.sorted_dievals, state.rolls_remaining, state.upper_bonus_deficit, state.sorted_open_slots, choice_ev.choice, state.yahtzee_is_wild as u8, choice_ev.ev); 
+        println!("D {} {:2?} {:2?} {} {:05b} {} {: >6.2?} {:?}",state.sorted_dievals, state.rolls_remaining, state.upper_bonus_deficit, state.sorted_open_slots, choice_ev.choice, state.yahtzee_is_wild as u8, choice_ev.ev, thread_id); 
     };
 }
 
@@ -971,7 +971,7 @@ fn build_cache(game:GameState, app: &mut AppState) {
     let all_die_combos=&OUTCOMES[SELECTION_RANGES[0b11111].clone()];
     let placeholder_dievals= &OUTCOMES[0..=0]; //OUTCOMES[0] == [Dievals::default()]
     let mut leaf_cache = FxHashMap::<GameState,ChoiceEV>::default();
-    let mut last_cache = FxHashMap::<GameState,ChoiceEV>::default();
+    let mut min_cache = FxHashMap::<GameState,ChoiceEV>::default();
 
     // for each length 
     for subset_len in 1..=game.sorted_open_slots.len{ 
@@ -980,7 +980,6 @@ fn build_cache(game:GameState, app: &mut AppState) {
         for slots_vec in game.sorted_open_slots.into_iter().combinations(subset_len as usize) {
             let mut slots:Slots = slots_vec.into(); 
             slots.sort(); //TODO avoidable?
-            let chunk_size = FACT[slots.len as usize] as usize / *CORES + 1 ; // one chunk per core (+1 chunk_size to "round up") 
             let yahtzee_may_be_wild = !slots.into_iter().contains(&YAHTZEE); // yahtzees aren't wild whenever yahtzee slot is still available 
 
             // for each upper bonus deficit 
@@ -992,28 +991,24 @@ fn build_cache(game:GameState, app: &mut AppState) {
                     // for each rolls remaining
                     for rolls_remaining in [0,1,2,3] { 
 
-                        let die_combos = if rolls_remaining==3 {placeholder_dievals} else {all_die_combos}; 
+                            let die_combos = if rolls_remaining==3 {placeholder_dievals} else {all_die_combos}; 
+                            let chunk_size = (die_combos.len() / max(*CORES-1,1) ) + 1 ; // one chunk per core after saving one for the OS (+1 "rounds up") . TODO hoist?
 
                             let (tx, rx) = mpsc::channel();
+                            let mut threads= Vec::<_>::with_capacity(*CORES);
 
                             // for each chunk of die combos 
                             for die_combo_chunk in die_combos.chunks(chunk_size){ 
 
-                                // let (cache_tx, cache_rx) = mpsc::channel();
-
                                 // heap "arguments" to be passed into the thread
-                                // let slotset_perms = chunk.collect_vec().into_iter(); // converts unthreadable Chunk<_> to IntoIter<_> 
                                 let tx = tx.clone();
-                                // let cache = leaf_cache.clone(); // TODO kills performance
-                                // let mut thread_best:ChoiceEV = default();
-                                // let app_cache = app.ev_cache;
-                                let app = 0;
-                                let leaf_cache = leaf_cache.clone();
-                                let last_cache = last_cache.clone();
+                                let leaf_cache_copy = leaf_cache.clone();
+                                let last_cache_copy = min_cache.clone();
+                                let app = 0; // shadow-hide unthreadable AppState. TODO kinda hacky. better way?
 
-                                thread::spawn(move ||{ 
+                                threads.push(thread::spawn(move ||{  // one thread per chunk of die_combos
 
-                                    let mut this_cache = FxHashMap::<GameState,ChoiceEV>::default();
+                                    let mut thread_built_cache = FxHashMap::<GameState,ChoiceEV>::default();
 
                                     for die_combo in die_combo_chunk {  
 
@@ -1022,21 +1017,19 @@ fn build_cache(game:GameState, app: &mut AppState) {
 
                                             let single_slot = slots.get(0);
                                             let score = score_slot_in_context(single_slot, die_combo.dievals, yahtzee_is_wild, upper_bonus_deficit) as f32;
-                                            // tx.send(( 
-                                            this_cache.insert(
-                                                GameState{
+                                            let state = GameState{
                                                     sorted_dievals: die_combo.dievals, //pre-cached dievals should already be sorted here
                                                     sorted_open_slots: slots, 
                                                     rolls_remaining: 0, upper_bonus_deficit, yahtzee_is_wild,
-                                                }, 
-                                                ChoiceEV{ choice: single_slot, ev: score}
-                                            );
-                                            // )).unwrap(); //TODO it might be faster to build the whole cache here then send that 
-
+                                            }; 
+                                            let leaf_state_ev = ChoiceEV{ choice: single_slot, ev: score};
+                                            thread_built_cache.insert(state, leaf_state_ev);
+                                            print_state_choice(&state, leaf_state_ev,thread::current().id());
+ 
                                         } else if rolls_remaining==0 { //only select among > 1 slot
                                         /* HANDLE SLOT SELECTION */
 
-                                            let mut choice_ev:ChoiceEV = default();
+                                            let mut slot_choice_ev:ChoiceEV = default();
                             
                                             // for each slot permutation 
                                             for slot_perm in slots.permutations() { 
@@ -1047,20 +1040,21 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                                 let mut upper_deficit_now = upper_bonus_deficit;
                                                 let head = slot_perm.subset(0, 1);
                                                 let mut tail = if slot_perm.len > 1 {slot_perm.subset(1, slot_perm.len-1)} else {head};
-                                                let mut sorted_dievals = die_combo.dievals; 
+                                                let mut next_dievals_or_wildcard = die_combo.dievals; 
                                                 tail.sort(); //TODO lookup?
 
-                                                // find the collective ev for the all the slots when arranged like this 
+                                                // find the collective ev for the all the slots when arranged like this , 
+                                                // do this by summing the ev for the first (head) slot with the ev value that we look up for the remaining (tail) slots
                                                 let mut rolls_remaining = 0;
                                                 for slots_piece in [head,tail].into_iter().unique(){
                                                     let state = &GameState{
-                                                        sorted_dievals, 
+                                                        sorted_dievals: next_dievals_or_wildcard, 
                                                         sorted_open_slots: slots_piece,
                                                         rolls_remaining, 
                                                         yahtzee_is_wild: yahtzee_wild_now, 
                                                         upper_bonus_deficit: slots_piece.relevant_deficit(upper_deficit_now),
                                                     };
-                                                    let cache = if slots_piece==head { &leaf_cache } else { &last_cache };
+                                                    let cache = if slots_piece==head { &leaf_cache_copy } else { &last_cache_copy };
                                                     let choice_ev = cache.get(state).unwrap(); 
                                                     total += choice_ev.ev;
                                                     if slots_piece==head {
@@ -1070,32 +1064,29 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                                             upper_deficit_now = upper_deficit_now.saturating_sub(deduct);
                                                         }; 
                                                         rolls_remaining=3; // for upcoming tail lookup, we always want the ev for 3 rolls remaining
-                                                        sorted_dievals = DieVals::default() // for 3 rolls remaining, use "wildcard" representative dievals since dice don't matter when rolling all of them
+                                                        next_dievals_or_wildcard = DieVals::default() // for 3 rolls remaining, use "wildcard" representative dievals since dice don't matter when rolling all of them
                                                     }
                                                 } //end for slot_piece
                                                 
-                                                if total >= choice_ev.ev { choice_ev = ChoiceEV{ choice: first_slot, ev: total }};
+                                                if total >= slot_choice_ev.ev { slot_choice_ev = ChoiceEV{ choice: first_slot, ev: total }};
 
                                             } // end for slot_perm 
 
-                                            // tx.send((
-                                            this_cache.insert(
-                                                 GameState {
-                                                    sorted_dievals: die_combo.dievals, 
-                                                    sorted_open_slots: slots,
-                                                    rolls_remaining: 0, 
-                                                    upper_bonus_deficit, yahtzee_is_wild ,
-                                                },
-                                                choice_ev
-                                            );
-                                            // )).unwrap();
-
+                                            let state = GameState {
+                                                sorted_dievals: die_combo.dievals, 
+                                                sorted_open_slots: slots,
+                                                rolls_remaining: 0, 
+                                                upper_bonus_deficit, yahtzee_is_wild ,
+                                            };
+                                            thread_built_cache.insert( state, slot_choice_ev);
+                                            print_state_choice(&state, slot_choice_ev,thread::current().id());
+  
                                         } else {  // rolls_remaining > 0
                                         /* HANDLE DICE SELECTION */    
 
                                             let next_roll = rolls_remaining-1; //TODO other wildcard lookup opportunities like below? 
                                             let selections = if rolls_remaining ==3 { 0b11111..=0b11111 } else { 0b00000..=0b11111 }; //always select all dice on the initial roll
-                                            let mut best_selection_result = ChoiceEV::default();
+                                            let mut best_dice_choice_ev = ChoiceEV::default();
                                             for selection in selections.clone() { // try every selection against this starting_combo . TODO redundancies?
                                                 let mut total_ev_for_selection = 0.0; 
                                                 let mut outcomes_count:u64= 0; 
@@ -1103,11 +1094,12 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                                     let mut newvals = die_combo.dievals;
                                                     newvals.blit(selection_outcome.dievals, selection_outcome.mask);
                                                     newvals = SORTED_DIEVALS[&newvals]; 
-                                                    let ev_for_this_selection_outcome = last_cache.get(&GameState{
+                                                    let ev_for_this_selection_outcome = last_cache_copy.get(&GameState{
                                                         sorted_dievals: newvals, 
                                                         sorted_open_slots: slots, 
                                                         upper_bonus_deficit: slots.relevant_deficit(upper_bonus_deficit), // TODO optimize
-                                                        yahtzee_is_wild, rolls_remaining: next_roll, // the trick is we average all the 'next roll' possibilities (which we calclated last)
+                                                        yahtzee_is_wild, 
+                                                        rolls_remaining: next_roll, // we'll average all the 'next roll' possibilities (which we'd calclated last) to get ev for 'this roll' 
                                                     }).unwrap().ev; 
                                                     let gamestate_for_upcoming_roll = 
                                                     total_ev_for_selection += ev_for_this_selection_outcome * selection_outcome.arrangements as f32;// bake into upcoming aveage
@@ -1115,44 +1107,40 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                                 }
                                                 let avg_ev_for_selection = total_ev_for_selection / outcomes_count as f32;
                                                 let actual_selection = [0,1,2,4,8,16,3,5,6,9,10,12,17,18,20,24,7,11,13,14,19,21,22,25,26,28,15,23,27,29,30,31][selection]; // temp hack
-                                                if avg_ev_for_selection > best_selection_result.ev{
-                                                    best_selection_result = ChoiceEV{choice:actual_selection as u8, ev:avg_ev_for_selection};
+                                                if avg_ev_for_selection > best_dice_choice_ev.ev{
+                                                    best_dice_choice_ev = ChoiceEV{choice:actual_selection as u8, ev:avg_ev_for_selection};
                                                 }
                                             }
-                                            //  tx.send((
-                                            this_cache.insert(GameState{
+                                            let state = GameState{
                                                     sorted_dievals: die_combo.dievals,  
                                                     sorted_open_slots: slots, 
                                                     upper_bonus_deficit, yahtzee_is_wild, 
                                                     rolls_remaining, 
-                                                }, 
-                                                best_selection_result
-                                            );
-                                            // )).unwrap();
+                                                }; 
+                                            thread_built_cache.insert(state,best_dice_choice_ev);
+                                            print_state_choice(&state, best_dice_choice_ev,thread::current().id());
 
                                         } // endif roll_remaining...  
 
                                     } // end for each die_combo
 
-                                    tx.send(this_cache).unwrap();
+                                    tx.send(thread_built_cache).unwrap();
 
-                                }); //end thread
+                                })); //end thread
                             } // end for each chunk 
 
-                            last_cache.clear(); // we empty the cache in prep for filling it up below during processing of thread output
+                            min_cache.clear(); // we empty the cache in prep for filling it up below during processing of thread output
 
                             /* PROCESS THREAD OUTPUT */
 
-                            drop(tx); // would hang waiting for this template transmitter if not dropped 
-                            for thread_cache in &rx {
-                                last_cache.extend(&thread_cache);
+                            drop(tx); // drop the template transmitter so it's not waited upon 
+                            for thread_built_cache in &rx { // this blocks while waiting for each one of the tx clones to send something
+                                min_cache.extend(&thread_built_cache); // extend min_cache which (along with leaf_cache) will contain just enough lookup state for the next iteration of rolls_remaining
                             }
-                            // for (state, choice_ev) in &rx {  // receive transmissions from threads above with (GameState, ChoiceEV) 
-                            //     last_cache.insert(state, choice_ev);
-                            //     print_state_choice(&state, choice_ev);
-                            // } 
-                            app.ev_cache.extend(&last_cache);
-                            if rolls_remaining==0 && slots.len==1 {leaf_cache=last_cache.clone()};
+                            app.ev_cache.extend(&min_cache); // update the master cache from the newly gathered data from threads above
+                            if rolls_remaining==0 && slots.len==1 {leaf_cache.extend(&min_cache)};
+
+                            for thread in threads {thread.join().unwrap();}; // wait for threads to finish up
 
                     } // end for rolls_remaining
 
