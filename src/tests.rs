@@ -354,7 +354,7 @@ fn new_bench_test() {
     let game = GameState{   rolls_remaining: 3,
                             sorted_open_slots: [1,7,8,9,10,11,12,13].into(), 
                             sorted_dievals: [0,0,0,0,0].into(), 
-                            upper_bonus_deficit: 63, 
+                            upper_bonus_deficit: 0, 
                             yahtzee_is_wild: false, };
     let app = &mut AppState::new(&game);
     build_cache(game,app);
@@ -366,9 +366,9 @@ fn new_bench_test() {
 // #[test]
 fn build_cache_test() {
     let game = GameState{   rolls_remaining: 3,
-                            sorted_open_slots: [8,12].into(), 
+                            sorted_open_slots: [1,8,12].into(), 
                             sorted_dievals: [0,0,0,0,0].into(), 
-                            upper_bonus_deficit: 63, 
+                            upper_bonus_deficit: 0, 
                             yahtzee_is_wild: false, };
     let app1 = &mut AppState::new(&game);
     let rhs = best_choice_ev(game, app1);

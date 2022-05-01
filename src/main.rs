@@ -186,7 +186,7 @@ impl Slots {
         // filter out the deficits that aren't relevant because they can't be covered by the upper slots remaining 
         // NOTE doing this filters out a lot of unneeded state space but means the lookup function must separately map extraneous deficits to 63 using relevant_deficit()
         let best_total = self.best_total_from_open_upper_slots();
-        let mut retval = unique_deficits.filter(|x| *x == 63 || *x <= best_total).sorted().collect_vec(); //TODO 63 must be first but could remove sorted() somehow 
+        let mut retval = unique_deficits.filter(|x| *x <= best_total).sorted().collect_vec(); //TODO 63 must be first but could remove sorted() somehow 
         retval.reverse();
         retval 
 
@@ -194,7 +194,7 @@ impl Slots {
 
     //converts the given deficit to 63 if the deficit can't be closed by the remaining upper slots 
     fn relevant_deficit(self,deficit:u8) -> u8{
-        if deficit > self.best_total_from_open_upper_slots() {63} else {deficit}
+        if deficit > self.best_total_from_open_upper_slots() {0} else {deficit}
     }
 
     fn best_total_from_open_upper_slots (self) -> u8{
