@@ -333,9 +333,9 @@ fn bench_test() {
 
 // #[test]
 fn removed_test(){
-    let s:Slots = [1,2,3,4,5,6,7,8,9,10,11,12,13].into();
-    let r = s.removed(12);
-    assert_eq!(r,[1,2,3,4,5,6,7,8,9,10,11,13].into() );
+    let s:Slots = [1,3,5].into();
+    let r = s.removed(1);
+    assert_eq!(r,[3,5].into() );
 }
  
 // #[test]
@@ -372,9 +372,9 @@ fn new_bench_test() {
 // #[test]
 fn build_cache_test() {
     let game = GameState{   rolls_remaining: 3,
-                            sorted_open_slots: [1,8,12].into(), 
+                            sorted_open_slots: [1,3,5].into(), 
                             sorted_dievals: [0,0,0,0,0].into(), 
-                            upper_bonus_deficit: 0, 
+                            upper_bonus_deficit: 63, 
                             yahtzee_is_wild: false, };
     let app1 = &mut AppState::new(&game);
     let rhs = best_choice_ev(game, app1);
@@ -384,4 +384,16 @@ fn build_cache_test() {
     eprintln!("lhs {:?}",lhs);
     eprintln!("rhs {:?}",rhs); eprintln!("rhs {:?}",rhs);
     assert_eq!(lhs.ev,  rhs.ev);
+}
+
+// #[test]
+fn main_test(){
+
+    let game =         GameState{ sorted_dievals: [0,0,0,0,0].into(), rolls_remaining: 3, upper_bonus_deficit: 63, 
+            yahtzee_is_wild: false, sorted_open_slots: [1,2,3,4,5,6,7,8,9,10,11,12,13].into(),
+        };
+ 
+    let app = & mut AppState::new(&game);
+    build_cache(game,app);
+
 }

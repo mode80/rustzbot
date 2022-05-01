@@ -198,15 +198,18 @@ impl Slots {
         // filter out the deficits that aren't relevant because they can't be covered by the upper slots remaining 
         // NOTE doing this filters out a lot of unneeded state space but means the lookup function must separately map extraneous deficits to 63 using relevant_deficit()
         let best_total = self.best_total_from_open_upper_slots();
-        let mut retval = unique_deficits.filter(|x| *x <= best_total).sorted().collect_vec(); //TODO 63 must be first but could remove sorted() somehow 
+        let mut retval = unique_deficits.filter(|x| *x==63 || *x <= best_total).sorted().collect_vec(); //TODO 63 must be first but could remove sorted() somehow 
         retval.reverse();
         retval 
+        // let mut retval = unique_deficits.sorted().collect_vec();
+        // retval.reverse();
+        // retval
 
     }
 
     //converts the given deficit to 63 if the deficit can't be closed by the remaining upper slots 
     fn relevant_deficit(self,deficit:u8) -> u8{
-        if deficit > self.best_total_from_open_upper_slots() {0} else {deficit}
+        if deficit > self.best_total_from_open_upper_slots() {63} else {deficit}
     }
 
     fn best_total_from_open_upper_slots (self) -> u8{
@@ -1054,6 +1057,8 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                             upper_bonus_deficit: slots_piece.relevant_deficit(upper_deficit_now),
                                         };
                                         let cache = if slots_piece==head { &leaf_cache } else { &app.ev_cache};
+                                        // let choice_ev:ChoiceEV;
+                                        // if let Some(choice) = cache.get(state) {choice_ev = *choice} else {print!("{:#?}",state);panic!()}; 
                                         let choice_ev = cache.get(state).unwrap(); 
                                         total += choice_ev.ev;
                                         if slots_piece==head {
