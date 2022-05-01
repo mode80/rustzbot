@@ -331,7 +331,13 @@ fn bench_test() {
     // assert_eq!(rounded(result.ev,2),  21.8);
 } 
 
-
+// #[test]
+fn removed_test(){
+    let s:Slots = [1,2,3,4,5,6,7,8,9,10,11,12,13].into();
+    let r = s.removed(12);
+    assert_eq!(r,[1,2,3,4,5,6,7,8,9,10,11,13].into() );
+}
+ 
 // #[test]
 fn swap_test(){
     let mut s:Slots = [0,1,2,3,4,5,6,7,8,9,10,11,12].into(); 
@@ -349,7 +355,7 @@ fn test_permutations() {
     }; 
 }
 
-// #[test]
+#[test]
 fn new_bench_test() {
     let game = GameState{   rolls_remaining: 3,
                             sorted_open_slots: [1,7,8,9,10,11,12,13].into(), 

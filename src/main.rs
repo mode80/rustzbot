@@ -85,7 +85,19 @@ impl Slots {
         self.set(self.len-1,val);
         // //for debugging only
         // self.debug[self.len as usize-1]=val;
-     }
+    }
+
+    fn removed(self, val:Slot)->Self{
+        match self.it().position(|x|x==val) {
+            Some(idx) =>  {
+                let front:Slots = self.truncated(idx as u8);
+                let back = self.data & !(2_u64.pow((idx as u32+1)*4)-1);
+                Slots{data:front.data | (back>>4), len: self.len-1}
+            },
+            None => {self}
+        }
+    }
+
 
     fn truncate(&mut self, len:u8) {
         let mask = (2_u64).pow(len as u32 * 4)-1;
@@ -965,9 +977,7 @@ BUILD CACHE
 
 /// gather up expected values in a multithreaded bottom-up fashion
 fn build_cache(game:GameState, app: &mut AppState) {
-                    // TODO saving zero roll state we don't need when slots are all bottoms
     let now = Instant::now();
-    let sorted = Arc::new(SORTED_DIEVALS.clone());
     let sorted = SORTED_DIEVALS.clone();
     let all_die_combos=&OUTCOMES[SELECTION_RANGES[0b11111].clone()];
     let placeholder_dievals= &OUTCOMES[0..=0]; //OUTCOMES[0] == [Dievals::default()]
@@ -990,8 +1000,6 @@ fn build_cache(game:GameState, app: &mut AppState) {
                     leaf_cache.insert(state, choice_ev);
                     print_state_choice(&state, choice_ev);
     } } } }
-    // let last_cache = Arc::new(RwLock::new(leaf_cache.clone())); // first last_cache will be this leaf_cache
-    // let leaf_cache = Arc::new(leaf_cache); 
 
     // for each length 
     for subset_len in 1..=game.sorted_open_slots.len{ 
@@ -1024,13 +1032,15 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                 for slot_perm in slots.permutations() { 
                                                     
                                     let mut total = 0.0;
-                                    let first_slot:Slot = slot_perm.get(0);
+                                    let perm_first_slot:Slot = slot_perm.get(0);
                                     let mut yahtzee_wild_now = yahtzee_is_wild;
                                     let mut upper_deficit_now = upper_bonus_deficit;
                                     let head:Slots = slot_perm.subset(0, 1);
-                                    let mut tail:Slots = if slot_perm.len > 1 {slot_perm.subset(1, slot_perm.len-1)} else {head};
                                     let mut next_dievals_or_wildcard = die_combo.dievals; 
-                                    tail.sort(); //TODO lookup?
+                                    // let mut tail:Slots = if slot_perm.len > 1 {slot_perm.subset(1, slot_perm.len-1)} else {head};
+                                    // tail.sort(); //TODO lookup?
+                                    // we can avoid sorting the permutation tail by derving it instead from the (unpermutated) slots with 'head' removed
+                                    let tail = if slot_perm.len > 1 { slots.removed(perm_first_slot) } else {head};
 
                                     // find the collective ev for the all the slots when arranged like this , 
                                     // do this by summing the ev for the first (head) slot with the ev value that we look up for the remaining (tail) slots
@@ -1047,8 +1057,8 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                         let choice_ev = cache.get(state).unwrap(); 
                                         total += choice_ev.ev;
                                         if slots_piece==head {
-                                            if first_slot==YAHTZEE && choice_ev.ev>0.0 {yahtzee_wild_now=true;};
-                                            if first_slot<=SIXES {
+                                            if perm_first_slot==YAHTZEE && choice_ev.ev>0.0 {yahtzee_wild_now=true;};
+                                            if perm_first_slot<=SIXES {
                                                 let deduct = (choice_ev.ev as u8) % 100; // the modulo 100 here removes any yathzee bonus from ev since that doesnt' count toward upper bonus total
                                                 upper_deficit_now = upper_deficit_now.saturating_sub(deduct);
                                             }; 
@@ -1057,7 +1067,7 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                         }
                                     } //end for slot_piece
                                     
-                                    if total >= slot_choice_ev.ev { slot_choice_ev = ChoiceEV{ choice: first_slot, ev: total }};
+                                    if total >= slot_choice_ev.ev { slot_choice_ev = ChoiceEV{ choice: perm_first_slot, ev: total }};
 
                                 } // end for slot_perm 
 
@@ -1120,12 +1130,8 @@ fn build_cache(game:GameState, app: &mut AppState) {
                         app.ev_cache.extend(&built_from_threads);
 
                     } // end for rolls_remaining
-
                 } //end for each yahtzee_is_wild
             } //end for each upper deficit
-
         } // end for each slot_set 
-
     } // end for each length
-
 } // end fn
