@@ -355,7 +355,7 @@ fn test_permutations() {
     }; 
 }
 
-#[test]
+// #[test]
 fn new_bench_test() {
     let game = GameState{   rolls_remaining: 3,
                             sorted_open_slots: [1,7,8,9,10,11,12,13].into(), 
@@ -386,14 +386,12 @@ fn build_cache_test() {
     assert_eq!(lhs.ev,  rhs.ev);
 }
 
-// #[test]
+#[test]
 fn main_test(){
 
-    let game =         GameState{ sorted_dievals: [0,0,0,0,0].into(), rolls_remaining: 3, upper_bonus_deficit: 63, 
-            yahtzee_is_wild: false, sorted_open_slots: [1,2,3,4,5,6,7,8,9,10,11,12,13].into(),
-        };
- 
+    let game = GameState::default();
     let app = & mut AppState::new(&game);
     build_cache(game,app);
+    app.save_cache();
 
 }
