@@ -369,7 +369,7 @@ fn new_bench_test() {
     // assert_eq!(lhs.ev,  21.80351);
 } 
 
-// #[test]
+#[test]
 fn build_cache_test() {
     let game = GameState{   rolls_remaining: 3,
                             sorted_open_slots: [1,3,5].into(), 
@@ -386,7 +386,7 @@ fn build_cache_test() {
     assert_eq!(lhs.ev,  rhs.ev);
 }
 
-#[test]
+// #[test]
 fn main_test(){
 
     let game = GameState::default();

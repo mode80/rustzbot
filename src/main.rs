@@ -49,10 +49,13 @@ SLOTS
 #[derive(Debug,Clone,Copy,PartialEq,Serialize,Deserialize,Eq,PartialOrd,Ord,Hash,Default)]
 
 struct Slots{
-    // pub debug:[Slot;13],
     pub data:u64, // 13 Slot values of between 1 and 13 can be encoded within these 8 bytes, each taking 4 bits
     pub len:u8,
 }
+
+/*the following LLDB command will format Slots with meaningful values in the debugger 
+    type summary add --summary-string "Slots ${var.data[0-3]%u} ${var.data[4-7]%u} ${var.data[8-11]%u} ${var.data[12-15]%u} ${var.data[16-19]%u} ${var.data[20-23]%u} ${var.data[24-27]%u} ${var.data[28-31]%u} ${var.data[32-35]%u} ${var.data[36-39]%u} ${var.data[40-43]%u} ${var.data[44-47]%u} ${var.data[48-51]%u}" "yahtzeebot::Slots"
+*/
 
 impl Slots {
 
@@ -62,29 +65,22 @@ impl Slots {
         let bitpos = 4*index; // widths of 4 bits per value 
         let mask = ! (0b1111_u64 << bitpos); // hole maker
         self.data = (self.data & mask) | ((val as u64) << bitpos ); // punch & fill hole
-        // //for debugging only
-        // self.debug[index as usize]=val;
     }
 
     fn get(&self, index:u8)->Slot{
         ((self.data >> (index*4)) & 0b1111_u64) as Slot 
     }
 
-
     /// swaps value at index a for index b using bit hack at https://graphics.stanford.edu/~seander/bithacks.html#SwappingValuesXOR
     fn swap(&mut self, a:u8, b:u8){ //no performance gain but looks cleaner in calling code
         let i = a*4; let j = b*4;// positions of bit sequences to swap 
         let x = ((self.data >> i) ^ (self.data >> j)) & 0b1111; // XOR temporary
         self.data ^= (x << i) | (x << j);
-        // //for debugging only
-        // self.debug.swap(a as usize, b as usize);
      }
 
     fn push(&mut self, val:Slot){
         self.len +=1;
         self.set(self.len-1,val);
-        // //for debugging only
-        // self.debug[self.len as usize-1]=val;
     }
 
     fn removed(self, val:Slot)->Self{
@@ -103,8 +99,6 @@ impl Slots {
         let mask = (2_u64).pow(len as u32 * 4)-1;
         self.data &= mask;
         self.len=len;
-        // //for debugging only
-        // self.debug.iter_mut().skip(len as usize).for_each(|x|*x=0); 
     }
 
     fn truncated(self, len:u8) -> Self {
@@ -118,9 +112,6 @@ impl Slots {
         let mut self_copy = self;
         self_copy.data >>= start_idx*4;
         self_copy.truncate(max_len);
-        // //for debugging only
-        //     for i in 0..self_copy.len as usize {self_copy.debug[i] = self_copy.get(i as u8)};
-        // //
         self_copy
     }
 
@@ -241,10 +232,7 @@ impl Display for Slots {
 impl From<Vec<Slot>> for Slots{
     fn from(vec: Vec<Slot>) -> Self {
         assert! (vec.len() <= 13);
-        let mut retval = Slots{ len:vec.len() as u8, data:default()};//, debug:default()};
-        // //debug only
-        // retval.debug[..vec.len()].copy_from_slice(&vec);
-        // //
+        let mut retval = Slots{ len:vec.len() as u8, data:default()};
         for i in 0..vec.len() { retval.set(i as u8, vec[i as usize]); }
         retval 
     }
@@ -252,10 +240,7 @@ impl From<Vec<Slot>> for Slots{
 impl <const N:usize> From<[Slot; N]> for Slots{
     fn from(a: [Slot; N]) -> Self {
         assert! (a.len() <= 13);
-        let mut retval = Slots{ len:a.len() as u8, data:default()};//, debug:default()};
-        // // debug only
-        // retval.debug[..N].copy_from_slice(&a);
-        // // 
+        let mut retval = Slots{ len:a.len() as u8, data:default()};
         for i in 0..N { retval.set(i as u8, a[i as usize]); }
         retval 
     }
@@ -352,9 +337,12 @@ DieVals
 #[derive(Debug,Clone,Copy,PartialEq,Serialize,Deserialize,Eq,PartialOrd,Ord,Hash,Default)]
 
 struct DieVals{
-    // debug:[u8;5],
     data:u16, // 5 dievals, each from 0 to 6, can be encoded in 2 bytes total, each taking 3 bits
 }
+
+/* the following LLDB command will format Slots with meaningful values in the debugger 
+    type summary add --summary-string "${var.data[0-2]%u} ${var.data[3-5]%u} ${var.data[6-8]%u} ${var.data[9-11]%u} ${var.data[12-14]%u}" "yahtzeebot::DieVals"
+*/
 
 impl DieVals {
 
@@ -362,24 +350,16 @@ impl DieVals {
         let bitpos = 3*index; // widths of 3 bits per value
         let mask = ! (0b111_u16 << bitpos); // hole maker
         self.data = (self.data & mask) | ((val as u16) << bitpos ); // punch & fill hole
-        // //for debug only
-        // self.debug[index as usize]=val;
     }
 
     /// blit the 'from' dievals into the 'self' dievals with the help of a mask where 0 indicates incoming 'from' bits and 1 indicates none incoming 
     fn blit(&mut self, from:DieVals, mask:DieVals,){
         self.data = (self.data & mask.data) | from.data;
-        // //for debugging only...
-        // let debug:[DieVal;5] = self.into(); 
-        // self.debug = debug;
     }
 
     /// merge the 'from' dievals into the 'self' using a bitwise OR 
     fn merge(&mut self, from:DieVals){
         self.data |= from.data;
-        // //for debugging only...
-        // let debug:[DieVal;5] = self.into(); 
-        // self.debug = debug;
     }
 
 
@@ -418,7 +398,6 @@ impl From<[DieVal; 5]> for DieVals{
     fn from(a: [DieVal; 5]) -> Self {
         DieVals{
             data: (a[4] as u16) << 12 | (a[3] as u16) <<9 | (a[2] as u16) <<6 | (a[1] as u16) <<3 | (a[0] as u16), 
-            // debug:a
         }
     }
 }
