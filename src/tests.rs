@@ -297,7 +297,7 @@ fn test_threaded_subsets() {
 // #[test]
 fn unique_upper_deficits_test() {
     let slots:Slots = [1,2,4,5].into();
-    let mut sorted_totals = slots.upper_total_deficits();
+    let mut sorted_totals = slots.relevant_upper_deficits();
     sorted_totals.sort_unstable();
     eprintln!("{:?} {}",sorted_totals, sorted_totals.len());
     // assert_eq!(sorted_totals, vec![48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63]);

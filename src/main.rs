@@ -152,16 +152,16 @@ impl Slots {
     //     ret
     // }
 
-    fn missing_upper_slots(self) -> Self{
+    fn used_upper_slots(self) -> Self{
         let upper_slots= FxHashSet::<u8>::from_iter(self.it().filter(|&x|x<=SIXES));
         let mut retval:Slots = default();
         for s in ACES..=SIXES { if !upper_slots.contains(&s) {retval.push(s)}; }
         retval
     }
  
-    /// returns the unique and relevant "upper bonus total" shortfalls that could have occurred from the missing upper slots 
-    fn upper_total_deficits(self) -> Vec<u8> { //impl Iterator<Item=u8> {  // TODO implement without allocating?
-        let mut unique_totals:FxHashSet<u8> = default();
+    /// returns the unique and relevant "upper bonus total" shortfalls that could have occurred from the previously used upper slots 
+    fn relevant_upper_deficits(self) -> Vec<u8> { //impl Iterator<Item=u8> {  // TODO implement without allocating?
+        let mut totals:FxHashSet<u8> = default();
         // these are all the possible score entries for each upper slot
         const UPPER_SCORES:[[u8;6];7] = [ 
             [0,0,0,0,0,0],      // STUB
@@ -173,37 +173,40 @@ impl Slots {
             [0,6,12,18,24,30],  // SIXES
         ];
         // only upper slots could have contributed to the upper total 
-        let slot_idxs = self.missing_upper_slots().it().filter(|&x|x<=SIXES).map(|x| x as usize).collect_vec();
-        let score_idx_perms= repeat_n(0..=5, slot_idxs.len()).multi_cartesian_product();
+        let used_slot_idxs = self.used_upper_slots().it().filter(|&x|x<=SIXES).map(|x| x as usize).collect_vec();
+        let used_score_idx_perms= repeat_n(0..=5, used_slot_idxs.len()).multi_cartesian_product();
         // for every permutation of entry indexes
-        for score_idxs in score_idx_perms {
+        for used_score_idxs in used_score_idx_perms {
             // covert the list of entry indecis to a list of entry -scores-, then total them
-            let tot = slot_idxs.iter().zip(score_idxs).map(|(i,ii)| UPPER_SCORES[*i][ii]).sum();
+            let tot = used_slot_idxs.iter().zip(used_score_idxs).map(|(i,ii)| UPPER_SCORES[*i][ii]).sum();
             // add the total to the set of unique totals 
-            unique_totals.insert(tot);
+            totals.insert(tot);
         }
 
-        //convert upper totals to upper deficits 
-        let unique_deficits = unique_totals.it().map(|x|63_u8.saturating_sub(x)).unique();
+        let unique_used_upper_slot_totals= totals.it().unique().collect_vec(); 
 
-        // filter out the deficits that aren't relevant because they can't be covered by the upper slots remaining 
+        // filter out the totals that aren't relevant because they can't be reached by the upper slots remaining 
         // NOTE doing this filters out a lot of unneeded state space but means the lookup function must separately map extraneous deficits to 63 using relevant_deficit()
-        let best_total = self.best_total_from_open_upper_slots();
-        let mut retval = unique_deficits.filter(|x| *x==63 || *x <= best_total).sorted().collect_vec(); //TODO 63 must be first but could remove sorted() somehow 
-        retval.reverse();
-        retval 
-        // let mut retval = unique_deficits.sorted().collect_vec();
-        // retval.reverse();
-        // retval
+        let best_current_slot_total = self.best_total_from_current_upper_slots();
+        let relevant_totals = unique_used_upper_slot_totals.it().filter/*keep!*/(|used_slots_total| 
+            *used_slots_total==0 || (
+            (*used_slots_total<=63) &&
+            (*used_slots_total + best_current_slot_total >= 63))
+        ).unique().collect_vec(); 
+        // relevant_totals.reverse();
+        // convert to relevant deficits
+        let relevant_deficits = relevant_totals.it().map(|x|63_u8.saturating_sub(x)).collect_vec() ;
+        print!("");
+        relevant_deficits 
 
     }
 
     //converts the given deficit to 63 if the deficit can't be closed by the remaining upper slots 
     fn relevant_deficit(self,deficit:u8) -> u8{
-        if deficit > self.best_total_from_open_upper_slots() {63} else {deficit}
+        if self.best_total_from_current_upper_slots() >= deficit {deficit} else {63}
     }
 
-    fn best_total_from_open_upper_slots (self) -> u8{
+    fn best_total_from_current_upper_slots (self) -> u8{
         self.it().fold(0,|a,x| if x<=SIXES {a + x*5} else {a}) 
     }
 
@@ -969,7 +972,7 @@ fn build_cache(game:GameState, app: &mut AppState) {
     for single_slot in game.sorted_open_slots {  // TODO: THREADS?
         let slots:Slots = [single_slot].into();//Slots{data:single_slot as u64, len:1}; //set of a single slot 
         for &yahtzee_is_wild in [false, single_slot!=YAHTZEE].iter().unique() {
-            for upper_bonus_deficit in slots.upper_total_deficits(){
+            for upper_bonus_deficit in slots.relevant_upper_deficits(){
                 for outcome in all_die_combos{
                     let state = GameState{
                         sorted_dievals: outcome.dievals, //pre-cached dievals should already be sorted here
@@ -993,7 +996,7 @@ fn build_cache(game:GameState, app: &mut AppState) {
             let yahtzee_may_be_wild = !slots.it().contains(&YAHTZEE); // yahtzees aren't wild whenever yahtzee slot is still available 
 
             // for each upper bonus deficit 
-            for upper_bonus_deficit in slots.upper_total_deficits() {
+            for upper_bonus_deficit in slots.relevant_upper_deficits() {
 
                 // for each yahtzee wild possibility
                 for yahtzee_is_wild in [false,yahtzee_may_be_wild].it().unique() {
@@ -1077,13 +1080,14 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                         let mut newvals = die_combo.dievals;
                                         newvals.blit(selection_outcome.dievals, selection_outcome.mask);
                                         newvals = sorted[&newvals]; 
-                                        let ev_for_this_selection_outcome = app.ev_cache.get(&GameState{
+                                        let game = GameState{
                                             sorted_dievals: newvals, 
                                             sorted_open_slots: slots, 
                                             upper_bonus_deficit: slots.relevant_deficit(upper_bonus_deficit), // TODO optimize
                                             yahtzee_is_wild, 
                                             rolls_remaining: next_roll, // we'll average all the 'next roll' possibilities (which we'd calclated last) to get ev for 'this roll' 
-                                        }).unwrap().ev; 
+                                        };
+                                        let ev_for_this_selection_outcome = app.ev_cache.get(&game).unwrap().ev; 
                                         let gamestate_for_upcoming_roll = 
                                         total_ev_for_selection += ev_for_this_selection_outcome * selection_outcome.arrangements as f32;// bake into upcoming aveage
                                         outcomes_count += selection_outcome.arrangements as u64; // we loop through die "combos" but we'll average all "perumtations"
