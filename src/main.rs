@@ -4,7 +4,7 @@
 use std::{thread::{self, spawn, sleep, ThreadId}, sync::{Mutex, Arc, mpsc, RwLock}, ops::Index, cmp::Ordering, time::Instant, default};
 use std::{cmp::{max, min}, fs::{self, File}, time::Duration, ops::Range, fmt::Display, panic};
 use itertools::{Itertools, iproduct, repeat_n};
-use indicatif::{ProgressBar, ProgressStyle, ProgressFinish};
+use indicatif::{ProgressBar, ProgressStyle, ProgressFinish, MultiProgress};
 use rustc_hash::{FxHashMap, FxHashSet};
 use once_cell::sync::Lazy;
 use std::io::Write; 
@@ -182,23 +182,19 @@ impl Slots {
             // add the total to the set of unique totals 
             totals.insert(tot);
         }
+        totals.insert(0); // 0 is always relevant, even if there are no used upper slots
 
-        let unique_used_upper_slot_totals= totals.it().unique().collect_vec(); 
+        let unique_used_upper_slot_totals= totals.it().unique();
 
         // filter out the totals that aren't relevant because they can't be reached by the upper slots remaining 
         // NOTE doing this filters out a lot of unneeded state space but means the lookup function must separately map extraneous deficits to 63 using relevant_deficit()
         let best_current_slot_total = self.best_total_from_current_upper_slots();
         let relevant_totals = unique_used_upper_slot_totals.it().filter/*keep!*/(|used_slots_total| 
-            *used_slots_total==0 || (
-            (*used_slots_total<=63) &&
-            (*used_slots_total + best_current_slot_total >= 63))
-        ).unique().collect_vec(); 
-        // relevant_totals.reverse();
-        // convert to relevant deficits
-        let relevant_deficits = relevant_totals.it().map(|x|63_u8.saturating_sub(x)).collect_vec() ;
-        print!("");
-        relevant_deficits 
-
+            *used_slots_total==0 || 
+            (*used_slots_total<=63) 
+            // && (*used_slots_total + best_current_slot_total >= 63)) // handled in saturating_sub below
+        ).unique();
+        relevant_totals.it().map(|x|63_u8.saturating_sub(x)).collect_vec() 
     }
 
     //converts the given deficit to 63 if the deficit can't be closed by the remaining upper slots 
@@ -488,48 +484,85 @@ impl Default for GameState{
         }
     }
  }
+ impl GameState{ 
+    /// calculate relevant counts for gamestate: required lookups and saves
+    fn counts(self) -> GameStateCounts {
+        let rolls_left_3_lookups = 1;
+        let rolls_left_2_combos = 252;
+        let roll_left_1_combos = 252;
+        let selections = 32;
+        let dice_lookups = rolls_left_3_lookups + (roll_left_1_combos + rolls_left_2_combos) * selections ;
+
+        let mut lookups:u64 = 0;
+        let mut saves:usize =0;
+
+        for subset_len in 1..=self.sorted_open_slots.len{ 
+            for slots_vec in self.sorted_open_slots.it().combinations(subset_len as usize) {
+                for upper_bonus_deficit in self.sorted_open_slots.relevant_upper_deficits() {
+                    let yahtzee_may_be_wild = !self.sorted_open_slots.it().contains(&YAHTZEE); // yahtzees aren't wild whenever yahtzee slot is still available 
+                    for yahtzee_is_wild in [false,yahtzee_may_be_wild].it().unique() {
+                        let slot_perms = FACT[subset_len as usize];
+                        lookups += dice_lookups + slot_perms;
+                        saves+=1;
+                        // println!("+({}+{})={} | {} ", dice_lookups, slot_perms, lookups, saves, );
+        }}}}
+        
+        GameStateCounts{ lookups, saves } 
+    }
+}
+#[derive(Debug)]
+struct GameStateCounts {
+    lookups:u64,
+    saves:usize 
+}
+
 
 /*-------------------------------------------------------------
 AppState
 -------------------------------------------------------------*/
-#[derive(Clone)]
+// #[derive(Clone)]
 struct AppState{
-    progress_bar:ProgressBar, 
+    bar:ProgressBar,
     ev_cache:FxHashMap<GameState,ChoiceEV>,
-    checkpoint: Duration,
+    time_since_save: Duration,
     // done:FxHashSet<Slots>,
 }
 impl AppState{
     fn new(game: &GameState) -> Self{
-        let slot_count=game.sorted_open_slots.len as usize;
-        let slot_combos:u64 = (1..=slot_count).map(|r| n_take_r(slot_count, r ,false,false) as u64 ).sum() ;
-        let slot_perms:u64 = (1..=slot_count).map(|r| n_take_r(slot_count, r ,true,false) as u64 ).sum() ;
-        let pb = ProgressBar::new(slot_perms); 
-        // pb.set_style(ProgressStyle::default_bar()
-        //     .template("{prefix} {wide_bar} {percent}% {pos:>4}/{len:4} {elapsed:>}/{duration} ETA:{eta}")
-        //     .on_finish(ProgressFinish::Abandon)
-        // );
-        let init_capacity = slot_combos as usize * 252 * 64; // * 2 * 2; // roughly: slotcombos * diecombos * deficits * wilds * rolls
-        let cachemap = if let Ok(bytes) = fs::read("ev_cache") { 
+        // let slot_count=game.sorted_open_slots.len as usize;
+        // let slot_perms:u64 = (1..=slot_count).map(|r| n_take_r(slot_count, r ,true,false) as u64 ).sum() ;
+        // let slot_combos:u64 = (1..=slot_count).map(|r| n_take_r(slot_count, r ,false,false) as u64 ).sum() ;
+        let GameStateCounts{ lookups, saves} = game.counts();
+
+        let bar = ProgressBar::new(lookups);
+        bar.set_style(ProgressStyle::default_bar()
+            .template("{prefix} {wide_bar} {percent}% {pos:>4}/{len:4} {elapsed:>}/{duration} ETA:{eta}")
+            .on_finish(ProgressFinish::AtCurrentPos)
+        );
+
+        let init_hash_capacity = saves; // slot_combos as usize * (252+252+1) * 32; // * 2 * 2; // roughly: slotcombos * diecombos * deficits * wilds * rolls
+        let ev_cache = if let Ok(bytes) = fs::read("ev_cache") { 
             ::bincode::deserialize(&bytes).unwrap() 
         } else {
-            FxHashMap::with_capacity_and_hasher(init_capacity,default())
+            FxHashMap::with_capacity_and_hasher(init_hash_capacity, default())
         };
-        let cache_keys:Vec<&GameState> = cachemap.keys().it().collect_vec();
-        let former_ticks:u64 = cache_keys.it().filter(|x|x.rolls_remaining ==0).map(|x|FACT[x.sorted_open_slots.len as usize] ).sum();
+
+        // let cache_keys:Vec<&GameState> = cachemap.keys().it().collect_vec();
+        // let former_ticks:u64 = cache_keys.it().filter(|x|x.rolls_remaining ==0).map(|x|FACT[x.sorted_open_slots.len as usize] ).sum();
         // pb.inc(former_ticks);
-        Self{   progress_bar : pb, 
-                ev_cache : cachemap,
-                checkpoint: Duration::new(0,0),
+
+        Self{   bar,
+                ev_cache,
+                time_since_save: Duration::new(0,0),
                 // done: FxHashSet::default(), 
         }
     }
 
     fn save_periodically(&mut self , every_n_secs:u64){
-        let current_duration = self.progress_bar.elapsed();
-        let last_duration = self.checkpoint;
+        let current_duration = self.bar.elapsed();
+        let last_duration = self.time_since_save;
         if current_duration - last_duration >= Duration::new(every_n_secs,0) { 
-            self.checkpoint = current_duration;
+            self.time_since_save = current_duration;
             self.save_cache();
         }
     }
@@ -687,19 +720,19 @@ fn n_take_r(n:usize, r:usize, order_matters:bool, with_replacement:bool)->u64{
 
 }
 
-fn console_log(game:&GameState, app:&AppState, choice:Choice, ev:f32 ){
-    app.progress_bar.println (
-        format!("{:>}\t{}\t{:>4}\t{:>4.2}\t{}\t{}\t{:>30}", 
-            game.rolls_remaining, game.yahtzee_is_wild, game.upper_bonus_deficit, ev, choice, game.sorted_dievals, game.sorted_open_slots 
-        )
-    );
-}
+// fn progress_log(game:&GameState, app:&AppState, choice:Choice, ev:f32 ){
+//     app.progress_bar.println (
+//         format!("{:>}\t{}\t{:>4}\t{:>4.2}\t{}\t{}\t{:>30}", 
+//             game.rolls_remaining, game.yahtzee_is_wild, game.upper_bonus_deficit, ev, choice, game.sorted_dievals, game.sorted_open_slots 
+//         )
+//     );
+// }
 
-fn print_state_choice(state: &GameState, choice_ev:ChoiceEV){
+fn print_state_choice(state: &GameState, choice_ev:ChoiceEV, app:&AppState){
     if state.rolls_remaining==0 {
-        println!("S {} {:2?} {:2?} {} {: >5} {} {: >6.2?} {:?}",state.sorted_dievals, state.rolls_remaining, state.upper_bonus_deficit, state.sorted_open_slots, choice_ev.choice, state.yahtzee_is_wild as u8, choice_ev.ev, thread::current().id()); 
+        app.bar.println(format!("S {} {:2?} {:2?} {} {: >5} {} {: >6.2?} {:?}",state.sorted_dievals, state.rolls_remaining, state.upper_bonus_deficit, state.sorted_open_slots, choice_ev.choice, state.yahtzee_is_wild as u8, choice_ev.ev, thread::current().id())); 
     } else {
-        println!("D {} {:2?} {:2?} {} {:05b} {} {: >6.2?} {:?}",state.sorted_dievals, state.rolls_remaining, state.upper_bonus_deficit, state.sorted_open_slots, choice_ev.choice, state.yahtzee_is_wild as u8, choice_ev.ev, thread::current().id()); 
+        app.bar.println(format!("D {} {:2?} {:2?} {} {:05b} {} {: >6.2?} {:?}",state.sorted_dievals, state.rolls_remaining, state.upper_bonus_deficit, state.sorted_open_slots, choice_ev.choice, state.yahtzee_is_wild as u8, choice_ev.ev, thread::current().id())); 
     };
 }
 
@@ -920,14 +953,14 @@ fn best_choice_ev(game:GameState,app: &mut AppState) -> ChoiceEV  {
     // console_log(&game,app,result.choice,result.ev);
 
     // periodically update progress and save
-    if game.rolls_remaining==0 { // TODO this will get slow. go back to a dedicated seen_slots hashset once multithreading is sorted out 
-        let seen_slots = app.ev_cache.keys().any(|k| k.sorted_open_slots == game.sorted_open_slots); 
-        if ! seen_slots  {
-            app.save_periodically(600) ;
-            console_log(&game,app, result.choice, result.ev);
-            app.progress_bar.inc(FACT[game.sorted_open_slots.len as usize]);
-        }
-    }
+    // if game.rolls_remaining==0 { // TODO this will get slow. go back to a dedicated seen_slots hashset once multithreading is sorted out 
+    //     let seen_slots = app.ev_cache.keys().any(|k| k.sorted_open_slots == game.sorted_open_slots); 
+    //     if ! seen_slots  {
+    //         app.save_periodically(600) ;
+    //         console_log(&game,app, result.choice, result.ev);
+    //         app.progress_bar.inc(FACT[game.sorted_open_slots.len as usize]);
+    //     }
+    // }
     
     app.ev_cache.insert(game, result);
     result 
@@ -983,7 +1016,7 @@ fn build_cache(game:GameState, app: &mut AppState) {
                     let score = score_slot_in_context(single_slot, outcome.dievals, yahtzee_is_wild, upper_bonus_deficit) as f32;
                     let choice_ev = ChoiceEV{ choice: single_slot, ev: score};
                     leaf_cache.insert(state, choice_ev);
-                    print_state_choice(&state, choice_ev);
+                    print_state_choice(&state, choice_ev, app);
     } } } }
 
     // for each length 
@@ -1022,9 +1055,6 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                     let mut upper_deficit_now = upper_bonus_deficit;
                                     let head:Slots = slot_perm.subset(0, 1);
                                     let mut next_dievals_or_wildcard = die_combo.dievals; 
-                                    // let mut tail:Slots = if slot_perm.len > 1 {slot_perm.subset(1, slot_perm.len-1)} else {head};
-                                    // tail.sort(); //TODO lookup?
-                                    // we can avoid sorting the permutation tail by derving it instead from the (unpermutated) slots with 'head' removed
                                     let tail = if slot_perm.len > 1 { slots.removed(perm_first_slot) } else {head};
 
                                     // find the collective ev for the all the slots when arranged like this , 
@@ -1039,9 +1069,8 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                             upper_bonus_deficit: slots_piece.relevant_deficit(upper_deficit_now),
                                         };
                                         let cache = if slots_piece==head { &leaf_cache } else { &app.ev_cache};
-                                        // let choice_ev:ChoiceEV;
-                                        // if let Some(choice) = cache.get(state) {choice_ev = *choice} else {print!("{:#?}",state);panic!()}; 
                                         let choice_ev = cache.get(state).unwrap(); 
+                                        app.bar.inc(1);
                                         total += choice_ev.ev;
                                         if slots_piece==head {
                                             if perm_first_slot==YAHTZEE && choice_ev.ev>0.0 {yahtzee_wild_now=true;};
@@ -1065,7 +1094,7 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                     upper_bonus_deficit, yahtzee_is_wild ,
                                 };
                                 built_this_thread.insert( state, slot_choice_ev);
-                                print_state_choice(&state, slot_choice_ev);
+                                print_state_choice(&state, slot_choice_ev, app);
 
                             } else { //if rolls_remaining > 0  
                             /* HANDLE DICE SELECTION */    
@@ -1088,6 +1117,7 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                             rolls_remaining: next_roll, // we'll average all the 'next roll' possibilities (which we'd calclated last) to get ev for 'this roll' 
                                         };
                                         let ev_for_this_selection_outcome = app.ev_cache.get(&game).unwrap().ev; 
+                                        app.bar.inc(1);
                                         let gamestate_for_upcoming_roll = 
                                         total_ev_for_selection += ev_for_this_selection_outcome * selection_outcome.arrangements as f32;// bake into upcoming aveage
                                         outcomes_count += selection_outcome.arrangements as u64; // we loop through die "combos" but we'll average all "perumtations"
@@ -1105,7 +1135,7 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                         rolls_remaining, 
                                     }; 
                                 built_this_thread.insert(state,best_dice_choice_ev);
-                                print_state_choice(&state, best_dice_choice_ev);
+                                print_state_choice(&state, best_dice_choice_ev,app);
 
                             } // endif roll_remaining...  
 
