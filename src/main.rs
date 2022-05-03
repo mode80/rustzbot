@@ -255,6 +255,14 @@ impl From<Vec<Slot>> for Slots{
         retval 
     }
 }
+impl From<&[Slot]> for Slots{
+    fn from(a: &[Slot]) -> Self {
+        assert! (a.len() <= 13);
+        let mut retval = Slots{ len:a.len() as u8, data:default()};
+        for i in 0..a.len() { retval.set(i as u8, a[i as usize]); }
+        retval 
+    }
+}
 impl <const N:usize> From<[Slot; N]> for Slots{
     fn from(a: [Slot; N]) -> Self {
         assert! (a.len() <= 13);
@@ -1092,48 +1100,50 @@ fn build_cache(game:GameState, app: &mut AppState) {
                             /* HANDLE SLOT SELECTION */
 
                                 let mut slot_choice_ev:ChoiceEV = default();
+                                app.bar.inc(FACT[subset_len as usize]*if subset_len==1{1}else{2}); // TODO update if optimization below works out
                 
                                 // for each slot permutation 
-                                app.bar.inc(FACT[subset_len as usize]*if subset_len==1{1}else{2});
-                                for slot_perm in slots.permutations() { 
-                                                    
-                                    let mut total = 0.0;
-                                    let perm_first_slot:Slot = slot_perm.get(0);
-                                    let mut yahtzee_wild_now = yahtzee_is_wild;
-                                    let mut upper_deficit_now = upper_bonus_deficit;
-                                    let head:Slots = slot_perm.subset(0, 1);
-                                    let mut next_dievals_or_wildcard = die_combo.dievals; 
-                                    let tail = if subset_len > 1 { slots.removed(perm_first_slot) } else {head};
+                                // for slot_combo in slots.it().combinations(subset_len as usize){
 
-                                    // find the collective ev for the all the slots when arranged like this , 
-                                    // do this by summing the ev for the first (head) slot with the ev value that we look up for the remaining (tail) slots
-                                    let mut rolls_remaining = 0;
-                                    for slots_piece in [head,tail].it().unique(){
-                                        let state = &GameState{
-                                            sorted_dievals: next_dievals_or_wildcard, 
-                                            sorted_open_slots: slots_piece,
-                                            rolls_remaining, 
-                                            yahtzee_is_wild: yahtzee_wild_now, 
-                                            upper_bonus_deficit: slots_piece.relevant_deficit(upper_deficit_now),
-                                        };
-                                        let cache = if slots_piece==head { &leaf_cache } else { &app.ev_cache};
-                                        let choice_ev = cache.get(state).unwrap(); 
-                                        // app.bar.inc(1);
-                                        total += choice_ev.ev;
-                                        if slots_piece==head {
-                                            if perm_first_slot==YAHTZEE && choice_ev.ev>0.0 {yahtzee_wild_now=true;};
-                                            if perm_first_slot<=SIXES {
-                                                let deduct = (choice_ev.ev as u8) % 100; // the modulo 100 here removes any yathzee bonus from ev since that doesnt' count toward upper bonus total
-                                                upper_deficit_now = upper_deficit_now.saturating_sub(deduct);
-                                            }; 
-                                            rolls_remaining=3; // for upcoming tail lookup, we always want the ev for 3 rolls remaining
-                                            next_dievals_or_wildcard = DieVals::default() // for 3 rolls remaining, use "wildcard" representative dievals since dice don't matter when rolling all of them
-                                        }
-                                    } //end for slot_piece
+                                    for slot in slots {
+
+                                        let mut yahtzee_wild_now = yahtzee_is_wild;
+                                        let mut upper_deficit_now = upper_bonus_deficit;
+                                        let head:Slots = [slot].into();
+                                        let mut next_dievals_or_wildcard = die_combo.dievals; 
+                                        let tail = if subset_len > 1 { slots.removed(slot) } else {head};
+                                        let mut head_plus_tail_ev = 0.0;
+
+                                        // find the collective ev for the all the slots when arranged like this , 
+                                        // do this by summing the ev for the first (head) slot with the ev value that we look up for the remaining (tail) slots
+                                        let mut rolls_remaining = 0;
+                                        for slots_piece in [head,tail].it().unique(){
+                                            let state = &GameState{
+                                                sorted_dievals: next_dievals_or_wildcard, 
+                                                sorted_open_slots: slots_piece,
+                                                rolls_remaining, 
+                                                yahtzee_is_wild: yahtzee_wild_now, 
+                                                upper_bonus_deficit: slots_piece.relevant_deficit(upper_deficit_now),
+                                            };
+                                            let cache = if slots_piece==head { &leaf_cache } else { &app.ev_cache};
+                                            let choice_ev = cache.get(state).unwrap(); 
+                                            head_plus_tail_ev += choice_ev.ev;
+                                            if slots_piece==head {
+                                                if slot==YAHTZEE && choice_ev.ev>0.0 {yahtzee_wild_now=true;};
+                                                if slot<=SIXES {
+                                                    let deduct = (choice_ev.ev as u8) % 100; // the modulo 100 here removes any yathzee bonus from ev since that doesnt' count toward upper bonus total
+                                                    upper_deficit_now = upper_deficit_now.saturating_sub(deduct);
+                                                }; 
+                                                rolls_remaining=3; // for upcoming tail lookup, we always want the ev for 3 rolls remaining
+                                                next_dievals_or_wildcard = DieVals::default() // for 3 rolls remaining, use "wildcard" representative dievals since dice don't matter when rolling all of them
+                                            }
+                                        } //end for slot_piece
+                                        // let total = head_plus_tail_ev * FACT[tail.len as usize] as f32; // we iteratate the combo but we must sum permutations. the multiplier here makes the conversion
+                                        if head_plus_tail_ev >= slot_choice_ev.ev { slot_choice_ev = ChoiceEV{ choice: slot, ev: head_plus_tail_ev}};
+                                    }
                                     
-                                    if total >= slot_choice_ev.ev { slot_choice_ev = ChoiceEV{ choice: perm_first_slot, ev: total }};
 
-                                } // end for slot_perm 
+                                // } // end for slot_combo
 
                                 let state = GameState {
                                     sorted_dievals: die_combo.dievals, 

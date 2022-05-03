@@ -355,7 +355,7 @@ fn test_permutations() {
     }; 
 }
 
-// #[test]
+#[test]
 fn new_bench_test() {
     let game = GameState{   rolls_remaining: 3,
                             sorted_open_slots: [1,7,8,9,10,11,12,13].into(), 
@@ -372,7 +372,7 @@ fn new_bench_test() {
 // #[test]
 fn build_cache_test() {
     let game = GameState{   rolls_remaining: 3,
-                            sorted_open_slots: [1,2,3,4].into(), 
+                            sorted_open_slots: [1,8,12].into(), 
                             sorted_dievals: [0,0,0,0,0].into(), 
                             upper_bonus_deficit: 0, 
                             yahtzee_is_wild: false, };
@@ -414,7 +414,7 @@ fn relevant_upper_deficits_test(){
    eprintln!("{:?}", retval );
 }
 
-#[test]
+// #[test]
 fn encode_sorted_test() {
     let slots:Slots = [1,7,8,9,10,11,12,13].into(); 
     let lhs=slots.encode_sorted_to_u16(); 
@@ -422,7 +422,7 @@ fn encode_sorted_test() {
     assert_eq!(lhs, 0b11111110000010);
 }
 
-#[test]
+// #[test]
 fn decode_u16_test() {
     let lhs = Slots::decode_u16(0b11111110000010); 
     eprintln!("{:?}", lhs);
