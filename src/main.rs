@@ -182,7 +182,6 @@ impl Slots {
             // add the total to the set of unique totals 
             totals.insert(tot);
         }
-        totals.insert(0); // 0 is always relevant, even if there are no used upper slots, because it becomes a sentinel value //TODO make 0 the sentinel and get double duty
         totals.insert(63); // 63 is always relevant, because it emerges as the 0 deficit during saturating subtraction 
 
         let unique_used_upper_slot_totals= totals.it().unique().collect_vec();
@@ -200,9 +199,9 @@ impl Slots {
     
     }
 
-    //converts the given deficit to 63 if the deficit can't be closed by the remaining upper slots 
+    //converts the given deficit to a default if the deficit can't be closed by the remaining upper slots 
     fn relevant_deficit(self,deficit:u8) -> u8{
-        if self.best_total_from_current_upper_slots() >= deficit {deficit} else {63}
+        if self.best_total_from_current_upper_slots() >= deficit {deficit} else {0}
     }
 
     fn best_total_from_current_upper_slots (self) -> u8{
