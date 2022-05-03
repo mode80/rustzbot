@@ -355,7 +355,7 @@ fn test_permutations() {
     }; 
 }
 
-// #[test]
+#[test]
 fn new_bench_test() {
     let game = GameState{   rolls_remaining: 3,
                             sorted_open_slots: [1,7,8,9,10,11,12,13].into(), 
@@ -407,7 +407,7 @@ fn counts_test(){
 
 }
 
-#[test]
+// #[test]
 fn relevant_upper_deficits_test(){
    let slots:Slots = [1,2,4].into();
    let retval = slots.relevant_upper_deficits() ;
