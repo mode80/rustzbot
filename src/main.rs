@@ -1,7 +1,7 @@
 #![allow(dead_code)] #![allow(unused_imports)] #![allow(unused_variables)]
 #![allow(clippy::needless_range_loop)] #![allow(clippy::unusual_byte_groupings)] 
 
-use std::{thread::{self, spawn, sleep, ThreadId}, sync::{Mutex, Arc, mpsc, RwLock}, ops::Index, cmp::Ordering, time::Instant, default};
+use std::{thread::{self, spawn, sleep, ThreadId}, sync::{Mutex, Arc, mpsc, RwLock}, ops::Index, cmp::Ordering, time::Instant, default, hash::Hasher};
 use std::{cmp::{max, min}, fs::{self, File}, time::Duration, ops::Range, fmt::Display, panic};
 use itertools::{Itertools, iproduct, repeat_n};
 use indicatif::{ProgressBar, ProgressStyle, ProgressFinish, MultiProgress};
@@ -56,6 +56,24 @@ struct Slots{
 */
 
 impl Slots {
+
+    fn encode_sorted_to_u16(self) -> u16 {
+        let mut ret:u16 = 0;
+        self.it().for_each(|x| ret |= 1<<x); 
+        ret
+    }
+
+    fn decode_u16(input:u16) -> Self {
+        let mut mut_input = input;
+        let mut trailing_zeros=0;
+        let mut slots = Slots::default();
+        while trailing_zeros<13 {
+            trailing_zeros=mut_input.trailing_zeros() as u8;
+            slots.push(trailing_zeros);
+            mut_input ^= 1<<trailing_zeros;
+        }
+        slots
+    }
 
     fn set(&mut self, index:u8, val:Slot) { 
         debug_assert!(index < self.len); 
@@ -472,12 +490,27 @@ GameState
 -------------------------------------------------------------*/
 #[derive(Debug, PartialEq, Eq, Ord, PartialOrd, Hash, Clone, Copy, Serialize, Deserialize)]
 struct GameState{
-    sorted_dievals:DieVals, 
-    rolls_remaining:u8, 
-    upper_bonus_deficit:u8, 
-    yahtzee_is_wild:bool,
-    sorted_open_slots:Slots, 
+    sorted_dievals:DieVals, //15 bits 
+    rolls_remaining:u8, // 3 bits 
+    upper_bonus_deficit:u8, // 6 bits 
+    yahtzee_is_wild:bool, // 1 bit
+    sorted_open_slots:Slots, // 52 bits... 1+2+2+3+3+3+3+4+4+4+4+4+4=41 
 }
+// impl std::hash::Hash for GameState{
+//     fn hash<H: Hasher>(&self, hasher: &mut H) {
+//         todo!();
+//     }
+// }    
+// impl PartialEq for GameState{
+//     fn eq(&self, other: &Self) -> bool {
+//         self.sorted_dievals == other.sorted_dievals 
+//         && self.rolls_remaining == other.rolls_remaining 
+//         && self.upper_bonus_deficit == other.upper_bonus_deficit 
+//         && self.yahtzee_is_wild == other.yahtzee_is_wild 
+//         && self.sorted_open_slots == other.sorted_open_slots
+//     }
+// }    
+
 impl Default for GameState{
     fn default() -> Self {
         Self { sorted_dievals: default(), rolls_remaining: 3, upper_bonus_deficit: 63, 

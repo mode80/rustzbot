@@ -386,7 +386,7 @@ fn build_cache_test() {
     assert_eq!(lhs.ev,  rhs.ev);
 }
 
-#[test]
+// #[test]
 fn main_test(){
     let game = GameState::default();
     let app = & mut AppState::new(&game);
@@ -412,4 +412,19 @@ fn relevant_upper_deficits_test(){
    let slots:Slots = [1,2,4].into();
    let retval = slots.relevant_upper_deficits() ;
    eprintln!("{:?}", retval );
+}
+
+#[test]
+fn encode_sorted_test() {
+    let slots:Slots = [1,7,8,9,10,11,12,13].into(); 
+    let lhs=slots.encode_sorted_to_u16(); 
+    eprintln!("{:b}", lhs);
+    assert_eq!(lhs, 0b11111110000010);
+}
+
+#[test]
+fn decode_u16_test() {
+    let lhs = Slots::decode_u16(0b11111110000010); 
+    eprintln!("{:?}", lhs);
+    assert_eq!(lhs, [1,7,8,9,10,11,12,13].into());
 }
