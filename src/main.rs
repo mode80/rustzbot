@@ -22,14 +22,12 @@ MAIN
 -------------------------------------------------------------*/
 fn main() {
     
-    
     let game = GameState::default();
-    // game.sorted_open_slots = [7,8,9,10,11,12,13].into();
     let app = & mut AppState::new(&game);
 
     build_cache(game,app);
+    app.save_cache();
 
-    // let _ = best_choice_ev(game, app);
 }
 
 /*-------------------------------------------------------------

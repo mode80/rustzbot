@@ -355,7 +355,7 @@ fn test_permutations() {
     }; 
 }
 
-#[test]
+// #[test]
 fn new_bench_test() {
     let game = GameState{   rolls_remaining: 3,
                             sorted_open_slots: [1,7,8,9,10,11,12,13].into(), 
@@ -386,7 +386,7 @@ fn build_cache_test() {
     assert_eq!(lhs.ev,  rhs.ev);
 }
 
-// #[test]
+#[test]
 fn main_test(){
     let game = GameState::default();
     let app = & mut AppState::new(&game);
