@@ -190,11 +190,13 @@ impl Slots {
         // NOTE doing this filters out a lot of unneeded state space but means the lookup function must separately map extraneous deficits to 63 using relevant_deficit()
         let best_current_slot_total = self.best_total_from_current_upper_slots();
         let relevant_totals = unique_used_upper_slot_totals.it().filter/*keep!*/(|used_slots_total| 
-            *used_slots_total==0 || 
-            (*used_slots_total<=63) 
-            // && (*used_slots_total + best_current_slot_total >= 63)) // handled in saturating_sub below
+            *used_slots_total==0 || (
+            (*used_slots_total<=63) &&
+            (*used_slots_total + best_current_slot_total >= 63))
         ).unique();
+
         relevant_totals.it().map(|x|63_u8.saturating_sub(x)).collect_vec() 
+    
     }
 
     //converts the given deficit to 63 if the deficit can't be closed by the remaining upper slots 
@@ -728,13 +730,22 @@ fn n_take_r(n:usize, r:usize, order_matters:bool, with_replacement:bool)->u64{
 //     );
 // }
 
-fn print_state_choice(state: &GameState, choice_ev:ChoiceEV, app:&AppState){
+// fn log_state_choice(state: &GameState, choice_ev:ChoiceEV, app:&AppState){
+//     if state.rolls_remaining==0 {
+//         app.bar.println(format!("S {} {:2?} {:2?} {} {: >5} {} {: >6.2?} {:?}",state.sorted_dievals, state.rolls_remaining, state.upper_bonus_deficit, state.sorted_open_slots, choice_ev.choice, state.yahtzee_is_wild as u8, choice_ev.ev, thread::current().id())); 
+//     } else {
+//         app.bar.println(format!("D {} {:2?} {:2?} {} {:05b} {} {: >6.2?} {:?}",state.sorted_dievals, state.rolls_remaining, state.upper_bonus_deficit, state.sorted_open_slots, choice_ev.choice, state.yahtzee_is_wild as u8, choice_ev.ev, thread::current().id())); 
+//     };
+// }
+
+fn print_state_choice(state: &GameState, choice_ev:ChoiceEV){
     if state.rolls_remaining==0 {
-        app.bar.println(format!("S {} {:2?} {:2?} {} {: >5} {} {: >6.2?} {:?}",state.sorted_dievals, state.rolls_remaining, state.upper_bonus_deficit, state.sorted_open_slots, choice_ev.choice, state.yahtzee_is_wild as u8, choice_ev.ev, thread::current().id())); 
+        println!("S {} {:2?} {:2?} {} {: >5} {} {: >6.2?} {:?}",state.sorted_dievals, state.rolls_remaining, state.upper_bonus_deficit, state.sorted_open_slots, choice_ev.choice, state.yahtzee_is_wild as u8, choice_ev.ev, thread::current().id()); 
     } else {
-        app.bar.println(format!("D {} {:2?} {:2?} {} {:05b} {} {: >6.2?} {:?}",state.sorted_dievals, state.rolls_remaining, state.upper_bonus_deficit, state.sorted_open_slots, choice_ev.choice, state.yahtzee_is_wild as u8, choice_ev.ev, thread::current().id())); 
+        println!("D {} {:2?} {:2?} {} {:05b} {} {: >6.2?} {:?}",state.sorted_dievals, state.rolls_remaining, state.upper_bonus_deficit, state.sorted_open_slots, choice_ev.choice, state.yahtzee_is_wild as u8, choice_ev.ev, thread::current().id()); 
     };
 }
+
 
 /*-------------------------------------------------------------
 SCORING FNs
@@ -1016,7 +1027,7 @@ fn build_cache(game:GameState, app: &mut AppState) {
                     let score = score_slot_in_context(single_slot, outcome.dievals, yahtzee_is_wild, upper_bonus_deficit) as f32;
                     let choice_ev = ChoiceEV{ choice: single_slot, ev: score};
                     leaf_cache.insert(state, choice_ev);
-                    print_state_choice(&state, choice_ev, app);
+                    print_state_choice(&state, choice_ev);
     } } } }
 
     // for each length 
@@ -1041,7 +1052,7 @@ fn build_cache(game:GameState, app: &mut AppState) {
 
                         let built_from_threads = die_combos.into_par_iter().fold(FxHashMap::<GameState,ChoiceEV>::default, |mut built_this_thread, die_combo|{  
 
-                            if rolls_remaining==0  { //&& (subset_len > 1) //only need to choose among > 1 slot
+                            if rolls_remaining==0  { 
                             /* HANDLE SLOT SELECTION */
 
                                 let mut slot_choice_ev:ChoiceEV = default();
@@ -1070,7 +1081,7 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                         };
                                         let cache = if slots_piece==head { &leaf_cache } else { &app.ev_cache};
                                         let choice_ev = cache.get(state).unwrap(); 
-                                        app.bar.inc(1);
+                                        // app.bar.inc(1);
                                         total += choice_ev.ev;
                                         if slots_piece==head {
                                             if perm_first_slot==YAHTZEE && choice_ev.ev>0.0 {yahtzee_wild_now=true;};
@@ -1094,7 +1105,7 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                     upper_bonus_deficit, yahtzee_is_wild ,
                                 };
                                 built_this_thread.insert( state, slot_choice_ev);
-                                print_state_choice(&state, slot_choice_ev, app);
+                                print_state_choice(&state, slot_choice_ev);
 
                             } else { //if rolls_remaining > 0  
                             /* HANDLE DICE SELECTION */    
@@ -1117,7 +1128,7 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                             rolls_remaining: next_roll, // we'll average all the 'next roll' possibilities (which we'd calclated last) to get ev for 'this roll' 
                                         };
                                         let ev_for_this_selection_outcome = app.ev_cache.get(&game).unwrap().ev; 
-                                        app.bar.inc(1);
+                                        // app.bar.inc(1);
                                         let gamestate_for_upcoming_roll = 
                                         total_ev_for_selection += ev_for_this_selection_outcome * selection_outcome.arrangements as f32;// bake into upcoming aveage
                                         outcomes_count += selection_outcome.arrangements as u64; // we loop through die "combos" but we'll average all "perumtations"
@@ -1135,7 +1146,7 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                         rolls_remaining, 
                                     }; 
                                 built_this_thread.insert(state,best_dice_choice_ev);
-                                print_state_choice(&state, best_dice_choice_ev,app);
+                                print_state_choice(&state, best_dice_choice_ev);
 
                             } // endif roll_remaining...  
 
