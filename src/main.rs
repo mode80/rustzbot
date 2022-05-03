@@ -1081,7 +1081,7 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                         };
                                         let cache = if slots_piece==head { &leaf_cache } else { &app.ev_cache};
                                         let choice_ev = cache.get(state).unwrap(); 
-                                        app.bar.inc(1);
+                                        // app.bar.inc(1);
                                         total += choice_ev.ev;
                                         if slots_piece==head {
                                             if perm_first_slot==YAHTZEE && choice_ev.ev>0.0 {yahtzee_wild_now=true;};
@@ -1128,7 +1128,7 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                             rolls_remaining: next_roll, // we'll average all the 'next roll' possibilities (which we'd calclated last) to get ev for 'this roll' 
                                         };
                                         let ev_for_this_selection_outcome = app.ev_cache.get(&game).unwrap().ev; 
-                                        app.bar.inc(1);
+                                        // app.bar.inc(1);
                                         let gamestate_for_upcoming_roll = 
                                         total_ev_for_selection += ev_for_this_selection_outcome * selection_outcome.arrangements as f32;// bake into upcoming aveage
                                         outcomes_count += selection_outcome.arrangements as u64; // we loop through die "combos" but we'll average all "perumtations"
