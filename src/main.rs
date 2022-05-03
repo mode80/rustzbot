@@ -173,7 +173,7 @@ impl Slots {
             [0,6,12,18,24,30],  // SIXES
         ];
         // only upper slots could have contributed to the upper total 
-        let used_slot_idxs = self.used_upper_slots().it().filter(|&x|x<=SIXES).map(|x| x as usize).collect_vec();
+        let used_slot_idxs = &self.used_upper_slots().it().filter(|&x|x<=SIXES).map(|x| x as usize).collect_vec(); //TODO nix extra collect_vecs
         let used_score_idx_perms= repeat_n(0..=5, used_slot_idxs.len()).multi_cartesian_product();
         // for every permutation of entry indexes
         for used_score_idxs in used_score_idx_perms {
@@ -182,9 +182,10 @@ impl Slots {
             // add the total to the set of unique totals 
             totals.insert(tot);
         }
-        totals.insert(0); // 0 is always relevant, even if there are no used upper slots
+        totals.insert(0); // 0 is always relevant, even if there are no used upper slots, because it becomes a sentinel value //TODO make 0 the sentinel and get double duty
+        totals.insert(63); // 63 is always relevant, because it emerges as the 0 deficit during saturating subtraction 
 
-        let unique_used_upper_slot_totals= totals.it().unique();
+        let unique_used_upper_slot_totals= totals.it().unique().collect_vec();
 
         // filter out the totals that aren't relevant because they can't be reached by the upper slots remaining 
         // NOTE doing this filters out a lot of unneeded state space but means the lookup function must separately map extraneous deficits to 63 using relevant_deficit()
@@ -193,7 +194,7 @@ impl Slots {
             *used_slots_total==0 || (
             (*used_slots_total<=63) &&
             (*used_slots_total + best_current_slot_total >= 63))
-        ).unique();
+        ).unique().collect_vec();
 
         relevant_totals.it().map(|x|63_u8.saturating_sub(x)).collect_vec() 
     

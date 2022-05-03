@@ -372,7 +372,7 @@ fn new_bench_test() {
 // #[test]
 fn build_cache_test() {
     let game = GameState{   rolls_remaining: 3,
-                            sorted_open_slots: [1,8,12].into(), 
+                            sorted_open_slots: [1,2,3,4].into(), 
                             sorted_dievals: [0,0,0,0,0].into(), 
                             upper_bonus_deficit: 63, 
                             yahtzee_is_wild: false, };
@@ -405,4 +405,11 @@ fn counts_test(){
     let game = GameState::default();
     eprintln!("{:?}", game.counts() );
 
+}
+
+#[test]
+fn relevant_upper_deficits_test(){
+   let slots:Slots = [1,2,4].into();
+   let retval = slots.relevant_upper_deficits() ;
+   eprintln!("{:?}", retval );
 }
