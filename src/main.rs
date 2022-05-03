@@ -492,19 +492,20 @@ impl Default for GameState{
         let rolls_left_3_lookups = 1;
         let rolls_left_2_combos = 252;
         let roll_left_1_combos = 252;
-        let selections = 32;
-        let dice_lookups = rolls_left_3_lookups + (roll_left_1_combos + rolls_left_2_combos) * selections ;
+        let selection_outcomes = 1683;
+        let dice_lookups = selection_outcomes * (roll_left_1_combos + rolls_left_2_combos) + rolls_left_3_lookups;//848484
 
         let mut lookups:u64 = 0;
         let mut saves:usize =0;
 
         for subset_len in 1..=self.sorted_open_slots.len{ 
             for slots_vec in self.sorted_open_slots.it().combinations(subset_len as usize) {
-                for upper_bonus_deficit in self.sorted_open_slots.relevant_upper_deficits() {
-                    let yahtzee_may_be_wild = !self.sorted_open_slots.it().contains(&YAHTZEE); // yahtzees aren't wild whenever yahtzee slot is still available 
+                let slots:Slots =slots_vec.into(); 
+                let yahtzee_may_be_wild = !slots.it().contains(&YAHTZEE); // yahtzees aren't wild whenever yahtzee slot is still available 
+                for upper_bonus_deficit in slots.relevant_upper_deficits() {
                     for yahtzee_is_wild in [false,yahtzee_may_be_wild].it().unique() {
-                        let slot_perms = FACT[subset_len as usize];
-                        lookups += dice_lookups + slot_perms;
+                        let slot_perms = (FACT[subset_len as usize]) * 252 * if subset_len==1{1}else{2};// * subset_len as u64;
+                        lookups += dice_lookups + slot_perms ;
                         saves+=1;
                         // println!("+({}+{})={} | {} ", dice_lookups, slot_perms, lookups, saves, );
         }}}}
@@ -537,6 +538,7 @@ impl AppState{
         let GameStateCounts{ lookups, saves} = game.counts();
 
         let bar = ProgressBar::new(lookups);
+        bar.set_draw_rate(1);
         bar.set_style(ProgressStyle::default_bar()
             .template("{prefix} {wide_bar} {percent}% {pos:>4}/{len:4} {elapsed:>}/{duration} ETA:{eta}")
             .on_finish(ProgressFinish::AtCurrentPos)
@@ -731,11 +733,11 @@ fn n_take_r(n:usize, r:usize, order_matters:bool, with_replacement:bool)->u64{
 // }
 
 fn log_state_choice(state: &GameState, choice_ev:ChoiceEV, app:&AppState){
-    if state.rolls_remaining==0 {
-        app.bar.println(format!("S {} {:2?} {:2?} {} {: >5} {} {: >6.2?} {:?}",state.sorted_dievals, state.rolls_remaining, state.upper_bonus_deficit, state.sorted_open_slots, choice_ev.choice, state.yahtzee_is_wild as u8, choice_ev.ev, thread::current().id())); 
-    } else {
-        app.bar.println(format!("D {} {:2?} {:2?} {} {:05b} {} {: >6.2?} {:?}",state.sorted_dievals, state.rolls_remaining, state.upper_bonus_deficit, state.sorted_open_slots, choice_ev.choice, state.yahtzee_is_wild as u8, choice_ev.ev, thread::current().id())); 
-    };
+    // if state.rolls_remaining==0 {
+    //     app.bar.println(format!("S {} {:2?} {:2?} {} {: >5} {} {: >6.2?} {:?}",state.sorted_dievals, state.rolls_remaining, state.upper_bonus_deficit, state.sorted_open_slots, choice_ev.choice, state.yahtzee_is_wild as u8, choice_ev.ev, thread::current().id())); 
+    // } else {
+    //     app.bar.println(format!("D {} {:2?} {:2?} {} {:05b} {} {: >6.2?} {:?}",state.sorted_dievals, state.rolls_remaining, state.upper_bonus_deficit, state.sorted_open_slots, choice_ev.choice, state.yahtzee_is_wild as u8, choice_ev.ev, thread::current().id())); 
+    // };
 }
 
 // fn print_state_choice(state: &GameState, choice_ev:ChoiceEV){
@@ -1048,6 +1050,8 @@ fn build_cache(game:GameState, app: &mut AppState) {
                     // for each rolls remaining
                     for rolls_remaining in [0,1,2,3] { 
 
+                        app.bar.inc(212121);
+
                         let die_combos = if rolls_remaining==3 {placeholder_dievals} else {all_die_combos}; 
 
                         let built_from_threads = die_combos.into_par_iter().fold(FxHashMap::<GameState,ChoiceEV>::default, |mut built_this_thread, die_combo|{  
@@ -1058,6 +1062,7 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                 let mut slot_choice_ev:ChoiceEV = default();
                 
                                 // for each slot permutation 
+                                app.bar.inc(FACT[subset_len as usize]*if subset_len==1{1}else{2});
                                 for slot_perm in slots.permutations() { 
                                                     
                                     let mut total = 0.0;
@@ -1066,7 +1071,7 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                     let mut upper_deficit_now = upper_bonus_deficit;
                                     let head:Slots = slot_perm.subset(0, 1);
                                     let mut next_dievals_or_wildcard = die_combo.dievals; 
-                                    let tail = if slot_perm.len > 1 { slots.removed(perm_first_slot) } else {head};
+                                    let tail = if subset_len > 1 { slots.removed(perm_first_slot) } else {head};
 
                                     // find the collective ev for the all the slots when arranged like this , 
                                     // do this by summing the ev for the first (head) slot with the ev value that we look up for the remaining (tail) slots
@@ -1129,7 +1134,6 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                         };
                                         let ev_for_this_selection_outcome = app.ev_cache.get(&game).unwrap().ev; 
                                         // app.bar.inc(1);
-                                        let gamestate_for_upcoming_roll = 
                                         total_ev_for_selection += ev_for_this_selection_outcome * selection_outcome.arrangements as f32;// bake into upcoming aveage
                                         outcomes_count += selection_outcome.arrangements as u64; // we loop through die "combos" but we'll average all "perumtations"
                                     }
