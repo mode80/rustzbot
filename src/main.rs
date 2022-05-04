@@ -21,12 +21,22 @@ mod tests;
 MAIN
 -------------------------------------------------------------*/
 fn main() {
-    
-    let game = GameState::default();
-    let app = & mut AppState::new(&game);
 
+    let game = GameState { 
+        sorted_open_slots:  [1,8,12].into(), 
+        ..default()
+    };
+    let app = &mut AppState::new(&game);
     build_cache(game,app);
-    app.save_cache();
+    for entry in &app.ev_cache {
+        print_state_choice(entry.0, *entry.1)    
+    }
+     
+    // let game = GameState::default();
+    // let app = & mut AppState::new(&game);
+    // build_cache(game,app);
+    // app.save_cache();
+
 
 }
 
@@ -229,11 +239,13 @@ impl Slots {
 
 impl Display for Slots {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let temp:[Slot;13] = self.into(); 
-        let mut temp_vec = vec![0;13];
-        temp_vec.copy_from_slice(&temp);
+        // let a:[Slot;13] = self.into(); 
         // write!(f,"{:?}",temp.ii().filter(|x|*x!=0).collect_vec()) 
-        write!(f,"{:?}",temp.it().take(self.len as usize).collect_vec()) 
+        self.it().for_each(|x| write!(f,"{}_",x).unwrap());
+        Ok(())
+        //     "{: <2} {: <2} {: <2} {: <2} {: <2} {: <2} {: <2} {: <2} {: <2} {: <2} {: <2} {: <2} {: <2}",
+        //     a[0],a[1],a[2],a[3],a[4],a[5],a[6],a[7],a[8],a[9],a[10],a[11],a[12]
+        // )//.it().map(|x| format!("{: <2} ",x)).collect::<String>()) 
     }
 }
 
@@ -762,13 +774,15 @@ fn log_state_choice(state: &GameState, choice_ev:ChoiceEV, app:&AppState){
     // };
 }
 
-// fn print_state_choice(state: &GameState, choice_ev:ChoiceEV){
-//     if state.rolls_remaining==0 {
-//         println!("S {} {:2?} {:2?} {} {: >5} {} {: >6.2?} {:?}",state.sorted_dievals, state.rolls_remaining, state.upper_bonus_deficit, state.sorted_open_slots, choice_ev.choice, state.yahtzee_is_wild as u8, choice_ev.ev, thread::current().id()); 
-//     } else {
-//         println!("D {} {:2?} {:2?} {} {:05b} {} {: >6.2?} {:?}",state.sorted_dievals, state.rolls_remaining, state.upper_bonus_deficit, state.sorted_open_slots, choice_ev.choice, state.yahtzee_is_wild as u8, choice_ev.ev, thread::current().id()); 
-//     };
-// }
+fn print_state_choice(state: &GameState, choice_ev:ChoiceEV){
+    if state.rolls_remaining==0 {
+        println!("S\t{: >6.2?}\t{:_^5}\t{}\t{:2?}\t{:2?}\t{}\t{: <29}",
+        choice_ev.ev, choice_ev.choice, state.sorted_dievals, state.rolls_remaining, state.upper_bonus_deficit, if state.yahtzee_is_wild {"T"}else{"F"}, state.sorted_open_slots.to_string()); 
+    } else {
+        println!("D\t{: >6.2?}\t{:05b}\t{}\t{:2?}\t{:2?}\t{}\t{: <29}",
+        choice_ev.ev, choice_ev.choice, state.sorted_dievals, state.rolls_remaining, state.upper_bonus_deficit, if state.yahtzee_is_wild {"T"}else{"F"}, state.sorted_open_slots.to_string()); 
+    };
+}
 
 
 /*-------------------------------------------------------------

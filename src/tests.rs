@@ -355,7 +355,7 @@ fn test_permutations() {
     }; 
 }
 
-#[test]
+// #[test]
 fn new_bench_test() {
     let game = GameState{   rolls_remaining: 3,
                             sorted_open_slots: [1,7,8,9,10,11,12,13].into(), 
@@ -384,14 +384,6 @@ fn build_cache_test() {
     eprintln!("lhs {:?}",lhs);
     eprintln!("rhs {:?}",rhs); eprintln!("rhs {:?}",rhs);
     assert_eq!(lhs.ev,  rhs.ev);
-}
-
-// #[test]
-fn main_test(){
-    let game = GameState::default();
-    let app = & mut AppState::new(&game);
-    build_cache(game,app);
-    app.save_cache();
 }
 
 // #[test]
@@ -428,3 +420,22 @@ fn decode_u16_test() {
     eprintln!("{:?}", lhs);
     assert_eq!(lhs, [1,7,8,9,10,11,12,13].into());
 }
+
+#[test]
+fn print_out_cache(){
+    let game = GameState { 
+        sorted_open_slots:  [1,8,12].into(), 
+        ..default()
+    };
+    let app = &mut AppState::new(&game);
+    build_cache(game,app);
+    for entry in &app.ev_cache {
+        print_state_choice(entry.0, *entry.1)    
+    }
+    // let the_answer = app.ev_cache.get(&game);
+    // eprintln!("{:?}", the_answer );
+    // eprintln!("{:?}", the_answer );
+    // build_cache(game,app);
+    // app.save_cache();
+}
+

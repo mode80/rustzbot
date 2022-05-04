@@ -1,6 +1,6 @@
 /target
 .vscode
 .DS_Store
-ev_cache
+ev_cache*
 perms*
 .idea
