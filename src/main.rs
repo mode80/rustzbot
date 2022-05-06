@@ -174,6 +174,7 @@ impl Slots {
             totals.insert(tot);
         }
         totals.insert(63); // 63 is always relevant, because it emerges as the 0 deficit during saturating subtraction 
+        totals.insert(0); // 0 is always relevant, because it emerges as the correct 63 deficit when no upper slots are used  
 
         let unique_used_upper_slot_totals= totals.to().unique();
 
