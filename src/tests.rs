@@ -41,10 +41,7 @@ fn score_slot_test() {
 // #[test]
 fn ev_of_yahtzee_in_1_roll() {
 // see https://www.yahtzeemanifesto.com/yahtzee-odds.php 
-    let game = GameState{   rolls_remaining: 1, 
-                            sorted_open_slots: [YAHTZEE].into(),// array_vec!([Dieval;13] => YAHTZEE ), 
-                            sorted_dievals: Default::default(), 
-                            upper_bonus_deficit: INIT_DEFICIT , yahtzee_is_wild: false, };
+    let game = GameState{rolls_remaining: 1, sorted_open_slots: [YAHTZEE].into(), ..default() };
     let app = &mut AppState::new(&game);
     let _result = best_choice_ev(game, app);
     let in_1_odds = 6.0/7776.0; 
@@ -53,10 +50,7 @@ fn ev_of_yahtzee_in_1_roll() {
 
 // #[test]
 fn ev_of_yahtzee_in_2_rolls() {
-    let game = GameState{   rolls_remaining: 2, 
-                            sorted_open_slots: [YAHTZEE].into(), 
-                            sorted_dievals: Default::default(), 
-                            upper_bonus_deficit: INIT_DEFICIT , yahtzee_is_wild: false, };
+    let game = GameState{rolls_remaining: 2, sorted_open_slots: [YAHTZEE].into(), ..default()};
     let app = &mut AppState::new(&game);
     let _result = best_choice_ev(game, app);
     let in_2 = 0.01263; //https://www.datagenetics.com/blog/january42012/    
@@ -67,10 +61,9 @@ fn ev_of_yahtzee_in_2_rolls() {
 // #[test]
 fn ev_of_yahtzee_in_3_rolls() {
 // see https://www.yahtzeemanifesto.com/yahtzee-odds.php 
-    let game = GameState{   rolls_remaining: 3, 
+    let game = GameState{rolls_remaining: 3, 
                             sorted_open_slots: [YAHTZEE].into(), 
-                            sorted_dievals: Default::default(), 
-                            upper_bonus_deficit: INIT_DEFICIT , yahtzee_is_wild: false, };
+                            ..default() };
     let app = &mut AppState::new(&game);
     let _result = best_choice_ev(game, app);
     assert_approx_eq!( rounded( _result.ev, 2), rounded( 0.04603 * 50.0, 2) );
@@ -79,10 +72,7 @@ fn ev_of_yahtzee_in_3_rolls() {
 // #[test] 
 fn ev_of_smstraight_in_1() {
 // see https://www.yahtzeemanifesto.com/yahtzee-odds.php 
-    let game = GameState{   rolls_remaining: 1, 
-                            sorted_open_slots: [SM_STRAIGHT].into(), 
-                            sorted_dievals: [0,0,0,0,0].into(), 
-                            upper_bonus_deficit: INIT_DEFICIT , yahtzee_is_wild: false, };
+    let game = GameState{rolls_remaining: 1, sorted_open_slots: [SM_STRAIGHT].into(), ..default() };
     let app = &mut AppState::new(&game);
     let result = best_choice_ev(game, app);
     assert_eq!( rounded( result.ev / 30.0, 2), rounded( 0.1235 + 0.0309 , 2) );
@@ -91,10 +81,7 @@ fn ev_of_smstraight_in_1() {
 // #[test]
 fn ev_of_lgstraight_in_1() {
 // see https://www.yahtzeemanifesto.com/yahtzee-odds.php 
-    let game = GameState{   rolls_remaining: 1, 
-                            sorted_open_slots: [LG_STRAIGHT].into(), 
-                            sorted_dievals: Default::default(), 
-                            upper_bonus_deficit: INIT_DEFICIT , yahtzee_is_wild: false, };
+    let game = GameState{rolls_remaining: 1, sorted_open_slots: [LG_STRAIGHT].into(), ..default() };
     let app = &mut AppState::new(&game);
     let result = best_choice_ev(game, app);
     assert_eq!( rounded( result.ev  / 40.0, 4), rounded( 0.0309, 4) );
@@ -103,10 +90,7 @@ fn ev_of_lgstraight_in_1() {
 // #[test] 
 fn ev_of_4ofakind_in_1() {
 // see https://www.yahtzeemanifesto.com/yahtzee-odds.php 
-    let game = GameState{   rolls_remaining: 1, 
-                            sorted_open_slots: [FOUR_OF_A_KIND].into(), 
-                            sorted_dievals: Default::default(), 
-                            upper_bonus_deficit: INIT_DEFICIT , yahtzee_is_wild: false, };
+    let game = GameState{rolls_remaining: 1, sorted_open_slots: [FOUR_OF_A_KIND].into(), ..default() };
     let app = &mut AppState::new(&game);
     let result = best_choice_ev(game, app);
     assert_eq!( 
@@ -118,10 +102,7 @@ fn ev_of_4ofakind_in_1() {
 // #[test] 
 fn ev_of_3ofakind_in_1() {
 // see https://www.yahtzeemanifesto.com/yahtzee-odds.php 
-    let game = GameState{   rolls_remaining: 1, 
-                            sorted_open_slots: [THREE_OF_A_KIND].into(), 
-                            sorted_dievals: Default::default(), 
-                            upper_bonus_deficit: INIT_DEFICIT , yahtzee_is_wild: false, };
+    let game = GameState{rolls_remaining: 1, sorted_open_slots: [THREE_OF_A_KIND].into(), ..default()};
     let app = &mut AppState::new(&game);
     let result = best_choice_ev(game, app); 
     assert_eq!( 
@@ -173,11 +154,7 @@ fn print_misc() {
 
 // #[test]
 fn progress_eta_test() {
-    let game = GameState{   rolls_remaining: 3, 
-                            sorted_open_slots: [1,2,3,4,5,6,7,8,9,10,11,12,13].into(), 
-                            sorted_dievals: Default::default(), 
-                            upper_bonus_deficit: 30, 
-                            yahtzee_is_wild: false, };
+    let game = GameState{rolls_remaining: 3, sorted_open_slots: [1,2,3,4,5,6,7,8,9,10,11,12,13].into(), ..default()};
     let app = &mut AppState::new(&game);
     let result = best_choice_ev(game, app);
 }
@@ -323,7 +300,7 @@ fn bench_test() {
                             sorted_open_slots: [SIXES, FOUR_OF_A_KIND, YAHTZEE].into(), 
                             sorted_dievals: [1,2,3,4,5].into(), 
                             upper_bonus_deficit: 30, 
-                            yahtzee_is_wild: false, };
+                            ..default()};
     let app = &mut AppState::new(&game);
     let result = best_choice_ev(game, app);
     eprintln!("{:?}",result);
@@ -355,13 +332,12 @@ fn test_permutations() {
     }; 
 }
 
-// #[test]
+#[test]
 fn new_bench_test() {
     let game = GameState{   rolls_remaining: 3,
                             sorted_open_slots: [1,7,8,9,10,11,12,13].into(), 
-                            sorted_dievals: [0,0,0,0,0].into(), 
                             upper_bonus_deficit: 0, 
-                            yahtzee_is_wild: false, };
+                            ..default() };
     let app = &mut AppState::new(&game);
     build_cache(game,app);
     let lhs = app.ev_cache.get(&game).unwrap();
@@ -373,9 +349,7 @@ fn new_bench_test() {
 fn build_cache_test() {
     let game = GameState{   rolls_remaining: 3,
                             sorted_open_slots: [1,8,12].into(), 
-                            sorted_dievals: [0,0,0,0,0].into(), 
-                            upper_bonus_deficit: 0, 
-                            yahtzee_is_wild: false, };
+                            ..default() };
     let app1 = &mut AppState::new(&game);
     let rhs = best_choice_ev(game, app1);
     let app2 = &mut AppState::new(&game);
@@ -388,15 +362,8 @@ fn build_cache_test() {
 
 // #[test]
 fn counts_test(){
-    // let game = GameState{   rolls_remaining: 3,
-    //                         sorted_open_slots: [1,7,8,9,10,11,12,13].into(), 
-    //                         sorted_dievals: [0,0,0,0,0].into(), 
-    //                         upper_bonus_deficit: 63, 
-    //                         yahtzee_is_wild: false, };
-
     let game = GameState::default();
     eprintln!("{:?}", game.counts() );
-
 }
 
 // #[test]
@@ -421,21 +388,42 @@ fn decode_u16_test() {
     assert_eq!(lhs, [1,7,8,9,10,11,12,13].into());
 }
 
-#[test]
+// #[test]
 fn print_out_cache(){
+    // let game = GameState { sorted_open_slots:  [1,8,12].into(), ..default() };
     let game = GameState { 
-        sorted_open_slots:  [1,8,12].into(), 
-        ..default()
+        rolls_remaining: 2,
+        sorted_dievals: [3,4,4,6,6].into(), 
+        sorted_open_slots:  [11].into(),
+        upper_bonus_deficit: 0,
+        yahtzee_bonus_available: false 
     };
     let app = &mut AppState::new(&game);
     build_cache(game,app);
     for entry in &app.ev_cache {
         print_state_choice(entry.0, *entry.1)    
     }
-    // let the_answer = app.ev_cache.get(&game);
-    // eprintln!("{:?}", the_answer );
-    // eprintln!("{:?}", the_answer );
-    // build_cache(game,app);
-    // app.save_cache();
 }
 
+// #[test]
+fn large_str8_test() {
+
+    // this should be 7.41 per http://www-set.win.tue.nl/~wstomv/misc/yahtzee/osyp.php
+    //    D	  7.37	11010	66443	 2	 0	F	11_
+
+    let game = GameState { 
+        rolls_remaining: 2,
+        sorted_dievals: [3,4,4,6,6].into(), 
+        sorted_open_slots:  [11].into(),
+        upper_bonus_deficit: 0,
+        yahtzee_bonus_available: false 
+    };
+    let app = &mut AppState::new(&game);
+    build_cache(game, app);
+    let lhs=app.ev_cache.get(&game).unwrap();
+    println!("{:?}", lhs);
+    println!("{:?}", lhs);
+    println!("{:?}", game.sorted_dievals);
+    println!("{:?}", game.sorted_dievals);
+    // assert_eq!(lhs.ev, 7.41);
+}
