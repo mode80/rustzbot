@@ -1,7 +1,7 @@
 #![allow(dead_code)] #![allow(unused_imports)] #![allow(unused_variables)]
 #![allow(clippy::needless_range_loop)] #![allow(clippy::unusual_byte_groupings)] 
 
-use std::{cmp::{max}, fs::{self, File}, ops::Range, fmt::Display,};
+use std::{cmp::{max, min}, fs::{self, File}, ops::Range, fmt::Display,};
 use itertools::{Itertools, repeat_n};
 use indicatif::{ProgressBar, ProgressStyle, ProgressFinish};
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -151,7 +151,7 @@ impl Slots {
     }
  
     /// returns the unique and relevant "upper bonus total" shortfalls that could have occurred from the previously used upper slots 
-    fn relevant_upper_deficits(self) -> Vec<u8> { //impl Iterator<Item=u8> {  // TODO implement without allocating?
+    fn relevant_upper_deficits(self) -> Vec<u8> { //impl Iterator<Item=u8>   // TODO implement without allocating?
         let mut totals:FxHashSet<u8> = default();
         // these are all the possible score entries for each upper slot
         const UPPER_SCORES:[[u8;6];7] = [ 
@@ -171,30 +171,25 @@ impl Slots {
             // covert the list of entry indecis to a list of entry -scores-, then total them
             let tot = used_slot_idxs.iter().zip(used_score_idxs).map(|(i,ii)| UPPER_SCORES[*i][ii]).sum();
             // add the total to the set of unique totals 
-            totals.insert(tot);
+            totals.insert(min(tot,63));
         }
-        totals.insert(63); // 63 is always relevant, because it emerges as the 0 deficit during saturating subtraction 
         totals.insert(0); // 0 is always relevant, because it emerges as the correct 63 deficit when no upper slots are used  
-
-        let unique_used_upper_slot_totals= totals.to().unique();
 
         // filter out the totals that aren't relevant because they can't be reached by the upper slots remaining 
         // NOTE doing this filters out a lot of unneeded state space but means the lookup function must separately map extraneous deficits to 63 using relevant_deficit()
         let best_current_slot_total = self.best_total_from_current_upper_slots();
-        let relevant_totals = unique_used_upper_slot_totals.to().filter/*keep!*/(|used_slots_total| 
-            *used_slots_total==63 || (
-            (*used_slots_total<=63) &&
-            (*used_slots_total + best_current_slot_total >= 63))
+        let relevant_totals = totals.to().filter/*keep!*/(|used_slots_total| 
+            *used_slots_total==0 || // always relevant 
+            *used_slots_total + best_current_slot_total >= 63 // totals that can't possibly reach the bonus threshhold aren't relevant
         );
 
         // convert totals to deficts
         relevant_totals.to().map(|x|63_u8.saturating_sub(x)).collect_vec() 
-    
     }
 
     //converts the given deficit to a default if the deficit can't be closed by the remaining upper slots 
     fn relevant_deficit(self,deficit:u8) -> u8{
-        if self.best_total_from_current_upper_slots() >= deficit {deficit} else {0}
+        if self.best_total_from_current_upper_slots() >= deficit {deficit} else {63}
     }
 
     fn best_total_from_current_upper_slots (self) -> u8{

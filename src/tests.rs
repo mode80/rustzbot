@@ -3,6 +3,7 @@
 use std::io::BufWriter;
 
 use assert_approx_eq::assert_approx_eq;
+use bincode::de;
 
 use super::*;
 
@@ -40,7 +41,10 @@ fn score_slot_test() {
 // #[test]
 fn ev_of_yahtzee_in_1_roll() {
 // see https://www.yahtzeemanifesto.com/yahtzee-odds.php 
-    let game = GameState{rolls_remaining: 1, sorted_open_slots: [YAHTZEE].into(), ..default() };
+    let game = GameState{   rolls_remaining: 1, 
+                            sorted_open_slots: [YAHTZEE].into(), 
+                            sorted_dievals: [1,2,3,4,5].into(),
+                            ..default() };
     let app = &mut AppState::new(&game);
     let _result = best_choice_ev(game, app);
     let in_1_odds = 6.0/7776.0; 
@@ -49,7 +53,10 @@ fn ev_of_yahtzee_in_1_roll() {
 
 // #[test]
 fn ev_of_yahtzee_in_2_rolls() {
-    let game = GameState{rolls_remaining: 2, sorted_open_slots: [YAHTZEE].into(), ..default()};
+    let game = GameState{   rolls_remaining: 2, 
+                            sorted_dievals: [1,2,3,4,5].into(),
+                            sorted_open_slots: [YAHTZEE].into(), 
+                            ..default()};
     let app = &mut AppState::new(&game);
     let _result = best_choice_ev(game, app);
     let in_2 = 0.01263; //https://www.datagenetics.com/blog/january42012/    
@@ -71,7 +78,9 @@ fn ev_of_yahtzee_in_3_rolls() {
 // #[test] 
 fn ev_of_smstraight_in_1() {
 // see https://www.yahtzeemanifesto.com/yahtzee-odds.php 
-    let game = GameState{rolls_remaining: 1, sorted_open_slots: [SM_STRAIGHT].into(), ..default() };
+    let game = GameState{   rolls_remaining: 1, 
+                            sorted_open_slots: [SM_STRAIGHT].into(), 
+                            ..default() };
     let app = &mut AppState::new(&game);
     let result = best_choice_ev(game, app);
     assert_eq!( rounded( result.ev / 30.0, 2), rounded( 0.1235 + 0.0309 , 2) );
@@ -109,7 +118,6 @@ fn ev_of_3ofakind_in_1() {
         rounded( 0.1929+0.0193+0.0007, 3) //our 3 of a kind includes 4 of a kind & yahtzee
     );
 }
-
 
 // #[test]
 fn make_permutations(){
@@ -167,10 +175,9 @@ fn unique_upper_deficits_test() {
 
 // #[test]
 fn bench_test() {
-    let game = GameState{   rolls_remaining: 3, 
+    let game = GameState{   rolls_remaining: 0, 
                             sorted_open_slots: [SIXES, FOUR_OF_A_KIND, YAHTZEE].into(), 
-                            sorted_dievals: [1,2,3,4,5].into(), 
-                            upper_bonus_deficit: 30, 
+                            upper_bonus_deficit: 63, 
                             ..default()};
     let app = &mut AppState::new(&game);
     let result = best_choice_ev(game, app);
@@ -190,7 +197,7 @@ fn removed_test(){
 fn new_bench_test() {
     let game = GameState{   rolls_remaining: 3,
                             sorted_open_slots: [1,7,8,9,10,11,12,13].into(), 
-                            upper_bonus_deficit: 0, 
+                            upper_bonus_deficit: 63, 
                             ..default() };
     let app = &mut AppState::new(&game);
     build_cache(game,app);
@@ -198,21 +205,6 @@ fn new_bench_test() {
     println!("lhs {:?}",lhs); 
     // assert_eq!(lhs.ev,  21.80351);
 } 
-
-// #[test]
-fn build_cache_test() {
-    let game = GameState{   rolls_remaining: 3,
-                            sorted_open_slots: [1,8,12].into(), 
-                            ..default() };
-    let app1 = &mut AppState::new(&game);
-    let rhs = best_choice_ev(game, app1);
-    let app2 = &mut AppState::new(&game);
-    build_cache(game,app2);
-    let lhs = app2.ev_cache.get(&game).unwrap();
-    eprintln!("lhs {:?}",lhs);
-    eprintln!("rhs {:?}",rhs); eprintln!("rhs {:?}",rhs);
-    assert_eq!(lhs.ev,  rhs.ev);
-}
 
 // #[test]
 fn counts_test(){
@@ -224,7 +216,7 @@ fn counts_test(){
 fn relevant_upper_deficits_test(){
    let slots:Slots = [1,2,4].into();
    let retval = slots.relevant_upper_deficits() ;
-   eprintln!("{:?}", retval );
+   eprintln!("{:?}", retval.to().sorted() );
 }
 
 // // #[test]
@@ -242,29 +234,8 @@ fn relevant_upper_deficits_test(){
 //     assert_eq!(lhs, [1,7,8,9,10,11,12,13].into());
 // }
 
-#[test]
-fn print_out_cache(){
-    // let game = GameState { sorted_open_slots:  [1,8,12].into(), ..default() };
-    let game = GameState { 
-        rolls_remaining: 2,
-        sorted_dievals: [3,4,4,6,6].into(), 
-        sorted_open_slots: [1,7,8,9,10,11,12,13].into(), 
-        upper_bonus_deficit: 0,
-        yahtzee_bonus_available: false 
-    };
-    let app = &mut AppState::new(&game);
-    build_cache(game,app);
-    for entry in &app.ev_cache {
-        print_state_choice(entry.0, *entry.1)    
-    }
-}
-
 // #[test]
-fn large_str8_test() {
-
-    // this should be 7.41 per http://www-set.win.tue.nl/~wstomv/misc/yahtzee/osyp.php
-    //    D	  7.37	11010	66443	 2	 0	F	11_
-
+fn print_out_cache(){
     let game = GameState { 
         rolls_remaining: 2,
         sorted_dievals: [3,4,4,6,6].into(), 
@@ -273,11 +244,8 @@ fn large_str8_test() {
         yahtzee_bonus_available: false 
     };
     let app = &mut AppState::new(&game);
-    build_cache(game, app);
-    let lhs=app.ev_cache.get(&game).unwrap();
-    println!("{:?}", lhs);
-    println!("{:?}", lhs);
-    println!("{:?}", game.sorted_dievals);
-    println!("{:?}", game.sorted_dievals);
-    // assert_eq!(lhs.ev, 7.41);
+    build_cache(game,app);
+    for entry in &app.ev_cache {
+        print_state_choice(entry.0, *entry.1)    
+    }
 }
