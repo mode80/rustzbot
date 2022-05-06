@@ -1,9 +1,8 @@
 #![allow(dead_code)]
 
-use std::{io::BufWriter, thread::JoinHandle, sync::mpsc, time::{self, Instant}};
+use std::io::BufWriter;
 
 use assert_approx_eq::assert_approx_eq;
-use itertools::Chunk;
 
 use super::*;
 
@@ -153,125 +152,6 @@ fn print_misc() {
 // }
 
 // #[test]
-fn progress_eta_test() {
-    let game = GameState{rolls_remaining: 3, sorted_open_slots: [1,2,3,4,5,6,7,8,9,10,11,12,13].into(), ..default()};
-    let app = &mut AppState::new(&game);
-    let result = best_choice_ev(game, app);
-}
-
-// #[test]
-fn test_permutations_within() {
-
-    let a:Slots = [1,2,3,4,5].into();
-    for perm in a.permutations_within(1,3) { 
-        println!("{}", perm); 
-    }; 
-}
-
-// #[test]
-// fn test_truncate() {
-//     let mut l:Slots = [1,2,3,4,5].into();
-//     l.truncate(3);
-//     let r:Slots = [1,2,3].into();
-//     assert_eq!(l,r);
-//  }
-
-// #[test]
-fn test_subset() {
-    let slots:Slots = [1,2,3,4].into();
-    let l:Slots = [2,3].into();
-    assert_eq!(l,slots.subset(1,2));
-    let l:Slots = [2,3,4].into();
-    assert_eq!(l,slots.subset(1,4));
-  }
-
-
-// #[test]
-fn test_threaded_permutations() {
-    let hm = Arc::new(Mutex::new(FxHashMap::<Slots,u8>::default()));
-    let mut ret = 0;
-    let slots:Slots = [1,2,3,4,5,6,7,8].into();
-    let mut span_lens = (2..=slots.len/2).collect_vec();
-    span_lens.push(slots.len);
-    // lens = vec![4,8];
-    for span_len in span_lens { 
-        for offset in 0..span_len { 
-            let hm = hm.clone();
-            let size_hm = hm.lock().unwrap().clone();
-            let span_count = slots.len / span_len - if offset>0 {1} else {0}; 
-            ret+= (0..span_count).into_par_iter().map(move |i|
-            { // THREADS | each thread parallel processes a non-overlapping span
-                let thread_hm = &mut size_hm.clone();
-                let mut tot =0;
-                let span_start = i * span_len as u8;
-                for perm in slots.permutations_within(span_start, span_len) { 
-                    if let Some(s) = thread_hm.get(&perm) {
-                        eprintln!("{} {} {} {} C", perm, s, i*span_len, span_len) ;
-                        sleep(Duration::new(0,1000));
-                        tot += *s as u64;
-                    } else {
-                        let s = perm.into_iter().sum() ;
-                        thread_hm.insert(perm, s);
-                        eprintln!("{} {} {} {}", perm, s, i*span_len, span_len) ;
-                        sleep(Duration::new(0,1000));
-                        tot += s as u64;
-                    }
-                }; 
-                hm.lock().unwrap().extend(thread_hm.iter());
-                tot
-            }).sum::<u64>();
-        }
-    }
-    eprintln!("{}", ret); // 1451520 2.21s on debug 
- }
-
-// #[test]
-fn test_threaded_subsets() {
-
-    // NOTE bottom up (not recursive) approach means we can skip the cache lookup and sorting the key, since every new calc will be fresh?
-
-    const CORES:usize = 8;
-
-    let full_set:Slots = [1,2,3,4,5].into();
-    let mut cached_val:u8;
-    for set_len in 1..=full_set.len{ // each length 
-        let (tx, rx) = mpsc::channel();
-        let now = Instant::now();
-        for i in 0..=(full_set.len-set_len) { // each slot_set (of above length)
-            let slot_set = full_set.subset(i,set_len);
-            let chunk_size = fact(slot_set.len) as usize / CORES + 1 ; // +1 to "round up" 
-            println!("{}", chunk_size);
-            for chunk in slot_set.permutations().chunks(chunk_size).into_iter(){ // each chunk -- one per core
-                let slot_set_perms = chunk.collect_vec(); // TODO some way to pass iterator into thread instead?
-                let tx = tx.clone();
-                thread::spawn(move ||{
-                    let mut chunk_best_result:ChoiceEV = Default::default();
-                    let mut chunk_best_perm:Slots = Default::default();
-                    for slot_perm in slot_set_perms { // each permutation
-                        let score:u8 = slot_perm.into_iter().sum(); sleep(Duration::new(1,0)); // not a real score calc, just simulating
-                        if score as f32 > chunk_best_result.ev { 
-                            chunk_best_result.choice = slot_perm.get(0); 
-                            chunk_best_result.ev = score as f32; 
-                            chunk_best_perm = slot_perm;
-                        } // remember best 
-                    }; // end for each permutation in chunk
-                    tx.send((chunk_best_perm, chunk_best_result)).unwrap();
-                }); //end thread 
-            } // end for each chunk
-        } // end for each slot_set 
-        drop(tx); // the cloned transmitter must be explicitly dropped since it never sends 
-        let mut span_best_result:ChoiceEV = Default::default();
-        let mut span_best_perm:Slots = Default::default();
-        for rcvd in &rx { 
-            if rcvd.1.ev > span_best_result.ev {span_best_result = rcvd.1; span_best_perm = rcvd.0};
-        }
-        println!("{} {:?} {:.2?}",span_best_perm, span_best_result, now.elapsed()); 
-    } // end for each length
-
- } // end fn
-
-
-// #[test]
 fn unique_upper_deficits_test() {
     let slots:Slots = [1,2,4,5].into();
     let mut sorted_totals = slots.relevant_upper_deficits();
@@ -284,15 +164,6 @@ fn unique_upper_deficits_test() {
 // fn multi_cartesian_product_test() {
 //     let it = repeat_n(1..=6,2).multi_cartesian_product().for_each(|x| eprintln!("{:?}",x));
 // }
-
-// #[test]
-fn all_selection_outcomes_test() { //TODO std::SIMD ?
-    for outcome in all_selection_outcomes(){
-        let mut sortedvals = outcome.dievals; 
-        sortedvals.sort();
-        eprintln!("{} {} {} {}",outcome.dievals, outcome.mask, outcome.arrangements, sortedvals);
-    }
-}
 
 // #[test]
 fn bench_test() {
@@ -316,23 +187,6 @@ fn removed_test(){
 }
  
 // #[test]
-fn swap_test(){
-    let mut s:Slots = [0,1,2,3,4,5,6,7,8,9,10,11,12].into(); 
-    s.swap(5,10);
-    assert_eq!(s,[0,1,2,3,4,10,6,7,8,9,5,11,12].into());
-}
-// TODO see https://internals.rust-lang.org/t/bit-twiddling-pre-rfc/7072
-
-// #[test]
-fn test_permutations() {
-
-    let a:Slots = [1,2,3,4,5,6,7,8,9,10].into();
-    for perm in a.permutations() { 
-        println!("{}", perm); 
-    }; 
-}
-
-#[test]
 fn new_bench_test() {
     let game = GameState{   rolls_remaining: 3,
                             sorted_open_slots: [1,7,8,9,10,11,12,13].into(), 
@@ -373,28 +227,28 @@ fn relevant_upper_deficits_test(){
    eprintln!("{:?}", retval );
 }
 
-// #[test]
-fn encode_sorted_test() {
-    let slots:Slots = [1,7,8,9,10,11,12,13].into(); 
-    let lhs=slots.encode_sorted_to_u16(); 
-    eprintln!("{:b}", lhs);
-    assert_eq!(lhs, 0b11111110000010);
-}
+// // #[test]
+// fn encode_sorted_test() {
+//     let slots:Slots = [1,7,8,9,10,11,12,13].into(); 
+//     let lhs=slots.encode_sorted_to_u16(); 
+//     eprintln!("{:b}", lhs);
+//     assert_eq!(lhs, 0b11111110000010);
+// }
 
-// #[test]
-fn decode_u16_test() {
-    let lhs = Slots::decode_u16(0b11111110000010); 
-    eprintln!("{:?}", lhs);
-    assert_eq!(lhs, [1,7,8,9,10,11,12,13].into());
-}
+// // #[test]
+// fn decode_u16_test() {
+//     let lhs = Slots::decode_u16(0b11111110000010); 
+//     eprintln!("{:?}", lhs);
+//     assert_eq!(lhs, [1,7,8,9,10,11,12,13].into());
+// }
 
-// #[test]
+#[test]
 fn print_out_cache(){
     // let game = GameState { sorted_open_slots:  [1,8,12].into(), ..default() };
     let game = GameState { 
         rolls_remaining: 2,
         sorted_dievals: [3,4,4,6,6].into(), 
-        sorted_open_slots:  [11].into(),
+        sorted_open_slots: [1,7,8,9,10,11,12,13].into(), 
         upper_bonus_deficit: 0,
         yahtzee_bonus_available: false 
     };
