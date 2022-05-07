@@ -121,28 +121,6 @@ impl Slots {
         self_copy
      }
 
-    fn sort(&mut self){ 
-        for i in 1..self.len { // "insertion sort" is good for small arrays like this one
-            let key = self.get(i);
-            let mut j = (i as i8) - 1;
-            while j >= 0 && self.get(j as u8) > key {
-                self.set((j + 1) as u8 , self.get(j as u8) );
-                j -= 1;
-            }
-            self.set((j + 1) as u8, key);
-        }
-    }
-
-    // // given this set of slots, what set of slots have previously been played? (ie the inverse set)
-    // fn previously_played (self) -> Self{
-    //     let mut ret:Self = default();
-    //     let mut i=0;
-    //     for s in ACES..CHANCE {
-    //         if !self.ii().contains(&s) {ret.set(i,s); i+=1;}
-    //     };
-    //     ret
-    // }
-
     fn used_upper_slots(self) -> Self{
         let upper_slots= FxHashSet::<u8>::from_iter(self.to().filter(|&x|x<=SIXES));
         let mut retval:Slots = default();
@@ -419,7 +397,7 @@ struct GameState{
     sorted_dievals:DieVals, //15 bits 
     sorted_open_slots:Slots, // 52 bits... or 1+2+2+3+3+3+3+4+4+4+4+4+4=41 .. or 13 sorted 
     upper_total:u8, // 6 bits 
-    yahtzee_bonus_avail:bool, // 1 bit // TODO replace with below
+    yahtzee_bonus_avail:bool, // 1 bit 
 }
 // impl std::hash::Hash for GameState{
 //     fn hash<H: Hasher>(&self, hasher: &mut H) {
@@ -830,8 +808,7 @@ fn build_cache(game:GameState, app: &mut AppState) {
 
         // for each slotset (of above length)
         for slots_vec in game.sorted_open_slots.to().combinations(slots_len as usize) {
-            let mut slots:Slots = slots_vec.into(); 
-            slots.sort(); //TODO don't these come out of combinations already sorted? avoidable?
+            let slots:Slots = slots_vec.into(); 
             let joker_rules_in_play = !slots.to().contains(&YAHTZEE); // joker rules are in effect whenever the yahtzee slot is already filled 
 
             // for each upper total 

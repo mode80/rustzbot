@@ -13,14 +13,6 @@ fn rounded(it:f32,places:i32) -> f32{
 }
 
 // #[test]
-fn test_sort() {
-    let mut sortable:Slots= [2,6,5,1,5].into();
-    let presorted:Slots = [1,2,5,5,6].into();
-    sortable.sort();
-    assert_eq!(sortable.data, presorted.data);
-}
-
-// #[test]
 fn test_dievals_into(){
     let dv:DieVals = [2,2,5,5,5].into();
     assert_eq!(dv.get(4), 5);
@@ -192,19 +184,6 @@ fn removed_test(){
     assert_eq!(r,[3,5].into() );
 }
  
-#[test]
-fn new_bench_test() {
-    let game = GameState{   rolls_remaining: 3,
-                            sorted_open_slots: [1,7,8,9,10,11,12,13].into(), 
-                            upper_total: 0, 
-                            ..default() };
-    let app = &mut AppState::new(&game);
-    build_cache(game,app);
-    let lhs = app.ev_cache.get(&game).unwrap();
-    println!("lhs {:?}",lhs); 
-    // assert_eq!(lhs.ev,  21.80351);
-} 
-
 // #[test]
 fn counts_test(){
     let game = GameState::default();
@@ -248,6 +227,19 @@ fn print_out_cache(){
         print_state_choice(entry.0, *entry.1)    
     }
 }
+
+#[test]
+fn new_bench_test() {
+    let game = GameState{   rolls_remaining: 3,
+                            sorted_open_slots: [1,2,8,9,10,11,12,13].into(), 
+                            ..default() };
+    let app = &mut AppState::new(&game);
+    build_cache(game,app);
+    let lhs = app.ev_cache.get(&game).unwrap();
+    println!("lhs {:?}",lhs); 
+    // assert_eq!(lhs.ev,  153.72606);
+} 
+
 
 // #[test]
 fn large_str8_test() {
