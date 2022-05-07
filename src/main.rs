@@ -155,7 +155,7 @@ impl Slots {
 
         // filter out the totals that aren't relevant because they can't be reached by the upper slots remaining 
         // NOTE this filters out a lot of unneeded state space but means the lookup function must map extraneous deficits to a default using relevant_total()
-        let best_current_slot_total = self.best_total_from_current_upper_slots();
+        let best_current_slot_total = self.best_upper_total();
         totals.to().filter/*keep!*/(move |used_slots_total| 
             *used_slots_total==0 || // always relevant 
             *used_slots_total + best_current_slot_total >= 63 // totals must reach the bonus threshhold to be relevant
@@ -163,12 +163,7 @@ impl Slots {
 
     }
 
-    //converts the given total to a default if the bonus threshold can't be reached 
-    fn relevant_total(self,given_total:u8) -> u8{
-        if self.best_total_from_current_upper_slots() + given_total >= 63 {given_total} else {0}
-    }
-
-    fn best_total_from_current_upper_slots (self) -> u8{
+    fn best_upper_total (self) -> u8{
         let mut sum=0;
         for x in self { if x>6 {break} else {sum+=x;} }
         sum*5
@@ -809,6 +804,7 @@ fn build_cache(game:GameState, app: &mut AppState) {
         // for each slotset (of above length)
         for slots_vec in game.sorted_open_slots.to().combinations(slots_len as usize) {
             let slots:Slots = slots_vec.into(); 
+            let best_upper = slots.best_upper_total();
             let joker_rules_in_play = !slots.to().contains(&YAHTZEE); // joker rules are in effect whenever the yahtzee slot is already filled 
 
             // for each upper total 
@@ -853,11 +849,12 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                     // do this by summing the ev for the first (head) slot with the ev value that we look up for the remaining (tail) slots
                                     let mut rolls_remaining = 0;
                                     for slots_piece in [head,tail].to().unique(){
+                                        upper_total_now = if upper_total_now + slots_piece.best_upper_total() >= 63 {upper_total_now} else {0}; //relevant totals only
                                         let state = &GameState{
                                             rolls_remaining, 
                                             sorted_dievals: dievals_or_wildcard,
                                             sorted_open_slots: slots_piece, 
-                                            upper_total: slots_piece.relevant_total(upper_total_now), 
+                                            upper_total: upper_total_now, 
                                             yahtzee_bonus_avail: yahtzee_bonus_avail_now,
                                         };
                                         let cache = if slots_piece==head { &leaf_cache } else { &app.ev_cache};
@@ -906,7 +903,7 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                         let state = GameState{
                                             sorted_dievals: newvals, 
                                             sorted_open_slots: slots, 
-                                            upper_total: slots.relevant_total(upper_total), // TODO optimize ?
+                                            upper_total, 
                                             yahtzee_bonus_avail: yahtzee_bonus_available, 
                                             rolls_remaining: next_roll, // we'll average all the 'next roll' possibilities (which we'd calclated last) to get ev for 'this roll' 
                                         };

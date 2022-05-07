@@ -237,7 +237,7 @@ fn new_bench_test() {
     build_cache(game,app);
     let lhs = app.ev_cache.get(&game).unwrap();
     println!("lhs {:?}",lhs); 
-    // assert_eq!(lhs.ev,  153.72606);
+    assert_eq!(lhs.ev,  138.66803);
 } 
 
 
