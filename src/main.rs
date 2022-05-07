@@ -1,4 +1,4 @@
-// #![allow(dead_code)] #![allow(unused_imports)] #![allow(unused_variables)]
+#![allow(dead_code)] #![allow(unused_imports)] #![allow(unused_variables)]
 #![allow(clippy::needless_range_loop)] #![allow(clippy::unusual_byte_groupings)] 
 
 use std::{cmp::{max, min}, fs::{self, File}, ops::Range, fmt::Display,};
@@ -47,34 +47,37 @@ SORTED_SLOTS
 
 struct SortedSlots{
     pub data: u16, // 13 sorted Slots can be positionally encoded in one u16
-    pub len:u8,
+    // pub len:u8,
 }
 
 impl SortedSlots{
+    fn len(self)->u8{
+        16-self.data.leading_zeros() as u8
+    }
     fn insert (&mut self, val:Slot){
         let mask = 1<<val;
-        if self.data & mask > 0 {return}; //already set //TODO remove branching
-        self.data ^= mask; // toggle on
-        self.len +=1;
+        // if self.data & mask > 0 {return}; //already set //TODO remove branching
+        self.data |= mask; // force on
+        // self.len +=1;
     }
     fn remove (&mut self, val:Slot){
-        let mask = 1<<val;
-        if self.data & mask == 0 {return}; //already cleared //TODO remove branching
-        self.data ^= mask; //toggle off
-        self.len -=1;
+        let mask = !(1<<val);
+        // if self.data & mask == 0 {return}; //already cleared //TODO remove branching
+        self.data &= mask; //force off
+        // self.len -=1;
     }
     fn removed(self, val:Slot) -> Self{
-        let mut ret = self;
-        ret.remove(val);
-        ret
+        let mut out = self;
+        out.remove(val);
+        out
     }
     fn has (self, val:Slot) -> bool {
         self.data & (1<<val) > 0  
     }
-    fn used_upper_slots(self) -> Self{ //TODO could be more efficient
-        let mut retval:Self= default();
-        for s in ACES..=SIXES { retval.insert(s); }
-        retval
+    fn previously_used_upper_slots(self) -> Self{ 
+        let mut out:Self= self;
+        out.data = (!out.data) & ((1<<7)-1);
+        out
     }
  
     /// returns the unique and relevant "upper bonus total" that could have occurred from the previously used upper slots 
@@ -91,7 +94,7 @@ impl SortedSlots{
             [0,6,12,18,24,30],  // SIXES
         ];
         // only upper slots could have contributed to the upper total 
-        let used_slot_idxs = &self.used_upper_slots().to().filter(|&x|x<=SIXES).map(|x| x as usize).collect_vec(); 
+        let used_slot_idxs = &self.previously_used_upper_slots().to().filter(|&x|x<=SIXES).map(|x| x as usize).collect_vec(); // TODO needless double filtered
         let used_score_idx_perms= repeat_n(0..=5, used_slot_idxs.len()).multi_cartesian_product();
         // for every permutation of entry indexes
         for used_score_idxs in used_score_idx_perms {
@@ -327,7 +330,7 @@ impl Default for GameState{
 
         let mut lookups:u64 = 0;
         let mut saves:usize =0;
-        for subset_len in 1..=self.sorted_open_slots.len{ 
+        for subset_len in 1..=self.sorted_open_slots.len(){ 
             for slots_vec in self.sorted_open_slots.to().combinations(subset_len as usize) {
                 let slots:SortedSlots =slots_vec.into(); 
                 let joker_rules = !slots.to().contains(&YAHTZEE); // yahtzees aren't wild whenever yahtzee slot is still available 
@@ -684,7 +687,7 @@ fn build_cache(game:GameState, app: &mut AppState) {
     } } } }
 
     // for each length 
-    for slots_len in 1..=game.sorted_open_slots.len{ 
+    for slots_len in 1..=game.sorted_open_slots.len(){ 
 
         // for each slotset (of above length)
         for slots_vec in game.sorted_open_slots.to().combinations(slots_len as usize) {
