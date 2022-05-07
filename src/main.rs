@@ -36,6 +36,147 @@ type DieVal     = u8; // a single die value 0 to 6 where 0 means "unselected"
 type Slot       = u8; // a single slot with values ranging from ACES to CHANCE 
 type Score      = u8;
 
+/*-------------------------------------------------------------
+SORTED_SLOTS
+-------------------------------------------------------------*/
+
+// for LLDB console:
+// type summary add --summary-string "${var.data%b}" "yahtzeebot::SortedSlots"
+
+#[derive(Debug,Clone,Copy,PartialEq,Serialize,Deserialize,Eq,PartialOrd,Ord,Hash,Default)]
+
+struct SortedSlots{
+    pub data: u16, // 13 sorted Slots can be positionally encoded in one u16
+    pub len:u8,
+}
+
+impl SortedSlots{
+    fn insert (&mut self, val:Slot){
+        let mask = 1<<val;
+        if self.data & mask > 0 {return}; //already set //TODO remove branching
+        self.data ^= mask; // toggle on
+        self.len +=1;
+    }
+    fn remove (&mut self, val:Slot){
+        let mask = 1<<val;
+        if self.data & mask == 0 {return}; //already cleared //TODO remove branching
+        self.data ^= mask; //toggle off
+        self.len -=1;
+    }
+    fn removed(self, val:Slot) -> Self{
+        let mut ret = self;
+        ret.remove(val);
+        ret
+    }
+    fn first (self) -> Slot { // returns first slot
+        // self.to().next().unwrap()
+        let retval = self.data.trailing_zeros() as Slot;
+        debug_assert!(retval<=13);
+        retval
+    }
+    fn has (self, val:Slot) -> bool {
+        self.data & (1<<val) > 0  
+    }
+    fn used_upper_slots(self) -> Self{
+        let upper_slots= FxHashSet::<u8>::from_iter(self.to().filter(|&x|x<=SIXES));
+        let mut retval:Self= default();
+        for s in ACES..=SIXES { retval.insert(s); }
+        retval
+    }
+ 
+    /// returns the unique and relevant "upper bonus total" that could have occurred from the previously used upper slots 
+    fn relevant_upper_totals(self) -> impl Iterator<Item=u8>   {  
+        let mut totals:FxHashSet<u8> = default();
+        // these are all the possible score entries for each upper slot
+        const UPPER_SCORES:[[u8;6];7] = [ 
+            [0,0,0,0,0,0],      // STUB
+            [0,1,2,3,4,5],      // ACES
+            [0,2,4,6,8,10],     // TWOS
+            [0,3,6,9,12,15],    // THREES 
+            [0,4,8,12,16,20],   // FOURS
+            [0,5,10,15,20,25],  // FIVES
+            [0,6,12,18,24,30],  // SIXES
+        ];
+        // only upper slots could have contributed to the upper total 
+        let used_slot_idxs = &self.used_upper_slots().to().filter(|&x|x<=SIXES).map(|x| x as usize).collect_vec(); 
+        let used_score_idx_perms= repeat_n(0..=5, used_slot_idxs.len()).multi_cartesian_product();
+        // for every permutation of entry indexes
+        for used_score_idxs in used_score_idx_perms {
+            // covert the list of entry indecis to a list of entry -scores-, then total them
+            let tot = used_slot_idxs.iter().zip(used_score_idxs).map(|(i,ii)| UPPER_SCORES[*i][ii]).sum();
+            // add the total to the set of unique totals 
+            totals.insert(min(tot,63));
+        }
+        totals.insert(0); // 0 is always relevant and must be added here explicitly when there are no used upper slots 
+
+        // filter out the totals that aren't relevant because they can't be reached by the upper slots remaining 
+        // NOTE this filters out a lot of unneeded state space but means the lookup function must map extraneous deficits to a default 
+        let best_current_slot_total = self.best_upper_total();
+        totals.to().filter/*keep!*/(move |used_slots_total| 
+            *used_slots_total==0 || // always relevant 
+            *used_slots_total + best_current_slot_total >= 63 // totals must reach the bonus threshhold to be relevant
+        )
+    }
+
+    fn best_upper_total (self) -> u8{
+        let mut sum=0;
+        for x in self { if x>6 {break} else {sum+=x;} }
+        sum*5
+    }
+
+}
+
+impl Display for SortedSlots {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.to().for_each(|x| write!(f,"{}_",x).unwrap());
+        Ok(())
+    }
+}
+
+impl <const N:usize> From<[Slot; N]> for SortedSlots{
+    fn from(a: [Slot; N]) -> Self {
+        assert! (a.len() <= 13);
+        let mut retval:Self = default();
+        for x in a { retval.insert(x); }
+        retval 
+    }
+}
+impl From<Vec<Slot>> for SortedSlots{
+    fn from(v: Vec<Slot>) -> Self {
+        assert! (v.len() <= 13);
+        let mut retval:Self = default();
+        for x in v { retval.insert(x); }
+        retval 
+    }
+}
+
+
+impl IntoIterator for SortedSlots{
+    type IntoIter=SortedSlotsIntoIter;
+    type Item = Slot;
+
+    fn into_iter(self) -> Self::IntoIter {
+        SortedSlotsIntoIter { sorted_slots:self, i:0 }
+    }
+}
+
+struct SortedSlotsIntoIter{
+    sorted_slots: SortedSlots,
+    i: u8,
+}
+
+impl Iterator for SortedSlotsIntoIter {
+    type Item = Slot ;
+    fn next(&mut self) -> Option<Self::Item> {
+        while self.i < 13 {
+            self.i+=1;
+            if self.sorted_slots.has(self.i) { return Some(self.i) }
+        }
+        None
+    }
+}
+
+
 
 /*-------------------------------------------------------------
 SLOTS
@@ -209,20 +350,20 @@ impl <const N:usize>  From<&mut Slots> for [Slot; N]{
 }
 
 impl IntoIterator for Slots{
-    type IntoIter=SlotIntoIter;
+    type IntoIter=SlotsIntoIter;
     type Item = Slot;
 
     fn into_iter(self) -> Self::IntoIter {
-        SlotIntoIter { slots:self, next_idx:0 }
+        SlotsIntoIter { slots:self, next_idx:0 }
     }
 }
 
-struct SlotIntoIter{
+struct SlotsIntoIter{
     slots: Slots,
     next_idx: u8,
 }
 
-impl Iterator for SlotIntoIter {
+impl Iterator for SlotsIntoIter {
     type Item = Slot ;
     fn next(&mut self) -> Option<Self::Item> {
         if self.next_idx == self.slots.len {return None};
@@ -367,7 +508,7 @@ GameState
 struct GameState{
     rolls_remaining:u8, // 3 bits 
     sorted_dievals:DieVals, //15 bits 
-    sorted_open_slots:Slots, // 52 bits... or 1+2+2+3+3+3+3+4+4+4+4+4+4=41 .. or 13 sorted 
+    sorted_open_slots:SortedSlots, // 52 bits... or 1+2+2+3+3+3+3+4+4+4+4+4+4=41 .. or 13 sorted 
     upper_total:u8, // 6 bits 
     yahtzee_bonus_avail:bool, // 1 bit 
 }
@@ -708,7 +849,7 @@ fn score_slot(slot:Slot, sorted_dievals:DieVals)->Score{
 fn score_slot_in_context(game:&GameState) -> u8 {
 
     /* score slot itself w/o regard to game state */
-        let slot = game.sorted_open_slots.get(0);
+        let slot = game.sorted_open_slots.to().next().unwrap();
         let mut score = score_slot(slot, game.sorted_dievals); 
 
     /* add upper bonus when needed total is reached */
@@ -757,7 +898,7 @@ fn build_cache(game:GameState, app: &mut AppState) {
 
     // first handle special case of the most leafy leaf calcs -- where there's one slot left and no rolls remaining
     for single_slot in game.sorted_open_slots {  // TODO: THREADS?
-        let slot:Slots = [single_slot].into();//Slots{data:single_slot as u64, len:1}; //set of a single slot 
+        let slot:SortedSlots = [single_slot].into();//Slots{data:single_slot as u64, len:1}; //set of a single slot 
         let joker_rules_in_play = single_slot!=YAHTZEE; // joker rules in effect when the yahtzee slot is not open 
         for yahtzee_bonus_available in [false, joker_rules_in_play].to().unique() { // yahtzee bonus -might- be available when joker rules are in play 
             for upper_total in slot.relevant_upper_totals(){
@@ -772,7 +913,7 @@ fn build_cache(game:GameState, app: &mut AppState) {
                     let score = score_slot_in_context(&state) as f32;
                     let choice_ev = ChoiceEV{ choice: single_slot, ev: score};
                     leaf_cache.insert(state, choice_ev);
-                    // log_state_choice(&state, choice_ev, app)
+                    log_state_choice(&state, choice_ev, app)
     } } } }
 
     // for each length 
@@ -780,7 +921,7 @@ fn build_cache(game:GameState, app: &mut AppState) {
 
         // for each slotset (of above length)
         for slots_vec in game.sorted_open_slots.to().combinations(slots_len as usize) {
-            let slots:Slots = slots_vec.into(); 
+            let slots:SortedSlots = slots_vec.into(); 
             let joker_rules_in_play = !slots.to().contains(&YAHTZEE); // joker rules are in effect whenever the yahtzee slot is already filled 
 
             // for each upper total 
@@ -809,16 +950,13 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                     //joker rules say extra yahtzees must be played in their matching upper slot if it's available
                                     let first_dieval =die_combo.dievals.get(0);
                                     let joker_rules_matter = joker_rules_in_play && score_yahtzee(die_combo.dievals)>0 && slots.to().contains(&first_dieval);
-                                    let head:Slots = if joker_rules_matter { // then the head slot choice must be the upper slot matching the dice (all being the same)
-                                        [first_dieval].into() // slot matches the dievals
-                                    } else { // outside a joker-rules forced-choice situation, we'll try each starting slot in turn 
-                                        [slot].into() 
-                                    };
+                                    let head_slot:Slot = if joker_rules_matter { first_dieval } else { slot };
+                                    let head:SortedSlots = [head_slot].into();
 
                                     let mut yahtzee_bonus_avail_now = yahtzee_bonus_available;
                                     let mut upper_total_now = upper_total;
                                     let mut dievals_or_wildcard = die_combo.dievals; 
-                                    let tail = if slots_len > 1 { slots.removed(head.get(0)) } else {head};
+                                    let tail = if slots_len > 1 { slots.removed(head_slot) } else {head};
                                     let mut head_plus_tail_ev = 0.0;
     
                                     // find the collective ev for the all the slots with this iteration's slot being first 
@@ -861,7 +999,7 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                     yahtzee_bonus_avail: yahtzee_bonus_available ,
                                 };
                                 built_this_thread.insert( state, slot_choice_ev);
-                                // log_state_choice(&state, slot_choice_ev, app)
+                                log_state_choice(&state, slot_choice_ev, app)
 
                             } else { //if rolls_remaining > 0  
                             /* HANDLE DICE SELECTION */    
@@ -900,9 +1038,10 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                         yahtzee_bonus_avail: yahtzee_bonus_available, 
                                         rolls_remaining, 
                                     }; 
+                                log_state_choice(&state, best_dice_choice_ev, app);
+                                let debug = if state.sorted_dievals.data==27939 /*&& state.rolls_remaining==2*/ {1} else {0};
                                 built_this_thread.insert(state,best_dice_choice_ev);
-                                // log_state_choice(&state, best_dice_choice_ev, app)
-
+ 
                             } // endif roll_remaining...  
 
                             built_this_thread

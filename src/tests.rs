@@ -222,13 +222,13 @@ fn print_out_cache(){
         yahtzee_bonus_avail: false 
     };
     let app = &mut AppState::new(&game);
-    build_cache(game,app);
+    // build_cache(game,app);
     for entry in &app.ev_cache {
         print_state_choice(entry.0, *entry.1)    
     }
 }
 
-// #[test]
+#[test]
 fn new_bench_test() {
     let game = GameState{   rolls_remaining: 3,
                             sorted_open_slots: [1,2,8,9,10,11,12,13].into(), 
@@ -241,7 +241,7 @@ fn new_bench_test() {
 } 
 
 
-#[test]
+// #[test]
 fn large_str8_test() {
 
     // this should be 7.41 per http://www-set.win.tue.nl/~wstomv/misc/yahtzee/osyp.php
@@ -256,10 +256,11 @@ fn large_str8_test() {
     };
     let app = &mut AppState::new(&game);
     build_cache(game, app);
+    for entry in &app.ev_cache {
+        print_state_choice(entry.0, *entry.1)    
+    }
     let lhs=app.ev_cache.get(&game).unwrap();
     println!("{:?}", lhs);
     println!("{:?}", lhs);
-    println!("{:?}", game.sorted_dievals);
-    println!("{:?}", game.sorted_dievals);
-    // assert_eq!(lhs.ev, 7.41);
+    assert_eq!(lhs.ev, 7.41);
 }
