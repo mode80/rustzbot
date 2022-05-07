@@ -21,18 +21,10 @@ MAIN
 -------------------------------------------------------------*/
 fn main() {
 
-    let game = GameState{sorted_open_slots: [1].into(), ..default()};//::default(); 
-    let app = &mut AppState::new(&game);
+    let game = GameState::default();
+    let app = & mut AppState::new(&game);
     build_cache(game,app);
-    for entry in &app.ev_cache {
-        print_state_choice(entry.0, *entry.1)    
-    }
-     
-    // let game = GameState::default();
-    // let app = & mut AppState::new(&game);
-    // build_cache(game,app);
-    // app.save_cache();
-
+    app.save_cache();
 
 }
 
@@ -129,7 +121,7 @@ impl Slots {
     }
  
     /// returns the unique and relevant "upper bonus total" that could have occurred from the previously used upper slots 
-    fn relevant_upper_totals(self) -> impl Iterator<Item=u8>   {  // TODO implement without allocating? w impl Iterator<Item=u8>  
+    fn relevant_upper_totals(self) -> impl Iterator<Item=u8>   {  
         let mut totals:FxHashSet<u8> = default();
         // these are all the possible score entries for each upper slot
         const UPPER_SCORES:[[u8;6];7] = [ 
@@ -154,13 +146,12 @@ impl Slots {
         totals.insert(0); // 0 is always relevant and must be added here explicitly when there are no used upper slots 
 
         // filter out the totals that aren't relevant because they can't be reached by the upper slots remaining 
-        // NOTE this filters out a lot of unneeded state space but means the lookup function must map extraneous deficits to a default using relevant_total()
+        // NOTE this filters out a lot of unneeded state space but means the lookup function must map extraneous deficits to a default 
         let best_current_slot_total = self.best_upper_total();
         totals.to().filter/*keep!*/(move |used_slots_total| 
             *used_slots_total==0 || // always relevant 
             *used_slots_total + best_current_slot_total >= 63 // totals must reach the bonus threshhold to be relevant
         )
-
     }
 
     fn best_upper_total (self) -> u8{
@@ -173,25 +164,11 @@ impl Slots {
 
 impl Display for Slots {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // let a:[Slot;13] = self.into(); 
-        // write!(f,"{:?}",temp.ii().filter(|x|*x!=0).collect_vec()) 
         self.to().for_each(|x| write!(f,"{}_",x).unwrap());
         Ok(())
-        //     "{: <2} {: <2} {: <2} {: <2} {: <2} {: <2} {: <2} {: <2} {: <2} {: <2} {: <2} {: <2} {: <2}",
-        //     a[0],a[1],a[2],a[3],a[4],a[5],a[6],a[7],a[8],a[9],a[10],a[11],a[12]
-        // )//.it().map(|x| format!("{: <2} ",x)).collect::<String>()) 
     }
 }
 
-
-// impl <const N:usize> From<[Slot; N]> for &mut Slots{
-//     fn from(a: [Slot; N]) -> Self {
-//         assert! (a.len() < 13);
-//         let retval = &mut Slots{ len:a.len() as u8, data:default()};
-//         for i in 0..N { retval.set(i as u8, a[i as usize]); }
-//         retval 
-//     }
-// }
 
 impl From<Vec<Slot>> for Slots{
     fn from(vec: Vec<Slot>) -> Self {
@@ -804,7 +781,6 @@ fn build_cache(game:GameState, app: &mut AppState) {
         // for each slotset (of above length)
         for slots_vec in game.sorted_open_slots.to().combinations(slots_len as usize) {
             let slots:Slots = slots_vec.into(); 
-            let best_upper = slots.best_upper_total();
             let joker_rules_in_play = !slots.to().contains(&YAHTZEE); // joker rules are in effect whenever the yahtzee slot is already filled 
 
             // for each upper total 

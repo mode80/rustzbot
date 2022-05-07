@@ -228,7 +228,7 @@ fn print_out_cache(){
     }
 }
 
-#[test]
+// #[test]
 fn new_bench_test() {
     let game = GameState{   rolls_remaining: 3,
                             sorted_open_slots: [1,2,8,9,10,11,12,13].into(), 
@@ -241,7 +241,7 @@ fn new_bench_test() {
 } 
 
 
-// #[test]
+#[test]
 fn large_str8_test() {
 
     // this should be 7.41 per http://www-set.win.tue.nl/~wstomv/misc/yahtzee/osyp.php
