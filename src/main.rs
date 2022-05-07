@@ -191,7 +191,9 @@ impl Slots {
     }
 
     fn best_total_from_current_upper_slots (self) -> u8{
-        self.to().fold(0,|a,x| if x<=SIXES {a + x*5} else {a}) 
+        let mut sum=0;
+        for x in self { if x>6 {break} else {sum+=x;} }
+        sum*5
     }
 
 }
