@@ -3,9 +3,26 @@
 use std::io::BufWriter;
 
 use assert_approx_eq::assert_approx_eq;
-use bincode::de;
 
 use super::*;
+
+fn print_state_choice(state: &GameState, choice_ev:ChoiceEV){
+    if state.rolls_remaining==0 {
+        println!("S\t{: >6.2?}\t{:_^5}\t{:2?}\t{}\t{:2?}\t{}\t{: <29}",
+            choice_ev.ev, choice_ev.choice, state.rolls_remaining, state.sorted_dievals, state.upper_total, 
+            if state.yahtzee_bonus_avail {"Y"}else{""}, state.sorted_open_slots.to_string()); 
+    } else {
+        println!("D\t{: >6.2?}\t{:05b}\t{:2?}\t{}\t{:2?}\t{}\t{: <29}",
+            choice_ev.ev, choice_ev.choice, state.rolls_remaining, state.sorted_dievals, state.upper_total, 
+            if state.yahtzee_bonus_avail {"Y"}else{""}, state.sorted_open_slots.to_string()); 
+    };
+}
+
+fn best_choice_ev(game:GameState, app: &mut AppState) -> ChoiceEV{
+    debug_assert!(app.ev_cache.is_empty());
+    build_cache(game, app);
+    *app.ev_cache.get(&game).unwrap()
+}
 
 fn rounded(it:f32,places:i32) -> f32{
     let e = 10_f32.powi(places);
@@ -153,7 +170,7 @@ fn print_misc() {
 
 // #[test]
 fn unique_upper_totals_test() {
-    let slots:Slots = [1,2,4,5].into();
+    let slots:SortedSlots = [1,2,4,5].into();
     let sorted_totals = slots.relevant_upper_totals().sorted().collect_vec();
     eprintln!("{:?} {}",sorted_totals, sorted_totals.len());
     // assert_eq!(sorted_totals, vec![48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63]);
@@ -179,7 +196,7 @@ fn bench_test() {
 
 // #[test]
 fn removed_test(){
-    let s:Slots = [1,3,5].into();
+    let s:SortedSlots = [1,3,5].into();
     let r = s.removed(1);
     assert_eq!(r,[3,5].into() );
 }
@@ -192,7 +209,7 @@ fn counts_test(){
 
 // #[test]
 fn relevant_upper_totals_test(){
-   let slots:Slots = [1,2,4].into();
+   let slots:SortedSlots = [1,2,4].into();
    let retval = slots.relevant_upper_totals() ;
    eprintln!("{:?}", retval.to().sorted() );
 }

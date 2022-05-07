@@ -1,4 +1,4 @@
-#![allow(dead_code)] #![allow(unused_imports)] #![allow(unused_variables)]
+// #![allow(dead_code)] #![allow(unused_imports)] #![allow(unused_variables)]
 #![allow(clippy::needless_range_loop)] #![allow(clippy::unusual_byte_groupings)] 
 
 use std::{cmp::{max, min}, fs::{self, File}, ops::Range, fmt::Display,};
@@ -68,17 +68,10 @@ impl SortedSlots{
         ret.remove(val);
         ret
     }
-    fn first (self) -> Slot { // returns first slot
-        // self.to().next().unwrap()
-        let retval = self.data.trailing_zeros() as Slot;
-        debug_assert!(retval<=13);
-        retval
-    }
     fn has (self, val:Slot) -> bool {
         self.data & (1<<val) > 0  
     }
-    fn used_upper_slots(self) -> Self{
-        let upper_slots= FxHashSet::<u8>::from_iter(self.to().filter(|&x|x<=SIXES));
+    fn used_upper_slots(self) -> Self{ //TODO could be more efficient
         let mut retval:Self= default();
         for s in ACES..=SIXES { retval.insert(s); }
         retval
@@ -173,203 +166,6 @@ impl Iterator for SortedSlotsIntoIter {
             if self.sorted_slots.has(self.i) { return Some(self.i) }
         }
         None
-    }
-}
-
-
-
-/*-------------------------------------------------------------
-SLOTS
--------------------------------------------------------------*/
-
-#[derive(Debug,Clone,Copy,PartialEq,Serialize,Deserialize,Eq,PartialOrd,Ord,Hash,Default)]
-
-struct Slots{
-    pub data:u64, // 13 Slot values of between 1 and 13 can be encoded within these 8 bytes, each taking 4 bits
-    pub len:u8,
-}
-
-/*the following LLDB command will format Slots with meaningful values in the debugger 
-    type summary add --summary-string "Slots ${var.data[0-3]%u} ${var.data[4-7]%u} ${var.data[8-11]%u} ${var.data[12-15]%u} ${var.data[16-19]%u} ${var.data[20-23]%u} ${var.data[24-27]%u} ${var.data[28-31]%u} ${var.data[32-35]%u} ${var.data[36-39]%u} ${var.data[40-43]%u} ${var.data[44-47]%u} ${var.data[48-51]%u}" "yahtzeebot::Slots"
-*/
-
-impl Slots {
-
-    // fn encode_sorted_to_u16(self) -> u16 {
-    //     let mut ret:u16 = 0;
-    //     self.to().for_each(|x| ret |= 1<<x); 
-    //     ret
-    // }
-
-    // fn decode_u16(input:u16) -> Self {
-    //     let mut mut_input = input;
-    //     let mut trailing_zeros=0;
-    //     let mut slots = Slots::default();
-    //     while trailing_zeros<13 {
-    //         trailing_zeros=mut_input.trailing_zeros() as u8;
-    //         slots.push(trailing_zeros);
-    //         mut_input ^= 1<<trailing_zeros;
-    //     }
-    //     slots
-    // }
-
-    fn set(&mut self, index:u8, val:Slot) { 
-        debug_assert!(index < self.len); 
-        debug_assert!(index < 13); 
-        let bitpos = 4*index; // widths of 4 bits per value 
-        let mask = ! (0b1111_u64 << bitpos); // hole maker
-        self.data = (self.data & mask) | ((val as u64) << bitpos ); // punch & fill hole
-    }
-
-    fn get(&self, index:u8)->Slot{
-        ((self.data >> (index*4)) & 0b1111_u64) as Slot 
-    }
-
-    fn push(&mut self, val:Slot){
-        self.len +=1;
-        self.set(self.len-1,val);
-    }
-
-    fn removed(self, val:Slot)->Self{
-        match self.to().position(|x|x==val) {
-            Some(idx) =>  {
-                let front:Slots = self.truncated(idx as u8);
-                let back = self.data & !(2_u64.pow((idx as u32+1)*4)-1);
-                Slots{data:front.data | (back>>4), len: self.len-1}
-            },
-            None => {self}
-        }
-    }
-
-
-    fn truncate(&mut self, len:u8) {
-        let mask = (2_u64).pow(len as u32 * 4)-1;
-        self.data &= mask;
-        self.len=len;
-    }
-
-    fn truncated(self, len:u8) -> Self {
-        let mut self_copy = self;
-        self_copy.truncate(len);
-        self_copy
-     }
-
-    fn used_upper_slots(self) -> Self{
-        let upper_slots= FxHashSet::<u8>::from_iter(self.to().filter(|&x|x<=SIXES));
-        let mut retval:Slots = default();
-        for s in ACES..=SIXES { if !upper_slots.contains(&s) {retval.push(s)}; }
-        retval
-    }
- 
-    /// returns the unique and relevant "upper bonus total" that could have occurred from the previously used upper slots 
-    fn relevant_upper_totals(self) -> impl Iterator<Item=u8>   {  
-        let mut totals:FxHashSet<u8> = default();
-        // these are all the possible score entries for each upper slot
-        const UPPER_SCORES:[[u8;6];7] = [ 
-            [0,0,0,0,0,0],      // STUB
-            [0,1,2,3,4,5],      // ACES
-            [0,2,4,6,8,10],     // TWOS
-            [0,3,6,9,12,15],    // THREES 
-            [0,4,8,12,16,20],   // FOURS
-            [0,5,10,15,20,25],  // FIVES
-            [0,6,12,18,24,30],  // SIXES
-        ];
-        // only upper slots could have contributed to the upper total 
-        let used_slot_idxs = &self.used_upper_slots().to().filter(|&x|x<=SIXES).map(|x| x as usize).collect_vec(); 
-        let used_score_idx_perms= repeat_n(0..=5, used_slot_idxs.len()).multi_cartesian_product();
-        // for every permutation of entry indexes
-        for used_score_idxs in used_score_idx_perms {
-            // covert the list of entry indecis to a list of entry -scores-, then total them
-            let tot = used_slot_idxs.iter().zip(used_score_idxs).map(|(i,ii)| UPPER_SCORES[*i][ii]).sum();
-            // add the total to the set of unique totals 
-            totals.insert(min(tot,63));
-        }
-        totals.insert(0); // 0 is always relevant and must be added here explicitly when there are no used upper slots 
-
-        // filter out the totals that aren't relevant because they can't be reached by the upper slots remaining 
-        // NOTE this filters out a lot of unneeded state space but means the lookup function must map extraneous deficits to a default 
-        let best_current_slot_total = self.best_upper_total();
-        totals.to().filter/*keep!*/(move |used_slots_total| 
-            *used_slots_total==0 || // always relevant 
-            *used_slots_total + best_current_slot_total >= 63 // totals must reach the bonus threshhold to be relevant
-        )
-    }
-
-    fn best_upper_total (self) -> u8{
-        let mut sum=0;
-        for x in self { if x>6 {break} else {sum+=x;} }
-        sum*5
-    }
-
-}
-
-impl Display for Slots {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.to().for_each(|x| write!(f,"{}_",x).unwrap());
-        Ok(())
-    }
-}
-
-
-impl From<Vec<Slot>> for Slots{
-    fn from(vec: Vec<Slot>) -> Self {
-        assert! (vec.len() <= 13);
-        let mut retval = Slots{ len:vec.len() as u8, data:default()};
-        for i in 0..vec.len() { retval.set(i as u8, vec[i as usize]); }
-        retval 
-    }
-}
-impl From<&[Slot]> for Slots{
-    fn from(a: &[Slot]) -> Self {
-        assert! (a.len() <= 13);
-        let mut retval = Slots{ len:a.len() as u8, data:default()};
-        for i in 0..a.len() { retval.set(i as u8, a[i as usize]); }
-        retval 
-    }
-}
-impl <const N:usize> From<[Slot; N]> for Slots{
-    fn from(a: [Slot; N]) -> Self {
-        assert! (a.len() <= 13);
-        let mut retval = Slots{ len:a.len() as u8, data:default()};
-        for i in 0..N { retval.set(i as u8, a[i as usize]); }
-        retval 
-    }
-}
-impl <const N:usize>  From<&Slots> for [Slot; N]{ 
-    fn from(slots: &Slots) -> Self {
-        assert! ((slots.len as usize) <= N);
-        let mut retval:[Slot;N] = [Slot::default(); N]; 
-        for i in 0..N {retval[i] = slots.get(i as u8)};
-        retval
-    }
-}
-impl <const N:usize>  From<&mut Slots> for [Slot; N]{ 
-    fn from(slots: &mut Slots) -> Self {
-        <[Slot;N]>::from(&*slots) // the &* here copies the mutable ref to a ref 
-    }
-}
-
-impl IntoIterator for Slots{
-    type IntoIter=SlotsIntoIter;
-    type Item = Slot;
-
-    fn into_iter(self) -> Self::IntoIter {
-        SlotsIntoIter { slots:self, next_idx:0 }
-    }
-}
-
-struct SlotsIntoIter{
-    slots: Slots,
-    next_idx: u8,
-}
-
-impl Iterator for SlotsIntoIter {
-    type Item = Slot ;
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.next_idx == self.slots.len {return None};
-        let retval = self.slots.get(self.next_idx);
-        self.next_idx +=1;
-        Some(retval)
     }
 }
 
@@ -482,7 +278,6 @@ struct ChoiceEV {
     ev: f32
 }
 
-
 /*-------------------------------------------------------------
 Outcome
 -------------------------------------------------------------*/
@@ -492,14 +287,6 @@ struct Outcome {
     mask: DieVals, // stores a pre-made mask for blitting this outcome onto a GameState.DieVals.data u16 later
     arrangements: u8, // how many indistinguisable ways can these dievals be arranged (ie swapping identical dievals)
 }
-
-// /* YahtzeeStatus*/
-// #[derive(Debug, PartialEq, Eq, Ord, PartialOrd, Hash, Clone, Copy, Serialize, Deserialize)]
-// enum YahtzeeStatus {
-//     ZEROED,
-//     ROLLED,
-//     OPEN,
-// }
 
 /*-------------------------------------------------------------
 GameState
@@ -542,7 +329,7 @@ impl Default for GameState{
         let mut saves:usize =0;
         for subset_len in 1..=self.sorted_open_slots.len{ 
             for slots_vec in self.sorted_open_slots.to().combinations(subset_len as usize) {
-                let slots:Slots =slots_vec.into(); 
+                let slots:SortedSlots =slots_vec.into(); 
                 let joker_rules = !slots.to().contains(&YAHTZEE); // yahtzees aren't wild whenever yahtzee slot is still available 
                 for upper_bonus_deficit in slots.relevant_upper_totals() {
                     for yahtzee_bonus_avail in [false,joker_rules].to().unique() {
@@ -754,20 +541,6 @@ fn log_state_choice(state: &GameState, choice_ev:ChoiceEV, app:&AppState){
     // };
 }
 
-
-fn print_state_choice(state: &GameState, choice_ev:ChoiceEV){
-    if state.rolls_remaining==0 {
-        println!("S\t{: >6.2?}\t{:_^5}\t{:2?}\t{}\t{:2?}\t{}\t{: <29}",
-            choice_ev.ev, choice_ev.choice, state.rolls_remaining, state.sorted_dievals, state.upper_total, 
-            if state.yahtzee_bonus_avail {"Y"}else{""}, state.sorted_open_slots.to_string()); 
-    } else {
-        println!("D\t{: >6.2?}\t{:05b}\t{:2?}\t{}\t{:2?}\t{}\t{: <29}",
-            choice_ev.ev, choice_ev.choice, state.rolls_remaining, state.sorted_dievals, state.upper_total, 
-            if state.yahtzee_bonus_avail {"Y"}else{""}, state.sorted_open_slots.to_string()); 
-    };
-}
-
-
 /*-------------------------------------------------------------
 SCORING FNs
 -------------------------------------------------------------*/
@@ -877,12 +650,6 @@ fn score_slot_in_context(game:&GameState) -> u8 {
         }
 
     score
-}
-
-fn best_choice_ev(game:GameState, app: &mut AppState) -> ChoiceEV{
-    debug_assert!(app.ev_cache.is_empty());
-    build_cache(game, app);
-    *app.ev_cache.get(&game).unwrap()
 }
 
 /*-------------------------------------------------------------
@@ -1039,7 +806,6 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                         rolls_remaining, 
                                     }; 
                                 log_state_choice(&state, best_dice_choice_ev, app);
-                                let debug = if state.sorted_dievals.data==27939 /*&& state.rolls_remaining==2*/ {1} else {0};
                                 built_this_thread.insert(state,best_dice_choice_ev);
  
                             } // endif roll_remaining...  
