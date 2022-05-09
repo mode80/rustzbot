@@ -297,26 +297,12 @@ GameState
 -------------------------------------------------------------*/
 #[derive(Debug, PartialEq, Eq, Ord, PartialOrd, Hash, Clone, Copy, Serialize, Deserialize)]
 struct GameState{
-    rolls_remaining:u8, // 3 bits 
     sorted_dievals:DieVals, //15 bits 
     sorted_open_slots:SortedSlots, // 52 bits... or 1+2+2+3+3+3+3+4+4+4+4+4+4=41 .. or 13 sorted 
     upper_total:u8, // 6 bits 
+    rolls_remaining:u8, // 3 bits 
     yahtzee_bonus_avail:bool, // 1 bit 
 }
-// impl std::hash::Hash for GameState{
-//     fn hash<H: Hasher>(&self, hasher: &mut H) {
-//         todo!();
-//     }
-// }    
-// impl PartialEq for GameState{
-//     fn eq(&self, other: &Self) -> bool {
-//         self.sorted_dievals == other.sorted_dievals 
-//         && self.rolls_remaining == other.rolls_remaining 
-//         && self.upper_total == other.upper_total
-//         && self.yahtzee_is_wild == other.yahtzee_is_wild 
-//         && self.sorted_open_slots == other.sorted_open_slots
-//     }
-// }    
 
 impl Default for GameState{
     fn default() -> Self {
