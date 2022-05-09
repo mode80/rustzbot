@@ -1,10 +1,10 @@
 #![allow(dead_code)] #![allow(unused_imports)] #![allow(unused_variables)]
 #![allow(clippy::needless_range_loop)] #![allow(clippy::unusual_byte_groupings)] 
 
-use std::{cmp::{max, min}, fs::{self, File}, ops::Range, fmt::Display,};
+use std::{cmp::{max, min}, fs::{self, File}, ops::Range, fmt::Display, collections::{hash_map::DefaultHasher, HashMap}, hash::BuildHasherDefault,};
 use itertools::{Itertools, repeat_n};
 use indicatif::{ProgressBar, ProgressStyle, ProgressFinish};
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::{FxHashMap, FxHashSet, FxHasher};
 use once_cell::sync::Lazy;
 use std::io::Write; 
 use rayon::prelude::*;
@@ -35,6 +35,7 @@ type Choice     = u8; // represents EITHER the index of a chosen slot, OR a DieS
 type DieVal     = u8; // a single die value 0 to 6 where 0 means "unselected"
 type Slot       = u8; // a single slot with values ranging from ACES to CHANCE 
 type Score      = u8;
+type YahtCache  = HashMap::<GameState,ChoiceEV,BuildHasherDefault<FxHasher>>;
 
 /*-------------------------------------------------------------
 SORTED_SLOTS
@@ -358,7 +359,7 @@ AppState
 -------------------------------------------------------------*/
 struct AppState{
     bar:ProgressBar,
-    ev_cache:FxHashMap<GameState,ChoiceEV>,
+    ev_cache:YahtCache,
 }
 impl AppState{
     fn new(game: &GameState) -> Self{
@@ -375,7 +376,7 @@ impl AppState{
         let ev_cache = if let Ok(bytes) = fs::read("ev_cache") { 
             ::bincode::deserialize(&bytes).unwrap() 
         } else {
-            FxHashMap::with_capacity_and_hasher(init_hash_capacity, default())
+            YahtCache::with_capacity_and_hasher(init_hash_capacity, default())
         };
 
         Self{bar, ev_cache}
@@ -664,7 +665,7 @@ fn build_cache(game:GameState, app: &mut AppState) {
     let sorted = SORTED_DIEVALS.clone();
     let all_die_combos=&OUTCOMES[SELECTION_RANGES[0b11111].clone()];
     let placeholder_dievals= &OUTCOMES[0..=0]; //OUTCOMES[0] == [Dievals::default()]
-    let mut leaf_cache = FxHashMap::<GameState,ChoiceEV>::default();
+    let mut leaf_cache = YahtCache::default();
 
     // first handle special case of the most leafy leaf calcs -- where there's one slot left and no rolls remaining
     for single_slot in game.sorted_open_slots {  // TODO: THREADS?
