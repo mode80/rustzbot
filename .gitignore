@@ -4,3 +4,4 @@
 ev_cache*
 perms*
 .idea
+Cargo.lock

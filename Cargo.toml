@@ -23,6 +23,7 @@ bincode = "1.3.3"
 rayon = "1.5.1"
 # cached = "0.34.0"
 num_cpus = "1.13.1"
+ahash = {version= "0.7.6", features =["serde"]}
 
 [dev-dependencies]
 assert_approx_eq = "1.1.0"
