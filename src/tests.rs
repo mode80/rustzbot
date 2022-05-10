@@ -8,11 +8,11 @@ use super::*;
 
 fn print_state_choice(state: &GameState, choice_ev:ChoiceEV){
     if state.rolls_remaining==0 {
-        println!("S\t{: >6.2?}\t{:_^5}\t{:2?}\t{}\t{:2?}\t{}\t{: <29}",
+        println!("S {:_>6.2?} {:_^5} {:2?} {} {:2?} {} {:_<29}",
             choice_ev.ev, choice_ev.choice, state.rolls_remaining, state.sorted_dievals, state.upper_total, 
             if state.yahtzee_bonus_avail {"Y"}else{""}, state.sorted_open_slots.to_string()); 
     } else {
-        println!("D\t{: >6.2?}\t{:05b}\t{:2?}\t{}\t{:2?}\t{}\t{: <29}",
+        println!("D {:_>6.2?} {:05b} {:2?} {} {:2?} {} {:_<29}",
             choice_ev.ev, choice_ev.choice, state.rolls_remaining, state.sorted_dievals, state.upper_total, 
             if state.yahtzee_bonus_avail {"Y"}else{""}, state.sorted_open_slots.to_string()); 
     };
@@ -38,10 +38,11 @@ fn test_dievals_into(){
 }
 
 
-// #[test]
+#[test]
 fn score_slot_test() {
     assert_eq!(0, score_slot(FULL_HOUSE,[1,2,5,5,5].into() ));
     assert_eq!(25, score_slot(FULL_HOUSE,[2,2,5,5,5].into()));
+    assert_eq!(0, score_slot(FULL_HOUSE,[0,0,5,5,5].into()));
     assert_eq!(0, score_slot(YAHTZEE,[4,5,5,5,5].into()));
     assert_eq!(50, score_slot(YAHTZEE,[1,1,1,1,1].into()));
 }
@@ -206,15 +207,9 @@ fn relevant_upper_totals_test(){
    eprintln!("{:?}", retval.to().sorted() );
 }
 
-// #[test]
+#[test]
 fn print_out_cache(){
-    let game = GameState { 
-        rolls_remaining: 2,
-        sorted_dievals: [3,4,4,6,6].into(), 
-        sorted_open_slots:  [1].into(),
-        upper_total: 0,
-        yahtzee_bonus_avail: false 
-    };
+    let game : GameState = default() ;
     let app = &mut AppState::new(&game);
     build_cache(game,app);
     for entry in &app.ev_cache {
@@ -246,7 +241,7 @@ fn large_str8_test() {
     assert_eq!(rounded(lhs.ev,2), 7.41);
 }
 
-#[test]
+// #[test]
 fn new_bench_test() {
     let game = GameState{   rolls_remaining: 3,
                             sorted_open_slots: [1,2,8,9,10,11,12,13].into(), 

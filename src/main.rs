@@ -578,18 +578,11 @@ fn score_lg_str8(sorted_dievals:    DieVals)->Score{
 
 // The official rule is that a Full House is "three of one number and two of another"
 fn score_fullhouse(sorted_dievals:DieVals) -> Score { 
-    let mut iter=sorted_dievals.to();
-    let val = iter.next().unwrap();
-    let val1=val; 
-    let mut val1count =1; 
-    let mut val2=0;
-    let mut val2count =0;
-    for val in iter {
-        if val == 0 {return 0};
-        if val1 == val {val1count+=1; continue;}
-        if val2 == 0 {val2 = val; val2count=1; continue;}    
-        if val2 == val {val2count+=1; continue;}
-    }
+    let counts = sorted_dievals.to().counts();
+    if counts.len() != 2 {return 0};
+    let mut it = counts.into_iter(); 
+    let &(val1,val1count) = &it.next().unwrap();
+    let (val2,val2count) = it.next().unwrap(); 
     if val1==0 || val2==0 {return 0};
     if (val1count==3 && val2count==2) || (val2count==3 && val1count==2) {25} else {0}
 }
