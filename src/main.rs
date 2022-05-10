@@ -191,7 +191,7 @@ impl DieVals {
 
     /// blit the 'from' dievals into the 'self' dievals with the help of a mask where 0 indicates incoming 'from' bits and 1 indicates none incoming 
     fn blit(&mut self, from:DieVals, mask:DieVals,){
-        self.data = (self.data & mask.data) | from.data;
+        self.data = (self.data & mask.data) | from.data;//TODO mask actually needed?
     }
 
     fn get(&self, index:u8)->DieVal{
@@ -379,13 +379,14 @@ const THREE_OF_A_KIND:Slot=7; const FOUR_OF_A_KIND:Slot=8; const FULL_HOUSE:Slot
 const YAHTZEE:Slot=12; const CHANCE:Slot=13; 
  
 const SCORE_FNS:[fn(sorted_dievals:DieVals)->Score;14] = [
-    score_aces, // duplicate placeholder so indices align more intuitively with categories 
+    |x|panic!(), // stub so indices align more intuitively with categories 
     score_aces, score_twos, score_threes, score_fours, score_fives, score_sixes, 
     score_3ofakind, score_4ofakind, score_fullhouse, score_sm_str8, score_lg_str8, score_yahtzee, score_chance, 
 ];
 
 const NONE_DICE_IDX:usize = 0;
 const ALL_DICE_IDX:usize = 31;
+const IDX_FOR_SELECTION:[usize;32] = [0,1,2,3,4,7,6,16,8,9,10,17,11,13,19,26,5,12,18,20,14,21,22,23,15,25,24,27,28,29,30,31];
 const BITFIELD_FOR_SELECTION_IDX:[u8;32] = [0,1,2,4,8,16,3,5,6,9,10,12,17,18,20,24,7,11,13,14,19,21,22,25,26,28,15,23,27,29,30,31];
 static SELECTION_RANGES:Lazy<[Range<usize>;32]> = Lazy::new(selection_ranges); 
 static OUTCOMES:Lazy<[Outcome;1683]> = Lazy::new(all_selection_outcomes); 
@@ -454,6 +455,26 @@ fn die_index_combos() ->[Vec<u8>;32]  {
     them
 }
 
+fn distinct_arrangements_for(dieval_vec:Vec<DieVal>)->u8{
+    let counts = dieval_vec.iter().counts();
+    let mut divisor:usize=1;
+    let mut non_zero_dievals=0_u8;
+    for count in counts { 
+        if *count.0 != 0 { 
+            divisor *= FACT[count.1] as usize ; 
+            non_zero_dievals += count.1 as u8;
+        }
+    } 
+    (FACT[non_zero_dievals as usize] as f64 / divisor as f64) as u8
+}
+
+/// returns a slice from the precomputed dice roll outcomes that corresponds to the given selection bitfield 
+fn outcomes_for_selection(selection:u8)->&'static [Outcome]{
+    let idx = IDX_FOR_SELECTION[selection as usize];
+    let range = SELECTION_RANGES[idx].clone();
+    &OUTCOMES[range]
+}
+
 
 /*-------------------------------------------------------------
 UTILS
@@ -479,19 +500,6 @@ pub fn default<T: Default>() -> T {
 /// rudimentary factorial suitable for our purposes here.. handles up to fact(20) 
 fn fact(n: u8) -> u64{
     if n<=1 {1} else { (n as u64)*fact(n-1) }
-}
-
-fn distinct_arrangements_for(dieval_vec:Vec<DieVal>)->u8{
-    let counts = dieval_vec.iter().counts();
-    let mut divisor:usize=1;
-    let mut non_zero_dievals=0_u8;
-    for count in counts { 
-        if *count.0 != 0 { 
-            divisor *= FACT[count.1] as usize ; 
-            non_zero_dievals += count.1 as u8;
-        }
-    } 
-    (FACT[non_zero_dievals as usize] as f64 / divisor as f64) as u8
 }
 
 /// count of arrangements that can be formed from r selections, chosen from n items, 
@@ -751,16 +759,16 @@ fn build_cache(game:GameState, app: &mut AppState) {
                             /* HANDLE DICE SELECTION */    
 
                                 let next_roll = rolls_remaining-1; 
-                                let selection_idxs = if rolls_remaining ==3 { // all selections index into a set of precomputed possible dice outcomes 
-                                    ALL_DICE_IDX..=ALL_DICE_IDX //always select all dice on the initial roll . 
-                                } else { NONE_DICE_IDX..=ALL_DICE_IDX }; //otherwise try all selections
+                                let selections = if rolls_remaining ==3 { // selections are bitfields where '1' means roll and '0' means don't roll 
+                                    0b11111..=0b11111 //always select all dice on the initial roll . 
+                                } else { 0b00000..=0b11111}; //otherwise try all selections
                                 let mut best_dice_choice_ev = ChoiceEV::default();
-                                for selection_idx in selection_idxs { // we'll try each selection against this starting dice combo  
+                                for selection in selections { // we'll try each selection against this starting dice combo  
                                     let mut total_ev_for_selection = 0.0; 
                                     let mut outcomes_count:u64= 0; 
-                                    for selection_outcome in &OUTCOMES[ SELECTION_RANGES[selection_idx].clone() ] {
+                                    for roll_outcome in outcomes_for_selection(selection) {
                                         let mut newvals = die_combo.dievals;
-                                        newvals.blit(selection_outcome.dievals, selection_outcome.mask);
+                                        newvals.blit(roll_outcome.dievals, roll_outcome.mask);
                                         newvals = sorted[&newvals]; 
                                         let state = GameState{
                                             sorted_dievals: newvals, 
@@ -770,11 +778,10 @@ fn build_cache(game:GameState, app: &mut AppState) {
                                             rolls_remaining: next_roll, // we'll average all the 'next roll' possibilities (which we'd calclated last) to get ev for 'this roll' 
                                         };
                                         let ev_for_this_selection_outcome = app.ev_cache.get(&state).unwrap().ev; 
-                                        total_ev_for_selection += ev_for_this_selection_outcome * selection_outcome.arrangements as f32;// bake into upcoming average
-                                        outcomes_count += selection_outcome.arrangements as u64; // we loop through die "combos" but we'll average all "perumtations"
+                                        total_ev_for_selection += ev_for_this_selection_outcome * roll_outcome.arrangements as f32;// bake into upcoming average
+                                        outcomes_count += roll_outcome.arrangements as u64; // we loop through die "combos" but we'll average all "perumtations"
                                     }
                                     let avg_ev_for_selection = total_ev_for_selection / outcomes_count as f32;
-                                    let selection = BITFIELD_FOR_SELECTION_IDX[selection_idx]; // convert selection's index to a bitfield that expresses which dice will be chosen 
                                     if avg_ev_for_selection > best_dice_choice_ev.ev{
                                         best_dice_choice_ev = ChoiceEV{choice:selection as u8, ev:avg_ev_for_selection};
                                     }
