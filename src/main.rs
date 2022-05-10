@@ -1,5 +1,6 @@
 #![allow(dead_code)] #![allow(unused_imports)] #![allow(unused_variables)]
 #![allow(clippy::needless_range_loop)] #![allow(clippy::unusual_byte_groupings)] 
+#[cfg(test)] #[path = "./tests.rs"] mod tests;
 
 use std::{cmp::{max, min}, fs::{self, File}, ops::Range, fmt::Display, collections::{hash_map::DefaultHasher, HashMap}, hash::BuildHasherDefault,};
 use itertools::{Itertools, repeat_n};
@@ -8,13 +9,7 @@ use rustc_hash::{FxHashMap, FxHashSet, FxHasher};
 use once_cell::sync::Lazy;
 use std::io::Write; 
 use rayon::prelude::*;
-
-#[macro_use] extern crate serde_derive;
-extern crate bincode;
-
-#[cfg(test)] 
-#[path = "./tests.rs"]
-mod tests;
+use serde::{Serialize, Deserialize};
 
 /*------------------------------------------------------------
 MAIN
