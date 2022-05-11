@@ -1,36 +1,438 @@
 #![allow(dead_code)] #![allow(unused_imports)] #![allow(unused_variables)]
 #![allow(clippy::needless_range_loop)] #![allow(clippy::unusual_byte_groupings)] 
+use std::{cmp::{max, min}, fs::{self, File}, ops::Range, fmt::Display, collections::{HashMap}, hash::BuildHasherDefault,};
+use itertools::{Itertools, repeat_n}; use indicatif::{ProgressBar, ProgressStyle, ProgressFinish}; use rustc_hash::{FxHashMap, FxHashSet, FxHasher};
+use once_cell::sync::Lazy; use std::io::Write; use rayon::prelude::*; use serde::{Serialize, Deserialize};
 #[cfg(test)] #[path = "./tests.rs"] mod tests;
-
-use std::{cmp::{max, min}, fs::{self, File}, ops::Range, fmt::Display, collections::{hash_map::DefaultHasher, HashMap}, hash::BuildHasherDefault,};
-use itertools::{Itertools, repeat_n};
-use indicatif::{ProgressBar, ProgressStyle, ProgressFinish};
-use rustc_hash::{FxHashMap, FxHashSet, FxHasher};
-use once_cell::sync::Lazy;
-use std::io::Write; 
-use rayon::prelude::*;
-use serde::{Serialize, Deserialize};
 
 /*------------------------------------------------------------
 MAIN
 -------------------------------------------------------------*/
 fn main() {
 
-    let game = GameState::default();
-    let app = & mut AppState::new(&game);
-    build_cache(game,app);
+    let mut app = App::new(default());
+    app.build_cache();
     app.save_cache();
 
 }
 
 /*-------------------------------------------------------------
-TYPE ALIASES
+CONSTS
 -------------------------------------------------------------*/
-type Choice     = u8; // represents EITHER the index of a chosen slot, OR a DieSet selection (below)
+
+type Choice     = u8; // represents EITHER chosen scorecard Slot, OR a chosen dice Selection (below)
+type Selection  = u8; // a bitfield representing a selection of dice to roll (1 means roll, 0 means don't)
+type Slot       = u8; // a single scorecard slot with values ranging from ACES to CHANCE 
 type DieVal     = u8; // a single die value 0 to 6 where 0 means "unselected"
-type Slot       = u8; // a single slot with values ranging from ACES to CHANCE 
-type Score      = u8;
 type YahtCache  = HashMap::<GameState,ChoiceEV,BuildHasherDefault<FxHasher>>;
+
+struct SlotID; impl SlotID{
+    const STUB:Slot=0; const ACES:Slot=1; const TWOS:Slot=2; const THREES:Slot=3; const FOURS:Slot=4; const FIVES:Slot=5; const SIXES:Slot=6;
+    const THREE_OF_A_KIND:Slot=7; const FOUR_OF_A_KIND:Slot=8; const FULL_HOUSE:Slot=9; const SM_STRAIGHT:Slot=10; const LG_STRAIGHT:Slot=11; 
+    const YAHTZEE:Slot=12; const CHANCE:Slot=13; 
+}
+ 
+static SELECTION_RANGES:Lazy<[Range<usize>;32]> = Lazy::new(selection_ranges); 
+static OUTCOMES:Lazy<[Outcome;1683]> = Lazy::new(all_selection_outcomes); 
+static FACT:Lazy<[u64;21]> = Lazy::new(||{let mut a:[u64;21]=[0;21]; for i in 0..=20 {a[i]=fact(i as u8);} a});  // cached factorials
+static SORTED_DIEVALS:Lazy<FxHashMap<DieVals,DieVals>> = Lazy::new(sorted_dievals); 
+
+/*-------------------------------------------------------------
+APP
+-------------------------------------------------------------*/
+struct App{
+    game: GameState,
+    bar:ProgressBar,
+    ev_cache:YahtCache,
+}
+impl App{
+
+   /// return a newly initialized app
+   fn new(game: GameState) -> Self{
+        
+        // precache some hot values
+        let GameStateCounts{ lookups, saves} = game.counts();
+
+        // init "UI"
+        let bar = ProgressBar::new(lookups);
+        bar.set_draw_rate(1);
+        bar.set_style(ProgressStyle::default_bar()
+            .template("{prefix} {wide_bar} {percent}% {pos:>4}/{len:4} {elapsed:>}/{duration} ETA:{eta}")
+            .on_finish(ProgressFinish::AtCurrentPos)
+        );
+
+        // prep cache 
+        let init_hash_capacity = saves; 
+        let ev_cache = if let Ok(bytes) = fs::read("ev_cache") { //read from disk if it exists
+            ::bincode::deserialize(&bytes).unwrap() 
+        } else {
+            YahtCache::with_capacity_and_hasher(init_hash_capacity, default())
+        };
+
+        Self{game, bar, ev_cache}
+    }
+
+
+    /// gather up expected values in a multithreaded bottom-up fashion. this is like.. the main thing
+    fn build_cache(&mut self) {
+        let sorted = SORTED_DIEVALS.clone();
+        let all_die_combos=outcomes_for_selection(0b11111);
+        let placeholder_dievals= &OUTCOMES[0..=0]; //OUTCOMES[0] == [Dievals::default()]
+        let mut leaf_cache = YahtCache::default();
+
+        // first handle special case of the most leafy leaf calcs -- where there's one slot left and no rolls remaining
+        for single_slot in self.game.sorted_open_slots {  
+            let slot:SortedSlots = [single_slot].into(); //set of a single slot 
+            let joker_rules_in_play = single_slot!=SlotID::YAHTZEE; // joker rules in effect when the yahtzee slot is not open 
+            for yahtzee_bonus_available in [false, joker_rules_in_play].to().unique() { // yahtzee bonus -might- be available when joker rules are in play 
+                for upper_total in slot.relevant_upper_totals(){
+                    for outcome in all_die_combos{
+                        let state = GameState{
+                            rolls_remaining: 0, 
+                            sorted_dievals: outcome.dievals, //pre-cached dievals should already be sorted here
+                            sorted_open_slots: slot, 
+                            upper_total, 
+                            yahtzee_bonus_avail: yahtzee_bonus_available,
+                        };
+                        let score = state.score_first_slot_in_context() as f32;
+                        let choice_ev = ChoiceEV{ choice: single_slot, ev: score};
+                        leaf_cache.insert(state, choice_ev);
+                        self.log_state_choice(&state, choice_ev)
+        } } } }
+
+        // for each length 
+        for slots_len in 1..=self.game.sorted_open_slots.len(){ 
+
+            // for each slotset (of above length)
+            for slots_vec in self.game.sorted_open_slots.to().combinations(slots_len as usize) {
+                let slots:SortedSlots = slots_vec.into(); 
+                let joker_rules_in_play = !slots.to().contains(&SlotID::YAHTZEE); // joker rules are in effect whenever the yahtzee slot is already filled 
+
+                // for each upper total 
+                for upper_total in slots.relevant_upper_totals() {
+
+                    // for each yathzee bonu possibility 
+                    for yahtzee_bonus_available in [false,joker_rules_in_play].to().unique() {// bonus always unavailable unless yahtzees are wild first
+
+                        self.bar.inc(848484); // advance the progress bar by the number of cache reads coming up for dice selection 
+                        self.bar.inc(252 * slots_len as u64 *if slots_len ==1{1}else{2}); // advance for slot selection cache reads
+
+                        // for each rolls remaining
+                        for rolls_remaining in [0,1,2,3] { 
+
+                            let die_combos = if rolls_remaining==3 {placeholder_dievals} else {all_die_combos}; 
+
+                            let built_from_threads = die_combos.into_par_iter().fold(FxHashMap::<GameState,ChoiceEV>::default, |mut built_this_thread, die_combo|{  
+
+                                if rolls_remaining==0  { 
+                                /* HANDLE SLOT SELECTION */
+
+                                    let mut slot_choice_ev:ChoiceEV = default();
+
+                                    for slot in slots {
+
+                                        //joker rules say extra yahtzees must be played in their matching upper slot if it's available
+                                        let first_dieval =die_combo.dievals.get(0);
+                                        let joker_rules_matter = joker_rules_in_play && Score::yahtzee(die_combo.dievals)>0 && slots.to().contains(&first_dieval);
+                                        let head_slot:Slot = if joker_rules_matter { first_dieval } else { slot };
+                                        let head:SortedSlots = [head_slot].into();
+
+                                        let mut yahtzee_bonus_avail_now = yahtzee_bonus_available;
+                                        let mut upper_total_now = upper_total;
+                                        let mut dievals_or_wildcard = die_combo.dievals; 
+                                        let tail = if slots_len > 1 { slots.removed(head_slot) } else {head};
+                                        let mut head_plus_tail_ev = 0.0;
+        
+                                        // find the collective ev for the all the slots with this iteration's slot being first 
+                                        // do this by summing the ev for the first (head) slot with the ev value that we look up for the remaining (tail) slots
+                                        let mut rolls_remaining = 0;
+                                        for slots_piece in [head,tail].to().unique(){
+                                            upper_total_now = if upper_total_now + slots_piece.best_upper_total() >= 63 {upper_total_now} else {0}; // only relevant totals are cached
+                                            let state = &GameState{
+                                                rolls_remaining, 
+                                                sorted_dievals: dievals_or_wildcard,
+                                                sorted_open_slots: slots_piece, 
+                                                upper_total: upper_total_now, 
+                                                yahtzee_bonus_avail: yahtzee_bonus_avail_now,
+                                            };
+                                            let cache = if slots_piece==head { &leaf_cache } else { &self.ev_cache};
+                                            let choice_ev = cache.get(state).unwrap(); 
+                                            if slots_piece==head { // on the first pass only.. 
+                                                //going into tail slots next, we may need to adjust the state based on the head choice
+                                                if choice_ev.choice <=SlotID::SIXES { // adjust upper total for the next pass 
+                                                    let added = (choice_ev.ev as u8) % 100; // the modulo 100 here removes any yathzee bonus from ev since that doesnt' count toward upper bonus total
+                                                    upper_total_now = min(63, upper_total_now + added);
+                                                } else if choice_ev.choice==SlotID::YAHTZEE { // adjust yahtzee related state for the next pass
+                                                    if choice_ev.ev>0.0 {yahtzee_bonus_avail_now=true;};
+                                                }
+                                                rolls_remaining=3; // for upcoming tail lookup, we always want the ev for 3 rolls remaining
+                                                dievals_or_wildcard = DieVals::default() // for 3 rolls remaining, use "wildcard" representative dievals since dice don't matter when rolling all of them
+                                            }
+                                            head_plus_tail_ev += choice_ev.ev;
+                                        } //end for slot_piece
+                                        if head_plus_tail_ev >= slot_choice_ev.ev { slot_choice_ev = ChoiceEV{ choice: slot, ev: head_plus_tail_ev}};
+                                        
+                                        if joker_rules_matter {break};// if joker-rules-matter we were forced to choose one slot, so we can skip trying the rest  
+                                    }
+                                    
+                                    let state = GameState {
+                                        sorted_dievals: die_combo.dievals, 
+                                        sorted_open_slots: slots,
+                                        rolls_remaining: 0, 
+                                        upper_total, 
+                                        yahtzee_bonus_avail: yahtzee_bonus_available ,
+                                    };
+                                    built_this_thread.insert( state, slot_choice_ev);
+                                    self.log_state_choice(&state, slot_choice_ev)
+
+                                } else { //if rolls_remaining > 0  
+                                /* HANDLE DICE SELECTION */    
+
+                                    let next_roll = rolls_remaining-1; 
+                                    let mut best_dice_choice_ev = ChoiceEV::default();
+                                    let selections = if rolls_remaining ==3 { // selections are bitfields where '1' means roll and '0' means don't roll 
+                                        0b11111..=0b11111 //always select all dice on the initial roll . 
+                                    } else { 0b00000..=0b11111}; //otherwise try all selections
+                                    for selection in selections { // we'll try each selection against this starting dice combo  
+                                        let mut total_ev_for_selection = 0.0; 
+                                        let mut outcomes_count:u64= 0; 
+                                        for roll_outcome in outcomes_for_selection(selection) {
+                                            let mut newvals = die_combo.dievals;
+                                            newvals.blit(roll_outcome.dievals, roll_outcome.mask);
+                                            newvals = sorted[&newvals]; 
+                                            let state = GameState{
+                                                sorted_dievals: newvals, 
+                                                sorted_open_slots: slots, 
+                                                upper_total, 
+                                                yahtzee_bonus_avail: yahtzee_bonus_available, 
+                                                rolls_remaining: next_roll, // we'll average all the 'next roll' possibilities (which we'd calclated last) to get ev for 'this roll' 
+                                            };
+                                            let ev_for_this_selection_outcome = self.ev_cache.get(&state).unwrap().ev; 
+                                            total_ev_for_selection += ev_for_this_selection_outcome * roll_outcome.arrangements as f32;// bake into upcoming average
+                                            outcomes_count += roll_outcome.arrangements as u64; // we loop through die "combos" but we'll average all "perumtations"
+                                        }
+                                        let avg_ev_for_selection = total_ev_for_selection / outcomes_count as f32;
+                                        if avg_ev_for_selection > best_dice_choice_ev.ev{
+                                            best_dice_choice_ev = ChoiceEV{choice:selection as u8, ev:avg_ev_for_selection};
+                                        }
+                                    }
+                                    let state = GameState{
+                                            sorted_dievals: die_combo.dievals,  
+                                            sorted_open_slots: slots, 
+                                            upper_total, 
+                                            yahtzee_bonus_avail: yahtzee_bonus_available, 
+                                            rolls_remaining, 
+                                        }; 
+                                    self.log_state_choice(&state, best_dice_choice_ev);
+                                    built_this_thread.insert(state,best_dice_choice_ev);
+    
+                                } // endif roll_remaining...  
+
+                                built_this_thread
+
+                            }).reduce(FxHashMap::<GameState,ChoiceEV>::default, |mut a,built_from_thread|{
+                                a.extend(&built_from_thread); a 
+                            }); // end die_combos.par_into_iter() 
+
+                            self.ev_cache.extend(&built_from_threads);
+
+                        } // end for each rolls_remaining
+                    } //end for each yahtzee_is_wild
+                } //end for each upper total 
+            } // end for each slot_set 
+        } // end for each length
+    } // end fn build_cache
+
+    fn best_choice_ev(&mut self) -> ChoiceEV{
+        debug_assert!(!self.ev_cache.is_empty());
+        *self.ev_cache.get(&self.game).unwrap()
+    }
+
+    fn save_cache(&self){
+        let evs = &self.ev_cache; 
+        let mut f = &File::create("ev_cache").unwrap();
+        let bytes = bincode::serialize(evs).unwrap();
+        f.write_all(&bytes).unwrap();
+    }
+
+    fn log_state_choice(&self, state: &GameState, choice_ev:ChoiceEV, ){
+        // Uncomment below for more verbose progress output at the expense of speed 
+        // if state.rolls_remaining==0 {
+        //     self.bar.println(format!("S\t{: >6.2?}\t{:_^5}\t{:2?}\t{}\t{:2?}\t{}\t{: <29}",
+        //         choice_ev.ev, choice_ev.choice, state.rolls_remaining, state.sorted_dievals, state.upper_total, 
+        //         if state.yahtzee_bonus_avail {"Y"}else{""}, state.sorted_open_slots.to_string())); 
+        // } else {
+        //     self.bar.println(format!("D\t{: >6.2?}\t{:05b}\t{:2?}\t{}\t{:2?}\t{}\t{: <29}",
+        //         choice_ev.ev, choice_ev.choice, state.rolls_remaining, state.sorted_dievals, state.upper_total, 
+        //         if state.yahtzee_bonus_avail {"Y"}else{""}, state.sorted_open_slots.to_string())); 
+        // };
+    }
+
+
+}
+
+/*-------------------------------------------------------------
+GameState
+-------------------------------------------------------------*/
+#[derive(Debug, PartialEq, Eq, Ord, PartialOrd, Hash, Clone, Copy, Serialize, Deserialize)]
+struct GameState{
+    sorted_dievals:DieVals, //15 bits minimally
+    sorted_open_slots:SortedSlots, // 13 bits "
+    upper_total:u8, // 6 bits " 
+    rolls_remaining:u8, // 3 bits "
+    yahtzee_bonus_avail:bool, // 1 bit "
+}
+
+impl GameState{ 
+    /// calculate relevant counts for gamestate: required lookups and saves
+    fn counts(self) -> GameStateCounts {
+
+        let mut lookups:u64 = 0;
+        let mut saves:usize =0;
+        for subset_len in 1..=self.sorted_open_slots.len(){ 
+            for slots_vec in self.sorted_open_slots.to().combinations(subset_len as usize) {
+                let slots:SortedSlots =slots_vec.into(); 
+                let joker_rules = !slots.to().contains(&SlotID::YAHTZEE); // yahtzees aren't wild whenever yahtzee slot is still available 
+                for _upper_bonus_deficit in slots.relevant_upper_totals() {
+                    for _yahtzee_bonus_avail in [false,joker_rules].to().unique() {
+                        let slot_lookups = (subset_len as u64 * if subset_len==1{1}else{2} as u64) * 252 ;// * subset_len as u64;
+                        let dice_lookups = 848484; // previoiusly verified by counting up by 1s in the actual loop. however chunking forward is faster 
+                        lookups += dice_lookups + slot_lookups;
+                        saves+=1;
+        }}}}
+        
+        GameStateCounts{ lookups, saves } 
+    }
+
+    pub fn score_first_slot_in_context(&self) -> u8 {
+    
+        /* score slot itself w/o regard to game state */
+            let slot = self.sorted_open_slots.to().next().unwrap();
+            let mut score = Score::slot_for_dice(slot, self.sorted_dievals); 
+    
+        /* add upper bonus when needed total is reached */
+            if slot<=SlotID::SIXES && self.upper_total>0 { 
+                let new_deficit = self.upper_total.saturating_sub(score) ;
+                if new_deficit==0 {score += 35}; 
+            } 
+    
+        /* special handling of "joker rules" */
+            let just_rolled_yahtzee = Score::yahtzee(self.sorted_dievals)==50;
+            let joker_rules_in_play = slot!=SlotID::YAHTZEE; // joker rules in effect when the yahtzee slot is not open 
+            if just_rolled_yahtzee && joker_rules_in_play{ // standard scoring applies against the yahtzee dice except ... 
+                if slot==SlotID::FULL_HOUSE  {score=25}; 
+                if slot==SlotID::SM_STRAIGHT {score=30}; 
+                if slot==SlotID::LG_STRAIGHT {score=40}; 
+            }
+    
+        /* special handling of "extra yahtzee" bonus per rules*/
+            if just_rolled_yahtzee && self.yahtzee_bonus_avail { 
+                score+=100; // extra yahtzee bonus per rules
+            }
+    
+        score
+    }
+
+}
+
+impl Default for GameState{
+    fn default() -> Self {
+        Self { sorted_dievals: default(), rolls_remaining: 3, upper_total: 63, 
+            yahtzee_bonus_avail: false, sorted_open_slots: [1,2,3,4,5,6,7,8,9,10,11,12,13].into(),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct GameStateCounts {
+    lookups:u64,
+    saves:usize 
+}
+
+
+/*-------------------------------------------------------------
+INITIALIZERS
+-------------------------------------------------------------*/
+
+fn sorted_dievals() -> FxHashMap<DieVals, DieVals> {
+    let mut map = FxHashMap::default();
+    repeat_n( 0_u8..=6 , 5).multi_cartesian_product().for_each(|x| {
+        let mut sorted = x.clone();
+        sorted.sort_unstable();
+        map.insert(x.into(), sorted.into() );
+    });
+    map
+}
+
+/// this generates the ranges that correspond to the outcomes, within the set of all outcomes, indexed by a give selection 
+fn selection_ranges() ->[Range<usize>;32]  { 
+    let mut sel_ranges:[Range<usize>;32] = default();
+    let mut s = 0;
+    sel_ranges[0] = 0..1;
+    for (i,combo) in die_index_combos().to().enumerate(){
+        let count = n_take_r(6, combo.len(), false, true) ;
+        sel_ranges[i] = s..(s+count as usize);
+        s += count as usize; 
+    }
+    sel_ranges
+}
+
+//the set of roll outcomes for every possible 5-die selection, where '0' represents an unselected die
+fn all_selection_outcomes() ->[Outcome;1683]  { 
+    let mut retval:[Outcome;1683] = [default();1683];
+    let mut outcome = Outcome::default();
+    let mut i=0;
+    for combo in die_index_combos(){
+        outcome.dievals = default();
+        for dievals_vec in [1,2,3,4,5,6_u8].to().combinations_with_replacement(combo.len()){ 
+            outcome.mask = [0b111,0b111,0b111,0b111,0b111].into();
+            for (j, &val ) in dievals_vec.iter().enumerate() { 
+                let idx = combo[j] as u8; 
+                outcome.dievals.set(idx,val) ; 
+                outcome.mask.set(idx,0);
+            }
+            outcome.arrangements = distinct_arrangements_for(dievals_vec);
+            retval[i]=outcome;
+            i+=1;
+        }
+    }
+    retval
+}
+
+/// the set of all ways to roll different dice, as represented by a collection of index arrays
+#[allow(clippy::eval_order_dependence)]
+fn die_index_combos() ->[Vec<u8>;32]  { 
+    let mut them:[Vec<u8>;32] = default(); 
+    let mut i=0; 
+    for n in 1..=5 {
+        for combo in (0..=4).combinations(n){ 
+            them[i]= { let mut it=Vec::<u8>::new(); it.extend_from_slice(&combo); i+=1; it} 
+        } 
+    }
+    them
+}
+
+fn distinct_arrangements_for(dieval_vec:Vec<DieVal>)->u8{
+    let counts = dieval_vec.iter().counts();
+    let mut divisor:usize=1;
+    let mut non_zero_dievals=0_u8;
+    for count in counts { 
+        if *count.0 != 0 { 
+            divisor *= FACT[count.1] as usize ; 
+            non_zero_dievals += count.1 as u8;
+        }
+    } 
+    (FACT[non_zero_dievals as usize] as f64 / divisor as f64) as u8
+}
+
+/// returns a slice from the precomputed dice roll outcomes that corresponds to the given selection bitfield 
+fn outcomes_for_selection(selection:u8)->&'static [Outcome]{
+    const IDX_FOR_SELECTION:[usize;32] = [0,1,2,3,4,7,6,16,8,9,10,17,11,13,19,26,5,12,18,20,14,21,22,23,15,25,24,27,28,29,30,31];
+    let idx = IDX_FOR_SELECTION[selection as usize];
+    let range = SELECTION_RANGES[idx].clone();
+    &OUTCOMES[range]
+}
+
 
 /*-------------------------------------------------------------
 SORTED_SLOTS
@@ -85,7 +487,7 @@ impl SortedSlots{
             [0,6,12,18,24,30],  // SIXES
         ];
         // only upper slots could have contributed to the upper total 
-        let used_slot_idxs = &self.previously_used_upper_slots().to().filter(|&x|x<=SIXES).map(|x| x as usize).collect_vec(); // TODO needless double filtered
+        let used_slot_idxs = &self.previously_used_upper_slots().to().filter(|&x|x<=SlotID::SIXES).map(|x| x as usize).collect_vec(); // TODO needless double filtered
         let used_score_idx_perms= repeat_n(0..=5, used_slot_idxs.len()).multi_cartesian_product();
         // for every permutation of entry indexes
         for used_score_idxs in used_score_idx_perms {
@@ -243,7 +645,7 @@ impl IntoIterator for DieVals{
 
     fn into_iter(self) -> Self::IntoIter {
         DieValsIntoIter { data:self, next_idx:0 }
-   }
+}
 
 }
 
@@ -260,6 +662,85 @@ impl Iterator for DieValsIntoIter {
         self.next_idx +=1;
         Some(retval)
     }
+}
+
+/*-------------------------------------------------------------
+SCORING FNs
+-------------------------------------------------------------*/
+struct Score; impl Score { 
+
+    const SCORE_FNS:[fn(sorted_dievals:DieVals)->u8;14] = [
+        |_x|panic!(), // stub so indices align more intuitively with categories 
+        Score::aces, Score::twos, Score::threes, Score::fours, Score::fives, Score::sixes, 
+        Score::three_of_a_kind, Score::four_of_a_kind, Score::fullhouse, Score::sm_str8, Score::lg_str8, Score::yahtzee, Score::chance, 
+    ];
+
+    fn upperbox(boxnum:Slot, sorted_dievals:DieVals)->u8{
+        sorted_dievals.to().filter(|x| *x==boxnum).sum()
+    }
+    
+    fn n_of_a_kind(n:u8,sorted_dievals:DieVals)->u8{
+        let mut inarow=1; let mut maxinarow=1; let mut lastval=100; let mut sum=0; 
+        for x in sorted_dievals {
+            if x==lastval && x!=0 {inarow +=1} else {inarow=1}
+            maxinarow = max(inarow,maxinarow);
+            lastval = x;
+            sum+=x;
+        }
+        if maxinarow>=n {
+            sum
+        } else {0}
+    }
+    
+    
+    fn straight_len(sorted_dievals:DieVals)->u8 {
+        let mut inarow=1; 
+        let mut maxinarow=1; 
+        let mut lastval=254; // stub
+        for x in sorted_dievals {
+            if x==lastval+1 && x!=0 {inarow+=1}
+            else if x!=lastval {inarow=1};
+            maxinarow = max(inarow,maxinarow);
+            lastval = x;
+        } 
+        maxinarow 
+    }
+    
+    fn aces(sorted_dievals:       DieVals)->u8 { Score::upperbox(1,sorted_dievals) }
+    fn twos(sorted_dievals:       DieVals)->u8 { Score::upperbox(2,sorted_dievals) }
+    fn threes(sorted_dievals:     DieVals)->u8 { Score::upperbox(3,sorted_dievals) }
+    fn fours(sorted_dievals:      DieVals)->u8 { Score::upperbox(4,sorted_dievals) }
+    fn fives(sorted_dievals:      DieVals)->u8 { Score::upperbox(5,sorted_dievals) }
+    fn sixes(sorted_dievals:      DieVals)->u8 { Score::upperbox(6,sorted_dievals) }
+    
+    fn three_of_a_kind(sorted_dievals:   DieVals)->u8 { Score::n_of_a_kind(3,sorted_dievals) }
+    fn four_of_a_kind(sorted_dievals:   DieVals)->u8 { Score::n_of_a_kind(4,sorted_dievals) }
+    fn sm_str8(sorted_dievals:    DieVals)->u8 { if Score::straight_len(sorted_dievals) >=4 {30} else {0} }
+    fn lg_str8(sorted_dievals:    DieVals)->u8 { if Score::straight_len(sorted_dievals) ==5 {40} else {0} }
+        // if sorted_dievals==[1,2,3,4,5].into() || sorted_dievals==[2,3,4,5,6].into() {40} else {0} }
+    
+    // The official rule is that a Full House is "three of one number and two of another"
+    fn fullhouse(sorted_dievals:DieVals) -> u8 { 
+        let counts = sorted_dievals.to().counts();
+        if counts.len() != 2 {return 0};
+        let mut it = counts.into_iter(); 
+        let &(val1,val1count) = &it.next().unwrap();
+        let (val2,val2count) = it.next().unwrap(); 
+        if val1==0 || val2==0 {return 0};
+        if (val1count==3 && val2count==2) || (val2count==3 && val1count==2) {25} else {0}
+    }
+    
+    fn chance(sorted_dievals:DieVals)->u8 { sorted_dievals.to().sum()  }
+    
+    fn yahtzee(sorted_dievals:DieVals)->u8 { 
+        if sorted_dievals.get(0) == sorted_dievals.get(4) && sorted_dievals.get(0) != 0 {50} else {0}
+    }
+       
+    /// reports the score for a set of dice in a given slot w/o regard for exogenous gamestate (bonuses, yahtzee wildcards etc)
+    fn slot_for_dice(slot:Slot, sorted_dievals:DieVals)->u8{
+        Score::SCORE_FNS[slot as usize](sorted_dievals) 
+    }
+  
 }
 
 /*-------------------------------------------------------------
@@ -282,213 +763,22 @@ struct Outcome {
 }
 
 /*-------------------------------------------------------------
-GameState
--------------------------------------------------------------*/
-#[derive(Debug, PartialEq, Eq, Ord, PartialOrd, Hash, Clone, Copy, Serialize, Deserialize)]
-struct GameState{
-    sorted_dievals:DieVals, //15 bits minimally
-    sorted_open_slots:SortedSlots, // 13 bits "
-    upper_total:u8, // 6 bits " 
-    rolls_remaining:u8, // 3 bits "
-    yahtzee_bonus_avail:bool, // 1 bit "
-}
-
-impl Default for GameState{
-    fn default() -> Self {
-        Self { sorted_dievals: default(), rolls_remaining: 3, upper_total: 63, 
-            yahtzee_bonus_avail: false, sorted_open_slots: [1,2,3,4,5,6,7,8,9,10,11,12,13].into(),
-        }
-    }
- }
- impl GameState{ 
-    /// calculate relevant counts for gamestate: required lookups and saves
-    fn counts(self) -> GameStateCounts {
-
-        let mut lookups:u64 = 0;
-        let mut saves:usize =0;
-        for subset_len in 1..=self.sorted_open_slots.len(){ 
-            for slots_vec in self.sorted_open_slots.to().combinations(subset_len as usize) {
-                let slots:SortedSlots =slots_vec.into(); 
-                let joker_rules = !slots.to().contains(&YAHTZEE); // yahtzees aren't wild whenever yahtzee slot is still available 
-                for upper_bonus_deficit in slots.relevant_upper_totals() {
-                    for yahtzee_bonus_avail in [false,joker_rules].to().unique() {
-                        let slot_lookups = (subset_len as u64 * if subset_len==1{1}else{2} as u64) * 252 ;// * subset_len as u64;
-                        let dice_lookups = 848484; // verified by counting up by 1s in the actual loop
-                        lookups += dice_lookups + slot_lookups;
-                        saves+=1;
-        }}}}
-        
-        GameStateCounts{ lookups, saves } 
-    }
-}
-#[derive(Debug)]
-struct GameStateCounts {
-    lookups:u64,
-    saves:usize 
-}
-
-
-/*-------------------------------------------------------------
-AppState
--------------------------------------------------------------*/
-struct AppState{
-    bar:ProgressBar,
-    ev_cache:YahtCache,
-}
-impl AppState{
-    fn new(game: &GameState) -> Self{
-        let GameStateCounts{ lookups, saves} = game.counts();
-
-        let bar = ProgressBar::new(lookups);
-        bar.set_draw_rate(1);
-        bar.set_style(ProgressStyle::default_bar()
-            .template("{prefix} {wide_bar} {percent}% {pos:>4}/{len:4} {elapsed:>}/{duration} ETA:{eta}")
-            .on_finish(ProgressFinish::AtCurrentPos)
-        );
-
-        let init_hash_capacity = saves; 
-        let ev_cache = if let Ok(bytes) = fs::read("ev_cache") { 
-            ::bincode::deserialize(&bytes).unwrap() 
-        } else {
-            YahtCache::with_capacity_and_hasher(init_hash_capacity, default())
-        };
-
-        Self{bar, ev_cache}
-    }
-
-    fn save_cache(&self){
-        let evs = &self.ev_cache; 
-        let mut f = &File::create("ev_cache").unwrap();
-        let bytes = bincode::serialize(evs).unwrap();
-        f.write_all(&bytes).unwrap();
-    }
-
-}
-
-/*-------------------------------------------------------------
-CONSTS
--------------------------------------------------------------*/
-
-const STUB:Slot=0; const ACES:Slot=1; const TWOS:Slot=2; const THREES:Slot=3; const FOURS:Slot=4; const FIVES:Slot=5; const SIXES:Slot=6;
-const THREE_OF_A_KIND:Slot=7; const FOUR_OF_A_KIND:Slot=8; const FULL_HOUSE:Slot=9; const SM_STRAIGHT:Slot=10; const LG_STRAIGHT:Slot=11; 
-const YAHTZEE:Slot=12; const CHANCE:Slot=13; 
- 
-const SCORE_FNS:[fn(sorted_dievals:DieVals)->Score;14] = [
-    |x|panic!(), // stub so indices align more intuitively with categories 
-    score_aces, score_twos, score_threes, score_fours, score_fives, score_sixes, 
-    score_3ofakind, score_4ofakind, score_fullhouse, score_sm_str8, score_lg_str8, score_yahtzee, score_chance, 
-];
-
-const NONE_DICE_IDX:usize = 0;
-const ALL_DICE_IDX:usize = 31;
-const IDX_FOR_SELECTION:[usize;32] = [0,1,2,3,4,7,6,16,8,9,10,17,11,13,19,26,5,12,18,20,14,21,22,23,15,25,24,27,28,29,30,31];
-const BITFIELD_FOR_SELECTION_IDX:[u8;32] = [0,1,2,4,8,16,3,5,6,9,10,12,17,18,20,24,7,11,13,14,19,21,22,25,26,28,15,23,27,29,30,31];
-static SELECTION_RANGES:Lazy<[Range<usize>;32]> = Lazy::new(selection_ranges); 
-static OUTCOMES:Lazy<[Outcome;1683]> = Lazy::new(all_selection_outcomes); 
-static FACT:Lazy<[u64;21]> = Lazy::new(||{let mut a:[u64;21]=[0;21]; for i in 0..=20 {a[i]=fact(i as u8);} a});  // cached factorials
-static SORTED_DIEVALS:Lazy<FxHashMap<DieVals,DieVals>> = Lazy::new(sorted_dievals); 
-
-/*-------------------------------------------------------------
-INITIALIZERS
--------------------------------------------------------------*/
-
-fn sorted_dievals() -> FxHashMap<DieVals, DieVals> {
-    let mut map = FxHashMap::default();
-    repeat_n( 0_u8..=6 , 5).multi_cartesian_product().for_each(|x| {
-        let mut sorted = x.clone();
-        sorted.sort_unstable();
-        map.insert(x.into(), sorted.into() );
-    });
-    map
-}
-
-/// this generates the ranges that correspond to the outcomes, within the set of all outcomes, indexed by a give selection 
-fn selection_ranges() ->[Range<usize>;32]  { 
-    let mut sel_ranges:[Range<usize>;32] = default();
-    let mut s = 0;
-    sel_ranges[0] = 0..1;
-    for (i,combo) in die_index_combos().to().enumerate(){
-        let count = n_take_r(6, combo.len(), false, true) ;
-        sel_ranges[i] = s..(s+count as usize);
-        s += count as usize; 
-    }
-    sel_ranges
-}
-
-//the set of roll outcomes for every possible 5-die selection, where '0' represents an unselected die
-fn all_selection_outcomes() ->[Outcome;1683]  { 
-    let mut retval:[Outcome;1683] = [default();1683];
-    let mut outcome = Outcome::default();
-    let mut i=0;
-    for combo in die_index_combos(){
-        outcome.dievals = default();
-        for dievals_vec in [1,2,3,4,5,6_u8].to().combinations_with_replacement(combo.len()){ 
-            outcome.mask = [0b111,0b111,0b111,0b111,0b111].into();
-            for (j, &val ) in dievals_vec.iter().enumerate() { 
-                let idx = combo[j] as u8; 
-                outcome.dievals.set(idx,val) ; 
-                outcome.mask.set(idx,0);
-            }
-            outcome.arrangements = distinct_arrangements_for(dievals_vec);
-            retval[i]=outcome;
-            i+=1;
-        }
-    }
-    retval
-}
-
-/// the set of all ways to roll different dice, as represented by a collection of index arrays
-#[allow(clippy::eval_order_dependence)]
-fn die_index_combos() ->[Vec<u8>;32]  { 
-    let mut them:[Vec<u8>;32] = default(); 
-    let mut i=0; 
-    for n in 1..=5 {
-        for combo in (0..=4).combinations(n){ 
-            them[i]= { let mut it=Vec::<u8>::new(); it.extend_from_slice(&combo); i+=1; it} 
-        } 
-    }
-    them
-}
-
-fn distinct_arrangements_for(dieval_vec:Vec<DieVal>)->u8{
-    let counts = dieval_vec.iter().counts();
-    let mut divisor:usize=1;
-    let mut non_zero_dievals=0_u8;
-    for count in counts { 
-        if *count.0 != 0 { 
-            divisor *= FACT[count.1] as usize ; 
-            non_zero_dievals += count.1 as u8;
-        }
-    } 
-    (FACT[non_zero_dievals as usize] as f64 / divisor as f64) as u8
-}
-
-/// returns a slice from the precomputed dice roll outcomes that corresponds to the given selection bitfield 
-fn outcomes_for_selection(selection:u8)->&'static [Outcome]{
-    let idx = IDX_FOR_SELECTION[selection as usize];
-    let range = SELECTION_RANGES[idx].clone();
-    &OUTCOMES[range]
-}
-
-
-/*-------------------------------------------------------------
 UTILS
 -------------------------------------------------------------*/
 /// allow use of to() where into_iter() is normally required. so wrong but so right. 
-    trait IntoIterShortcut {
-        type Item;
-        type IntoIter: Iterator<Item = Self::Item>;
-        fn to(self) -> Self::IntoIter; 
-    }
-    impl<T: IntoIterator> IntoIterShortcut for T{ 
-        type Item=T::Item;
-        type IntoIter= T::IntoIter;//Iterator<Item = T::Item>;
-        fn to(self) -> Self::IntoIter { self.into_iter() }
-    }
+trait IntoIterShortcut {
+    type Item;
+    type IntoIter: Iterator<Item = Self::Item>;
+    fn to(self) -> Self::IntoIter; 
+}
+impl<T: IntoIterator> IntoIterShortcut for T{ 
+    type Item=T::Item;
+    type IntoIter= T::IntoIter;//Iterator<Item = T::Item>;
+    fn to(self) -> Self::IntoIter { self.into_iter() }
+}
 
 /// my own default_free_fn
-#[inline]
-pub fn default<T: Default>() -> T {
+#[inline] pub fn default<T: Default>() -> T {
    Default::default() 
 }
 
@@ -514,296 +804,4 @@ fn n_take_r(n:usize, r:usize, order_matters:bool, with_replacement:bool)->u64{
             FACT[n] / (FACT[r]*FACT[n-r]) 
         }
     }
-
 }
-
-fn log_state_choice(state: &GameState, choice_ev:ChoiceEV, app:&AppState){
-    // uncomment below for more verbose progress output at the expense of speed 
-    // if state.rolls_remaining==0 {
-    //     app.bar.println(format!("S\t{: >6.2?}\t{:_^5}\t{:2?}\t{}\t{:2?}\t{}\t{: <29}",
-    //         choice_ev.ev, choice_ev.choice, state.rolls_remaining, state.sorted_dievals, state.upper_total, 
-    //         if state.yahtzee_bonus_avail {"Y"}else{""}, state.sorted_open_slots.to_string())); 
-    // } else {
-    //     app.bar.println(format!("D\t{: >6.2?}\t{:05b}\t{:2?}\t{}\t{:2?}\t{}\t{: <29}",
-    //         choice_ev.ev, choice_ev.choice, state.rolls_remaining, state.sorted_dievals, state.upper_total, 
-    //         if state.yahtzee_bonus_avail {"Y"}else{""}, state.sorted_open_slots.to_string())); 
-    // };
-}
-
-/*-------------------------------------------------------------
-SCORING FNs
--------------------------------------------------------------*/
-
-fn score_upperbox(boxnum:Slot, sorted_dievals:DieVals)->Score{
-   sorted_dievals.to().filter(|x| *x==boxnum).sum()
-}
-
-fn score_n_of_a_kind(n:u8,sorted_dievals:DieVals)->Score{
-    let mut inarow=1; let mut maxinarow=1; let mut lastval=100; let mut sum=0; 
-    for x in sorted_dievals {
-        if x==lastval && x!=0 {inarow +=1} else {inarow=1}
-        maxinarow = max(inarow,maxinarow);
-        lastval = x;
-        sum+=x;
-    }
-    if maxinarow>=n {
-        sum
-    } else {0}
-}
-
-
-fn straight_len(sorted_dievals:DieVals)->u8 {
-    let mut inarow=1; 
-    let mut maxinarow=1; 
-    let mut lastval=254; // stub
-    for x in sorted_dievals {
-        if x==lastval+1 && x!=0 {inarow+=1}
-        else if x!=lastval {inarow=1};
-        maxinarow = max(inarow,maxinarow);
-        lastval = x;
-    } 
-    maxinarow 
-}
-
-fn score_aces(sorted_dievals:       DieVals)->Score{ score_upperbox(1,sorted_dievals) }
-fn score_twos(sorted_dievals:       DieVals)->Score{ score_upperbox(2,sorted_dievals) }
-fn score_threes(sorted_dievals:     DieVals)->Score{ score_upperbox(3,sorted_dievals) }
-fn score_fours(sorted_dievals:      DieVals)->Score{ score_upperbox(4,sorted_dievals) }
-fn score_fives(sorted_dievals:      DieVals)->Score{ score_upperbox(5,sorted_dievals) }
-fn score_sixes(sorted_dievals:      DieVals)->Score{ score_upperbox(6,sorted_dievals) }
-
-fn score_3ofakind(sorted_dievals:   DieVals)->Score{ score_n_of_a_kind(3,sorted_dievals) }
-fn score_4ofakind(sorted_dievals:   DieVals)->Score{ score_n_of_a_kind(4,sorted_dievals) }
-fn score_sm_str8(sorted_dievals:    DieVals)->Score{ if straight_len(sorted_dievals) >=4 {30} else {0} }
-fn score_lg_str8(sorted_dievals:    DieVals)->Score{ 
-    if sorted_dievals==[1,2,3,4,5].into() || sorted_dievals==[2,3,4,5,6].into() {40} else {0}
-}
-
-// The official rule is that a Full House is "three of one number and two of another"
-fn score_fullhouse(sorted_dievals:DieVals) -> Score { 
-    let counts = sorted_dievals.to().counts();
-    if counts.len() != 2 {return 0};
-    let mut it = counts.into_iter(); 
-    let &(val1,val1count) = &it.next().unwrap();
-    let (val2,val2count) = it.next().unwrap(); 
-    if val1==0 || val2==0 {return 0};
-    if (val1count==3 && val2count==2) || (val2count==3 && val1count==2) {25} else {0}
-}
-
-fn score_chance(sorted_dievals:DieVals)->Score { sorted_dievals.to().sum()  }
-
-fn score_yahtzee(sorted_dievals:DieVals)->Score { 
-    if sorted_dievals.get(0) == sorted_dievals.get(4) && sorted_dievals.get(0) != 0 {50} else {0}
-}
-
-/// reports the score for a set of dice in a given slot w/o regard for exogenous gamestate (bonuses, yahtzee wildcards etc)
-fn score_slot(slot:Slot, sorted_dievals:DieVals)->Score{
-    SCORE_FNS[slot as usize](sorted_dievals) 
-}
-
-fn score_slot_in_context(game:&GameState) -> u8 {
-
-    /* score slot itself w/o regard to game state */
-        let slot = game.sorted_open_slots.to().next().unwrap();
-        let mut score = score_slot(slot, game.sorted_dievals); 
-
-    /* add upper bonus when needed total is reached */
-        if slot<=SIXES && game.upper_total>0 { 
-            let new_deficit = game.upper_total.saturating_sub(score) ;
-            if new_deficit==0 {score += 35}; 
-        } 
-
-    /* special handling of "joker rules" */
-            //"Score the total of all 5 dice in the appropriate Upper Section box. 
-            // If this box has already been filled in, score as follows in any open Lower Section box  .
-            // If the appropriate Upper Section box and all Lower Section boxes are filled in,
-            // you must enter a zero in any open Upper Section box."
-        let just_rolled_yahtzee = score_yahtzee(game.sorted_dievals)==50;
-        let joker_rules_in_play = slot!=YAHTZEE; // joker rules in effect when the yahtzee slot is not open 
-        if just_rolled_yahtzee && joker_rules_in_play{ // standard scoring applies against the yahtzee dice except ... 
-            if slot==FULL_HOUSE  {score=25}; 
-            if slot==SM_STRAIGHT {score=30}; 
-            if slot==LG_STRAIGHT {score=40}; 
-        }
-
-    /* special handling of "extra yahtzee" bonus per rules*/
-        if just_rolled_yahtzee && game.yahtzee_bonus_avail { 
-           score+=100; // extra yahtzee bonus per rules
-        }
-
-    score
-}
-
-/*-------------------------------------------------------------
-BUILD CACHE
--------------------------------------------------------------*/
-
-/// gather up expected values in a multithreaded bottom-up fashion
-fn build_cache(game:GameState, app: &mut AppState) {
-    let sorted = SORTED_DIEVALS.clone();
-    let all_die_combos=&OUTCOMES[SELECTION_RANGES[0b11111].clone()];
-    let placeholder_dievals= &OUTCOMES[0..=0]; //OUTCOMES[0] == [Dievals::default()]
-    let mut leaf_cache = YahtCache::default();
-
-    // first handle special case of the most leafy leaf calcs -- where there's one slot left and no rolls remaining
-    for single_slot in game.sorted_open_slots {  
-        let slot:SortedSlots = [single_slot].into(); //set of a single slot 
-        let joker_rules_in_play = single_slot!=YAHTZEE; // joker rules in effect when the yahtzee slot is not open 
-        for yahtzee_bonus_available in [false, joker_rules_in_play].to().unique() { // yahtzee bonus -might- be available when joker rules are in play 
-            for upper_total in slot.relevant_upper_totals(){
-                for outcome in all_die_combos{
-                    let state = GameState{
-                        rolls_remaining: 0, 
-                        sorted_dievals: outcome.dievals, //pre-cached dievals should already be sorted here
-                        sorted_open_slots: slot, 
-                        upper_total, 
-                        yahtzee_bonus_avail: yahtzee_bonus_available,
-                    };
-                    let score = score_slot_in_context(&state) as f32;
-                    let choice_ev = ChoiceEV{ choice: single_slot, ev: score};
-                    leaf_cache.insert(state, choice_ev);
-                    log_state_choice(&state, choice_ev, app)
-    } } } }
-
-    // for each length 
-    for slots_len in 1..=game.sorted_open_slots.len(){ 
-
-        // for each slotset (of above length)
-        for slots_vec in game.sorted_open_slots.to().combinations(slots_len as usize) {
-            let slots:SortedSlots = slots_vec.into(); 
-            let joker_rules_in_play = !slots.to().contains(&YAHTZEE); // joker rules are in effect whenever the yahtzee slot is already filled 
-
-            // for each upper total 
-            for upper_total in slots.relevant_upper_totals() {
-
-                // for each yathzee bonu possibility 
-                for yahtzee_bonus_available in [false,joker_rules_in_play].to().unique() {// bonus always unavailable unless yahtzees are wild first
-
-                    app.bar.inc(848484); // advance the progress bar by the number of cache reads coming up for dice selection 
-                    app.bar.inc(252 * slots_len as u64 *if slots_len ==1{1}else{2}); // advance for slot selection cache reads
-
-                    // for each rolls remaining
-                    for rolls_remaining in [0,1,2,3] { 
-
-                        let die_combos = if rolls_remaining==3 {placeholder_dievals} else {all_die_combos}; 
-
-                        let built_from_threads = die_combos.into_par_iter().fold(FxHashMap::<GameState,ChoiceEV>::default, |mut built_this_thread, die_combo|{  
-
-                            if rolls_remaining==0  { 
-                            /* HANDLE SLOT SELECTION */
-
-                                let mut slot_choice_ev:ChoiceEV = default();
-
-                                for slot in slots {
-
-                                    //joker rules say extra yahtzees must be played in their matching upper slot if it's available
-                                    let first_dieval =die_combo.dievals.get(0);
-                                    let joker_rules_matter = joker_rules_in_play && score_yahtzee(die_combo.dievals)>0 && slots.to().contains(&first_dieval);
-                                    let head_slot:Slot = if joker_rules_matter { first_dieval } else { slot };
-                                    let head:SortedSlots = [head_slot].into();
-
-                                    let mut yahtzee_bonus_avail_now = yahtzee_bonus_available;
-                                    let mut upper_total_now = upper_total;
-                                    let mut dievals_or_wildcard = die_combo.dievals; 
-                                    let tail = if slots_len > 1 { slots.removed(head_slot) } else {head};
-                                    let mut head_plus_tail_ev = 0.0;
-    
-                                    // find the collective ev for the all the slots with this iteration's slot being first 
-                                    // do this by summing the ev for the first (head) slot with the ev value that we look up for the remaining (tail) slots
-                                    let mut rolls_remaining = 0;
-                                    for slots_piece in [head,tail].to().unique(){
-                                        upper_total_now = if upper_total_now + slots_piece.best_upper_total() >= 63 {upper_total_now} else {0}; // only relevant totals are cached
-                                        let state = &GameState{
-                                            rolls_remaining, 
-                                            sorted_dievals: dievals_or_wildcard,
-                                            sorted_open_slots: slots_piece, 
-                                            upper_total: upper_total_now, 
-                                            yahtzee_bonus_avail: yahtzee_bonus_avail_now,
-                                        };
-                                        let cache = if slots_piece==head { &leaf_cache } else { &app.ev_cache};
-                                        let choice_ev = cache.get(state).unwrap(); 
-                                        if slots_piece==head { // on the first pass only.. 
-                                            //going into tail slots next, we may need to adjust the state based on the head choice
-                                            if choice_ev.choice <=SIXES { // adjust upper total for the next pass 
-                                                let added = (choice_ev.ev as u8) % 100; // the modulo 100 here removes any yathzee bonus from ev since that doesnt' count toward upper bonus total
-                                                upper_total_now = min(63, upper_total_now + added);
-                                            } else if choice_ev.choice==YAHTZEE { // adjust yahtzee related state for the next pass
-                                                if choice_ev.ev>0.0 {yahtzee_bonus_avail_now=true;};
-                                            }
-                                            rolls_remaining=3; // for upcoming tail lookup, we always want the ev for 3 rolls remaining
-                                            dievals_or_wildcard = DieVals::default() // for 3 rolls remaining, use "wildcard" representative dievals since dice don't matter when rolling all of them
-                                        }
-                                        head_plus_tail_ev += choice_ev.ev;
-                                    } //end for slot_piece
-                                    if head_plus_tail_ev >= slot_choice_ev.ev { slot_choice_ev = ChoiceEV{ choice: slot, ev: head_plus_tail_ev}};
-                                    
-                                    if joker_rules_matter {break};// if joker-rules-matter we were forced to choose one slot, so we can skip trying the rest  
-                                }
-                                
-                                let state = GameState {
-                                    sorted_dievals: die_combo.dievals, 
-                                    sorted_open_slots: slots,
-                                    rolls_remaining: 0, 
-                                    upper_total, 
-                                    yahtzee_bonus_avail: yahtzee_bonus_available ,
-                                };
-                                built_this_thread.insert( state, slot_choice_ev);
-                                log_state_choice(&state, slot_choice_ev, app)
-
-                            } else { //if rolls_remaining > 0  
-                            /* HANDLE DICE SELECTION */    
-
-                                let next_roll = rolls_remaining-1; 
-                                let selections = if rolls_remaining ==3 { // selections are bitfields where '1' means roll and '0' means don't roll 
-                                    0b11111..=0b11111 //always select all dice on the initial roll . 
-                                } else { 0b00000..=0b11111}; //otherwise try all selections
-                                let mut best_dice_choice_ev = ChoiceEV::default();
-                                for selection in selections { // we'll try each selection against this starting dice combo  
-                                    let mut total_ev_for_selection = 0.0; 
-                                    let mut outcomes_count:u64= 0; 
-                                    for roll_outcome in outcomes_for_selection(selection) {
-                                        let mut newvals = die_combo.dievals;
-                                        newvals.blit(roll_outcome.dievals, roll_outcome.mask);
-                                        newvals = sorted[&newvals]; 
-                                        let state = GameState{
-                                            sorted_dievals: newvals, 
-                                            sorted_open_slots: slots, 
-                                            upper_total, 
-                                            yahtzee_bonus_avail: yahtzee_bonus_available, 
-                                            rolls_remaining: next_roll, // we'll average all the 'next roll' possibilities (which we'd calclated last) to get ev for 'this roll' 
-                                        };
-                                        let ev_for_this_selection_outcome = app.ev_cache.get(&state).unwrap().ev; 
-                                        total_ev_for_selection += ev_for_this_selection_outcome * roll_outcome.arrangements as f32;// bake into upcoming average
-                                        outcomes_count += roll_outcome.arrangements as u64; // we loop through die "combos" but we'll average all "perumtations"
-                                    }
-                                    let avg_ev_for_selection = total_ev_for_selection / outcomes_count as f32;
-                                    if avg_ev_for_selection > best_dice_choice_ev.ev{
-                                        best_dice_choice_ev = ChoiceEV{choice:selection as u8, ev:avg_ev_for_selection};
-                                    }
-                                }
-                                let state = GameState{
-                                        sorted_dievals: die_combo.dievals,  
-                                        sorted_open_slots: slots, 
-                                        upper_total, 
-                                        yahtzee_bonus_avail: yahtzee_bonus_available, 
-                                        rolls_remaining, 
-                                    }; 
-                                log_state_choice(&state, best_dice_choice_ev, app);
-                                built_this_thread.insert(state,best_dice_choice_ev);
- 
-                            } // endif roll_remaining...  
-
-                            built_this_thread
-
-                        }).reduce(FxHashMap::<GameState,ChoiceEV>::default, |mut a,built_from_thread|{
-                            a.extend(&built_from_thread); a 
-                        }); // end die_combos.par_into_iter() 
-
-                        app.ev_cache.extend(&built_from_threads);
-
-                    } // end for each rolls_remaining
-                } //end for each yahtzee_is_wild
-            } //end for each upper total 
-        } // end for each slot_set 
-    } // end for each length
-} // end fn
