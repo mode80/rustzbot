@@ -24,6 +24,7 @@ type Choice     = u8; // represents EITHER chosen scorecard Slot, OR a chosen di
 type Selection  = u8; // a bitfield representing a selection of dice to roll (1 means roll, 0 means don't)
 type Slot       = u8; // a single scorecard slot with values ranging from ACES to CHANCE 
 type DieVal     = u8; // a single die value 0 to 6 where 0 means "unselected"
+// type YahtCache  = [ChoiceEV;0];
 type YahtCache  = HashMap::<GameState,ChoiceEV,BuildHasherDefault<FxHasher>>;
 
 struct SlotID; impl SlotID{
@@ -35,7 +36,8 @@ struct SlotID; impl SlotID{
 static SELECTION_RANGES:Lazy<[Range<usize>;32]> = Lazy::new(selection_ranges); 
 static OUTCOMES:Lazy<[Outcome;1683]> = Lazy::new(all_selection_outcomes); 
 static FACT:Lazy<[u64;21]> = Lazy::new(||{let mut a:[u64;21]=[0;21]; for i in 0..=20 {a[i]=fact(i as u8);} a});  // cached factorials
-static SORTED_DIEVALS:Lazy<FxHashMap<DieVals,DieVals>> = Lazy::new(sorted_dievals); 
+static SORTED_DIEVALS_FOR_UNSORTED:Lazy<FxHashMap<DieVals,SortedDieVals>> = Lazy::new(sorted_dievals_for_unsorted); //the sorted version for every 5-dieval-permutation-with-repetition
+static INDEXED_DIEVALS_SORTED:Lazy<[DieVals;253]> = Lazy::new(indexed_dievals_sorted); //all possible sorted combos of 5 dievals (252 of them)
 
 /*-------------------------------------------------------------
 APP
@@ -75,9 +77,10 @@ impl App{
 
     /// gather up expected values in a multithreaded bottom-up fashion. this is like.. the main thing
     fn build_cache(&mut self) {
-        let sorted = SORTED_DIEVALS.clone();
+        // let sorted = INDEX_FOR_DIEVALS_SORTED.clone();
         let all_die_combos=outcomes_for_selection(0b11111);
         let placeholder_dievals= &OUTCOMES[0..=0]; //OUTCOMES[0] == [Dievals::default()]
+        // let mut leaf_cache = [ChoiceEV;8888]  //TODO this could be a straight array . faster?
         let mut leaf_cache = YahtCache::default();
 
         // first handle special case of the most leafy leaf calcs -- where there's one slot left and no rolls remaining
@@ -89,7 +92,7 @@ impl App{
                     for outcome in all_die_combos{
                         let state = GameState{
                             rolls_remaining: 0, 
-                            sorted_dievals: outcome.dievals, //pre-cached dievals should already be sorted here
+                            sorted_dievals: outcome.dievals.into(), 
                             sorted_open_slots: slot, 
                             upper_total, 
                             yahtzee_bonus_avail: yahtzee_bonus_available,
@@ -150,7 +153,7 @@ impl App{
                                             upper_total_now = if upper_total_now + slots_piece.best_upper_total() >= 63 {upper_total_now} else {0}; // only relevant totals are cached
                                             let state = &GameState{
                                                 rolls_remaining, 
-                                                sorted_dievals: dievals_or_wildcard,
+                                                sorted_dievals: dievals_or_wildcard.into(),
                                                 sorted_open_slots: slots_piece, 
                                                 upper_total: upper_total_now, 
                                                 yahtzee_bonus_avail: yahtzee_bonus_avail_now,
@@ -176,7 +179,7 @@ impl App{
                                     }
                                     
                                     let state = GameState {
-                                        sorted_dievals: die_combo.dievals, 
+                                        sorted_dievals: die_combo.dievals.into(), 
                                         sorted_open_slots: slots,
                                         rolls_remaining: 0, 
                                         upper_total, 
@@ -199,9 +202,9 @@ impl App{
                                         for roll_outcome in outcomes_for_selection(selection) {
                                             let mut newvals = die_combo.dievals;
                                             newvals.blit(roll_outcome.dievals, roll_outcome.mask);
-                                            newvals = sorted[&newvals]; 
+                                            // newvals = sorted[&newvals]; 
                                             let state = GameState{
-                                                sorted_dievals: newvals, 
+                                                sorted_dievals: newvals.into(), 
                                                 sorted_open_slots: slots, 
                                                 upper_total, 
                                                 yahtzee_bonus_avail: yahtzee_bonus_available, 
@@ -217,7 +220,7 @@ impl App{
                                         }
                                     }
                                     let state = GameState{
-                                            sorted_dievals: die_combo.dievals,  
+                                            sorted_dievals: die_combo.dievals.into(),  
                                             sorted_open_slots: slots, 
                                             upper_total, 
                                             yahtzee_bonus_avail: yahtzee_bonus_available, 
@@ -276,12 +279,12 @@ GameState
 -------------------------------------------------------------*/
 #[derive(Debug, PartialEq, Eq, Ord, PartialOrd, Hash, Clone, Copy, Serialize, Deserialize)]
 struct GameState{
-    sorted_dievals:DieVals, //15 bits minimally
-    sorted_open_slots:SortedSlots, // 13 bits "
+    sorted_dievals:SortedDieVals, //3bits per die unsorted =15 bits minimally ... 8bits if combo is stored sorted (252 possibilities)
+    sorted_open_slots:SortedSlots, // 13 bits " 4 bits for a single slot 
     upper_total:u8, // 6 bits " 
     rolls_remaining:u8, // 3 bits "
     yahtzee_bonus_avail:bool, // 1 bit "
-}
+} //~500k for leafcalcs
 
 impl GameState{ 
     /// calculate relevant counts for gamestate: required lookups and saves
@@ -308,7 +311,7 @@ impl GameState{
     
         /* score slot itself w/o regard to game state */
             let slot = self.sorted_open_slots.to().next().unwrap();
-            let mut score = Score::slot_for_dice(slot, self.sorted_dievals); 
+            let mut score = Score::slot_with_dice(slot, self.sorted_dievals.into()); 
     
         /* add upper bonus when needed total is reached */
             if slot<=SlotID::SIXES && self.upper_total>0 { 
@@ -317,7 +320,7 @@ impl GameState{
             } 
     
         /* special handling of "joker rules" */
-            let just_rolled_yahtzee = Score::yahtzee(self.sorted_dievals)==50;
+            let just_rolled_yahtzee = Score::yahtzee(self.sorted_dievals.into())==50;
             let joker_rules_in_play = slot!=SlotID::YAHTZEE; // joker rules in effect when the yahtzee slot is not open 
             if just_rolled_yahtzee && joker_rules_in_play{ // standard scoring applies against the yahtzee dice except ... 
                 if slot==SlotID::FULL_HOUSE  {score=25}; 
@@ -354,16 +357,27 @@ struct GameStateCounts {
 INITIALIZERS
 -------------------------------------------------------------*/
 
-fn sorted_dievals() -> FxHashMap<DieVals, DieVals> {
-    let mut map = FxHashMap::default();
-    repeat_n( 0_u8..=6 , 5).multi_cartesian_product().for_each(|x| {
-        let mut sorted = x.clone();
-        sorted.sort_unstable();
-        map.insert(x.into(), sorted.into() );
-    });
+fn sorted_dievals_for_unsorted() -> FxHashMap<DieVals, SortedDieVals> {
+    let mut map:FxHashMap<DieVals, SortedDieVals> = default();
+    map.insert([0,0,0,0,0].into(), SortedDieVals { data: 0});// first one is the special wildcard 
+    for (i,combo) in (1u8..=6).combinations_with_replacement(5).enumerate() {
+        for perm in combo.to().permutations(5).unique(){
+            let dievals:DieVals = perm.clone().to().collect_vec().into();
+            map.insert(dievals, SortedDieVals { data: i as u8 + 1} );
+        }
+    };
     map
 }
 
+fn indexed_dievals_sorted() -> [DieVals; 253] {
+    let mut out=[DieVals::default(); 253];
+    out[0]=[0,0,0,0,0].into(); // first one is the special wildcard 
+    for (i,combo) in (1u8..=6).combinations_with_replacement(5).enumerate() {
+        out[i+1]=combo.into();
+    }
+    out
+}
+ 
 /// this generates the ranges that correspond to the outcomes, within the set of all outcomes, indexed by a give selection 
 fn selection_ranges() ->[Range<usize>;32]  { 
     let mut sel_ranges:[Range<usize>;32] = default();
@@ -572,81 +586,97 @@ DieVals
 #[derive(Debug,Clone,Copy,PartialEq,Serialize,Deserialize,Eq,PartialOrd,Ord,Hash,Default)]
 
 struct DieVals{
-    data:u16, // 5 dievals, each from 0 to 6, can be encoded in 2 bytes total, each taking 3 bits
+    data:u16, // 5 dievals, each from 0 to 6, can be encoded in 2 bytes total, each taking 3 bits, the final bit indicates whether they're sorted or not
 }
 
 // the following LLDB command will format DieVals with meaningful values in the debugger 
 //    type summary add --summary-string "${var.data[0-2]%u} ${var.data[3-5]%u} ${var.data[6-8]%u} ${var.data[9-11]%u} ${var.data[12-14]%u}" "yahtzeebot::DieVals"
 
 impl DieVals {
+    // const SORTED_MASK:u16 = 0b1000000000000000; // the 16th bit should be 1 when sorted
 
     fn set(&mut self, index:u8, val:DieVal) { 
         let bitpos = 3*index; // widths of 3 bits per value
         let mask = ! (0b111_u16 << bitpos); // hole maker
         self.data = (self.data & mask) | ((val as u16) << bitpos ); // punch & fill hole
+        // self.mark_sorted(false);
     }
 
     /// blit the 'from' dievals into the 'self' dievals with the help of a mask where 0 indicates incoming 'from' bits and 1 indicates none incoming 
     fn blit(&mut self, from:DieVals, mask:DieVals,){
         self.data = (self.data & mask.data) | from.data;//TODO mask actually needed?
+        // self.mark_sorted(false);
     }
 
     fn get(&self, index:u8)->DieVal{
         ((self.data >> (index*3)) & 0b111) as DieVal
     }
 
+    // fn mark_sorted(&mut self, is_sorted:bool){
+    //     if is_sorted {self.data |= DieVals::SORTED_MASK} else {self.data &= !DieVals::SORTED_MASK}
+    // }
+
+    // fn is_sorted(self)->bool{
+    //     self.data & DieVals::SORTED_MASK > 0 
+    // }
+
+    // /// merge the 'from' dievals into the 'self' using a bitwise OR 
+    // fn merge(&mut self, from:DieVals){
+    //     self.data |= from.data;
+    // }
+
+    // fn sort(&mut self){ //insertion sort is good for small arrays like this one
+    //     for i in 1..5 {
+    //         let key = self.get(i);
+    //         let mut j = (i as i8) - 1;
+    //         while j >= 0 && self.get(j as u8) > key {
+    //             self.set((j + 1) as u8 , self.get(j as u8) );
+    //             j -= 1;
+    //         }
+    //         self.set((j + 1) as u8, key);
+    //     }
+    // }
+
+    // fn sorted(self) -> Self {
+    //     let mut out = self;
+    //     out.sort();
+    //     out
+    // }
 }
 
-impl Display for DieVals {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f,"{}{}{}{}{}",self.get(4), self.get(3),self.get(2),self.get(1),self.get(0)) 
-    }
-}
+impl Display for DieVals { fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(f,"{}{}{}{}{}",self.get(4), self.get(3),self.get(2),self.get(1),self.get(0)) 
+}}
 
-impl From<Vec<DieVal>> for DieVals{
-    fn from(v: Vec<DieVal>) -> Self {
-        let mut a:[DieVal;5]=default();
-        a.copy_from_slice(&v[0..5]);
-        a.into()
-    }
-}
+impl From<Vec<DieVal>> for DieVals{ fn from(v: Vec<DieVal>) -> Self {
+    let mut a:[DieVal;5]=default();
+    a.copy_from_slice(&v[0..5]);
+    a.into()
+}}
 
-impl From<[DieVal; 5]> for DieVals{
-    fn from(a: [DieVal; 5]) -> Self {
-        DieVals{
-            data: (a[4] as u16) << 12 | (a[3] as u16) <<9 | (a[2] as u16) <<6 | (a[1] as u16) <<3 | (a[0] as u16), 
-        }
-    }
-}
+impl From<[DieVal; 5]> for DieVals{ fn from(a: [DieVal; 5]) -> DieVals{
+    DieVals{ data: (a[4] as u16) << 12 | (a[3] as u16) <<9 | (a[2] as u16) <<6 | (a[1] as u16) <<3 | (a[0] as u16),}
+}}
 
-impl From<& DieVals> for [DieVal; 5]{ 
-    fn from(dievals: &DieVals) -> Self {
-        let mut temp:[DieVal;5] = default(); 
-        for i in 0_u8..=4 {temp[i as usize] = dievals.get(i)};
-        temp
-    }
-}
+impl From<& DieVals> for [DieVal; 5]{ fn from(dievals: &DieVals) -> [DieVal; 5] {
+    let mut temp:[DieVal;5] = default(); 
+    for i in 0_u8..=4 {temp[i as usize] = dievals.get(i)};
+    temp
+}}
 
-impl From<DieVals> for [DieVal; 5]{ 
-    fn from(dievals: DieVals) -> Self {
-        <[DieVal;5]>::from(&dievals)
-    }
-}
+impl From<DieVals> for [DieVal; 5]{ fn from(dievals: DieVals) -> [DieVal; 5] {
+    <[DieVal;5]>::from(&dievals)
+}}
 
-impl From<&mut DieVals> for [DieVal; 5]{ 
-    fn from(dievals: &mut DieVals) -> Self {
-        <[DieVal;5]>::from(&*dievals)
-    }
-}
+impl From<&mut DieVals> for [DieVal; 5]{ fn from(dievals: &mut DieVals) -> [DieVal;5]{
+    <[DieVal;5]>::from(&*dievals)
+}}
 
-impl IntoIterator for DieVals{
-    type IntoIter=DieValsIntoIter;
-    type Item = DieVal;
-
+impl IntoIterator for DieVals{ 
+    type IntoIter=DieValsIntoIter; type Item = DieVal; 
     fn into_iter(self) -> Self::IntoIter {
         DieValsIntoIter { data:self, next_idx:0 }
-}
-
+    } 
 }
 
 struct DieValsIntoIter{
@@ -663,6 +693,29 @@ impl Iterator for DieValsIntoIter {
         Some(retval)
     }
 }
+
+/*-------------------------------------------------------------
+SortedDieVals
+-------------------------------------------------------------*/
+#[derive(Debug,Clone,Copy,PartialEq,Serialize,Deserialize,Eq,PartialOrd,Ord,Hash,Default)]
+
+struct SortedDieVals{
+    data:u8, // all 252 sorted dievals combos fit inside 8 bits 
+}
+impl From<SortedDieVals> for DieVals{ fn from(sorted_dievals:SortedDieVals) -> DieVals{
+    INDEXED_DIEVALS_SORTED[sorted_dievals.data as usize]
+}}
+impl From<DieVals> for SortedDieVals{ fn from(dievals:DieVals) -> SortedDieVals{
+    *SORTED_DIEVALS_FOR_UNSORTED.get(&dievals).unwrap()
+}}
+impl From<[u8;5]> for SortedDieVals{ fn from(a:[u8;5]) -> SortedDieVals{
+    DieVals::from(a).into()
+}}
+impl Display for SortedDieVals { fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    DieVals::from(*self).fmt(f)
+}}
+
+
 
 /*-------------------------------------------------------------
 SCORING FNs
@@ -737,7 +790,7 @@ struct Score; impl Score {
     }
        
     /// reports the score for a set of dice in a given slot w/o regard for exogenous gamestate (bonuses, yahtzee wildcards etc)
-    fn slot_for_dice(slot:Slot, sorted_dievals:DieVals)->u8{
+    fn slot_with_dice(slot:Slot, sorted_dievals:DieVals)->u8{
         Score::SCORE_FNS[slot as usize](sorted_dievals) 
     }
   

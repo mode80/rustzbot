@@ -39,11 +39,11 @@ fn test_dievals_into(){
 
 // #[test]
 fn score_slot_test() {
-    assert_eq!(0, Score::slot_for_dice(SlotID::FULL_HOUSE,[1,2,5,5,5].into() ));
-    assert_eq!(25, Score::slot_for_dice(SlotID::FULL_HOUSE,[2,2,5,5,5].into()));
-    assert_eq!(0, Score::slot_for_dice(SlotID::FULL_HOUSE,[0,0,5,5,5].into()));
-    assert_eq!(0, Score::slot_for_dice(SlotID::YAHTZEE,[4,5,5,5,5].into()));
-    assert_eq!(50, Score::slot_for_dice(SlotID::YAHTZEE,[1,1,1,1,1].into()));
+    assert_eq!(0, Score::slot_with_dice(SlotID::FULL_HOUSE,[1,2,5,5,5].into() ));
+    assert_eq!(25, Score::slot_with_dice(SlotID::FULL_HOUSE,[2,2,5,5,5].into()));
+    assert_eq!(0, Score::slot_with_dice(SlotID::FULL_HOUSE,[0,0,5,5,5].into()));
+    assert_eq!(0, Score::slot_with_dice(SlotID::YAHTZEE,[4,5,5,5,5].into()));
+    assert_eq!(50, Score::slot_with_dice(SlotID::YAHTZEE,[1,1,1,1,1].into()));
 }
 
 
