@@ -11,11 +11,11 @@ MAIN
 fn main() {
 
     let mut app = App::new(default());
-
+ 
     app.bar.println("Calculating...");
     app.build_cache();
 
-    app.bar.set_position(0);
+    app.bar.reset(); app.bar.reset_eta(); app.bar.set_draw_rate(1);
     app.bar.set_length(app.ev_cache.len() as u64);
     app.bar.println("Outputting...");
 

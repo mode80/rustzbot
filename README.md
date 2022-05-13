@@ -2,6 +2,7 @@
 
 Calculates and outputs the optimal player decision for all game states in solo-player Yahtzee. 
 
+----------------------
 ## Basic Usage
 
 To generate a .csv file of the results:
@@ -34,3 +35,9 @@ Each line represents a choice to be made, along with the correct decision.
 
 
 A bot (or other player) making use of this data would assess the state of the game at each decision point, then find the row containing the matching dice, rolls remaining, upper section total, yahtzee bonus availability and open slots. That row would indicate the optimal choice and the expected value of points to be earned from optimal play going forward.  
+
+--------------------
+## Output
+
+The generated csv is roughly 12GB and takes about 10 minutes to generate on a 10-core 2021 Macbook Pro. 
+
