@@ -245,7 +245,7 @@ fn known_values_test() {
     assert_eq!(rounded(lhs.ev,2), 20.73);
 }
 
-#[test]
+// #[test]
 fn new_bench_test() {
     let game = GameState{   rolls_remaining: 2,
                             sorted_dievals: [3,4,4,6,6].into(), 
@@ -258,4 +258,11 @@ fn new_bench_test() {
     assert_eq!(lhs.ev,  137.37492);
 } 
 
+#[test]
+fn test_rust_bug() {
+
+    let leaf_cache = [ChoiceEV::default(); 4_194_304];
+    println!("success?");
+
+}
 

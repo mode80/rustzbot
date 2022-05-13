@@ -47,6 +47,7 @@ struct App{
     game: GameState,
     bar:ProgressBar,
     ev_cache:YahtCache,
+    // leaf_cache:Box<[ChoiceEV;4194304]>, // 4194304 = 2^22,  22=bits of state in a one-slot GameState 
 }
 impl App{
 
@@ -72,7 +73,7 @@ impl App{
             YahtCache::with_capacity_and_hasher(init_hash_capacity, default())
         };
 
-        Self{game, bar, ev_cache}
+        Self{game, bar, ev_cache,}
     }
 
 
@@ -81,8 +82,8 @@ impl App{
         // let sorted = INDEX_FOR_DIEVALS_SORTED.clone();
         let all_die_combos=outcomes_for_selection(0b11111);
         let placeholder_dievals= &OUTCOMES[0..=0]; //OUTCOMES[0] == [Dievals::default()]
-        // let mut leaf_cache = [ChoiceEV;8888]  //TODO this could be a straight array . faster?
-        let mut leaf_cache = YahtCache::default();
+        // let mut leaf_cache = YahtCache::default();//TODO this could be a straight array . faster?
+        let mut leaf_cache = Box::new([ChoiceEV{choice:0,ev:0.0}; 4_194_304]);
 
         // first handle special case of the most leafy leaf calcs -- where there's one slot left and no rolls remaining
         for single_slot in self.game.sorted_open_slots {  
@@ -100,7 +101,8 @@ impl App{
                         };
                         let score = state.score_first_slot_in_context() as f32;
                         let choice_ev = ChoiceEV{ choice: single_slot, ev: score};
-                        leaf_cache.insert(state, choice_ev);
+                        // leaf_cache.insert(state, choice_ev);
+                        leaf_cache[state.key()] = choice_ev;
                         self.log_state_choice(&state, choice_ev)
         } } } }
 
@@ -159,8 +161,11 @@ impl App{
                                                 upper_total: upper_total_now, 
                                                 yahtzee_bonus_avail: yahtzee_bonus_avail_now,
                                             };
-                                            let cache = if slots_piece==head { &leaf_cache } else { &self.ev_cache};
-                                            let choice_ev = cache.get(state).unwrap(); 
+                                            let choice_ev = if slots_piece==head { 
+                                                leaf_cache[state.key()]
+                                            } else { 
+                                                *self.ev_cache.get(state).unwrap()
+                                            };
                                             if slots_piece==head { // on the first pass only.. 
                                                 //going into tail slots next, we may need to adjust the state based on the head choice
                                                 if choice_ev.choice <=SlotID::SIXES { // adjust upper total for the next pass 
@@ -285,9 +290,20 @@ struct GameState{
     upper_total:u8, // 6 bits " 
     rolls_remaining:u8, // 3 bits "
     yahtzee_bonus_avail:bool, // 1 bit "
-} //~500k for leafcalcs
+} //22 bits or ~524kb for leafcalcs or 26 bits = 8.4mb for full cache // TODO do it! ;)
 
 impl GameState{ 
+
+    fn key(self) -> usize { // TODO faster to shift each the final amount the blit together in one step?
+        let mut out = usize::default();
+        out += self.sorted_dievals.data as usize; // out <<= 8;
+        out <<=4; out += self.sorted_open_slots.first() as usize;
+        out <<=6; out += self.upper_total as usize; 
+        out <<=3; out += self.rolls_remaining as usize;
+        out <<=1; out += self.yahtzee_bonus_avail as usize;
+        out
+    }
+
     /// calculate relevant counts for gamestate: required lookups and saves
     fn counts(self) -> GameStateCounts {
 
@@ -468,22 +484,31 @@ impl SortedSlots{
     fn len(self)->u8{
         16-self.data.leading_zeros() as u8
     }
+
+    fn first(self) -> u8{
+       self.data.trailing_zeros() as u8 
+    }
+
     fn insert (&mut self, val:Slot){
         let mask = 1<<val;
         self.data |= mask; // force on
     }
+
     fn remove (&mut self, val:Slot){
         let mask = !(1<<val);
         self.data &= mask; //force off
     }
+
     fn removed(self, val:Slot) -> Self{
         let mut out = self;
         out.remove(val);
         out
     }
+
     fn has (self, val:Slot) -> bool {
         self.data & (1<<val) > 0  
     }
+
     fn previously_used_upper_slots(self) -> Self{ 
         let mut out:Self= self;
         out.data = (!out.data) & ((1<<7)-1);
