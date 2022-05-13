@@ -36,7 +36,8 @@ struct SlotID; impl SlotID{
 static SELECTION_RANGES:Lazy<[Range<usize>;32]> = Lazy::new(selection_ranges); 
 static OUTCOMES:Lazy<[Outcome;1683]> = Lazy::new(all_selection_outcomes); 
 static FACT:Lazy<[u64;21]> = Lazy::new(||{let mut a:[u64;21]=[0;21]; for i in 0..=20 {a[i]=fact(i as u8);} a});  // cached factorials
-static SORTED_DIEVALS_FOR_UNSORTED:Lazy<FxHashMap<DieVals,SortedDieVals>> = Lazy::new(sorted_dievals_for_unsorted); //the sorted version for every 5-dieval-permutation-with-repetition
+// static SORTED_DIEVALS_FOR_UNSORTED:Lazy<FxHashMap<DieVals,SortedDieVals>> = Lazy::new(sorted_dievals_for_unsorted); //the sorted version for every 5-dieval-permutation-with-repetition
+static SORTED_DIEVALS_FOR_UNSORTED:Lazy<[SortedDieVals;28087]> = Lazy::new(sorted_dievals_for_unsorted); //the sorted version for every 5-dieval-permutation-with-repetition
 static INDEXED_DIEVALS_SORTED:Lazy<[DieVals;253]> = Lazy::new(indexed_dievals_sorted); //all possible sorted combos of 5 dievals (252 of them)
 
 /*-------------------------------------------------------------
@@ -357,16 +358,18 @@ struct GameStateCounts {
 INITIALIZERS
 -------------------------------------------------------------*/
 
-fn sorted_dievals_for_unsorted() -> FxHashMap<DieVals, SortedDieVals> {
-    let mut map:FxHashMap<DieVals, SortedDieVals> = default();
-    map.insert([0,0,0,0,0].into(), SortedDieVals { data: 0});// first one is the special wildcard 
+fn sorted_dievals_for_unsorted() -> [SortedDieVals;28087] {
+    let mut arr=[SortedDieVals{data:0};28087];
+    // arr.insert([0,0,0,0,0].into(), SortedDieVals { data: 0});// first one is the special wildcard 
+    arr[0] = SortedDieVals { data: 0};// first one is the special wildcard 
     for (i,combo) in (1u8..=6).combinations_with_replacement(5).enumerate() {
         for perm in combo.to().permutations(5).unique(){
             let dievals:DieVals = perm.clone().to().collect_vec().into();
-            map.insert(dievals, SortedDieVals { data: i as u8 + 1} );
+            // arr.insert(dievals, SortedDieVals { data: i as u8 + 1} );
+            arr[dievals.data as usize]= SortedDieVals { data: i as u8 + 1} ;
         }
     };
-    map
+    arr
 }
 
 fn indexed_dievals_sorted() -> [DieVals; 253] {
@@ -586,62 +589,29 @@ DieVals
 #[derive(Debug,Clone,Copy,PartialEq,Serialize,Deserialize,Eq,PartialOrd,Ord,Hash,Default)]
 
 struct DieVals{
-    data:u16, // 5 dievals, each from 0 to 6, can be encoded in 2 bytes total, each taking 3 bits, the final bit indicates whether they're sorted or not
+    data:u16, // 5 dievals, each from 0 to 6, can be encoded in 2 bytes total, each taking 3 bits
 }
 
 // the following LLDB command will format DieVals with meaningful values in the debugger 
 //    type summary add --summary-string "${var.data[0-2]%u} ${var.data[3-5]%u} ${var.data[6-8]%u} ${var.data[9-11]%u} ${var.data[12-14]%u}" "yahtzeebot::DieVals"
 
 impl DieVals {
-    // const SORTED_MASK:u16 = 0b1000000000000000; // the 16th bit should be 1 when sorted
 
     fn set(&mut self, index:u8, val:DieVal) { 
         let bitpos = 3*index; // widths of 3 bits per value
         let mask = ! (0b111_u16 << bitpos); // hole maker
         self.data = (self.data & mask) | ((val as u16) << bitpos ); // punch & fill hole
-        // self.mark_sorted(false);
     }
 
     /// blit the 'from' dievals into the 'self' dievals with the help of a mask where 0 indicates incoming 'from' bits and 1 indicates none incoming 
     fn blit(&mut self, from:DieVals, mask:DieVals,){
         self.data = (self.data & mask.data) | from.data;//TODO mask actually needed?
-        // self.mark_sorted(false);
     }
 
     fn get(&self, index:u8)->DieVal{
         ((self.data >> (index*3)) & 0b111) as DieVal
     }
 
-    // fn mark_sorted(&mut self, is_sorted:bool){
-    //     if is_sorted {self.data |= DieVals::SORTED_MASK} else {self.data &= !DieVals::SORTED_MASK}
-    // }
-
-    // fn is_sorted(self)->bool{
-    //     self.data & DieVals::SORTED_MASK > 0 
-    // }
-
-    // /// merge the 'from' dievals into the 'self' using a bitwise OR 
-    // fn merge(&mut self, from:DieVals){
-    //     self.data |= from.data;
-    // }
-
-    // fn sort(&mut self){ //insertion sort is good for small arrays like this one
-    //     for i in 1..5 {
-    //         let key = self.get(i);
-    //         let mut j = (i as i8) - 1;
-    //         while j >= 0 && self.get(j as u8) > key {
-    //             self.set((j + 1) as u8 , self.get(j as u8) );
-    //             j -= 1;
-    //         }
-    //         self.set((j + 1) as u8, key);
-    //     }
-    // }
-
-    // fn sorted(self) -> Self {
-    //     let mut out = self;
-    //     out.sort();
-    //     out
-    // }
 }
 
 impl Display for DieVals { fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -706,7 +676,8 @@ impl From<SortedDieVals> for DieVals{ fn from(sorted_dievals:SortedDieVals) -> D
     INDEXED_DIEVALS_SORTED[sorted_dievals.data as usize]
 }}
 impl From<DieVals> for SortedDieVals{ fn from(dievals:DieVals) -> SortedDieVals{
-    *SORTED_DIEVALS_FOR_UNSORTED.get(&dievals).unwrap()
+    // *SORTED_DIEVALS_FOR_UNSORTED.get(&dievals).unwrap()
+    SORTED_DIEVALS_FOR_UNSORTED[dievals.data as usize]
 }}
 impl From<[u8;5]> for SortedDieVals{ fn from(a:[u8;5]) -> SortedDieVals{
     DieVals::from(a).into()
