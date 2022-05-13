@@ -11,13 +11,25 @@ MAIN
 fn main() {
 
     let mut app = App::new(default());
+
+    app.bar.println("Calculating...");
     app.build_cache();
-    app.save_cache();
+
+    app.bar.set_position(0);
+    app.bar.set_length(app.ev_cache.len() as u64);
+    app.bar.println("Outputting...");
+
+    print_state_choices_header();
+    for entry in &app.ev_cache { 
+        print_state_choice(entry.0, *entry.1); 
+        app.bar.inc(1);
+    }
+    app.bar.println("Done!")
 
 }
 
 /*-------------------------------------------------------------
-CONSTS
+CONSTS etc
 -------------------------------------------------------------*/
 
 type Choice     = u8; // represents EITHER chosen scorecard Slot, OR a chosen dice Selection (below)
@@ -59,13 +71,13 @@ impl App{
         bar.set_draw_rate(1);
         bar.set_style(ProgressStyle::default_bar()
             .template("{prefix} {wide_bar} {percent}% {pos:>4}/{len:4} {elapsed:>}/{duration} ETA:{eta}")
-            .on_finish(ProgressFinish::AtCurrentPos)
+            // .on_finish(ProgressFinish::AtCurrentPos)
         );
 
         // prep cache 
         let init_hash_capacity = saves; 
-        let ev_cache = if let Ok(bytes) = fs::read("ev_cache") { //read from disk if it exists
-            ::bincode::deserialize(&bytes).unwrap() 
+        let ev_cache = if let Ok(bytes) = fs::read("ev_cache") { 
+            ::bincode::deserialize(&bytes).unwrap() //read binary cache from disk if it happens to exist from use of app.save_cache()
         } else {
             YahtCache::with_capacity_and_hasher(init_hash_capacity, default())
         };
@@ -73,6 +85,9 @@ impl App{
         Self{game, bar, ev_cache}
     }
 
+    /*-------------------------------------------------------------
+    BUILD_CACHE
+    -------------------------------------------------------------*/
 
     /// gather up expected values in a multithreaded bottom-up fashion. this is like.. the main thing
     fn build_cache(&mut self) {
@@ -99,7 +114,7 @@ impl App{
                         let score = state.score_first_slot_in_context() as f32;
                         let choice_ev = ChoiceEV{ choice: single_slot, ev: score};
                         leaf_cache.insert(state, choice_ev);
-                        self.log_state_choice(&state, choice_ev)
+                        self.output_state_choice(&state, choice_ev)
         } } } }
 
         // for each length 
@@ -185,7 +200,7 @@ impl App{
                                         yahtzee_bonus_avail: yahtzee_bonus_available ,
                                     };
                                     built_this_thread.insert( state, slot_choice_ev);
-                                    self.log_state_choice(&state, slot_choice_ev)
+                                    self.output_state_choice(&state, slot_choice_ev)
 
                                 } else { //if rolls_remaining > 0  
                                 /* HANDLE DICE SELECTION */    
@@ -225,7 +240,7 @@ impl App{
                                             yahtzee_bonus_avail: yahtzee_bonus_available, 
                                             rolls_remaining, 
                                         }; 
-                                    self.log_state_choice(&state, best_dice_choice_ev);
+                                    self.output_state_choice(&state, best_dice_choice_ev);
                                     built_this_thread.insert(state,best_dice_choice_ev);
     
                                 } // endif roll_remaining...  
@@ -257,7 +272,7 @@ impl App{
         f.write_all(&bytes).unwrap();
     }
 
-    fn log_state_choice(&self, state: &GameState, choice_ev:ChoiceEV, ){
+    fn output_state_choice(&self, state: &GameState, choice_ev:ChoiceEV, ){
         // Uncomment below for more verbose progress output at the expense of speed 
         // if state.rolls_remaining==0 {
         //     self.bar.println(format!("S\t{: >6.2?}\t{:_^5}\t{:2?}\t{}\t{:2?}\t{}\t{: <29}",
@@ -450,7 +465,7 @@ fn outcomes_for_selection(selection:u8)->&'static [Outcome]{
 
 
 /*-------------------------------------------------------------
-SORTED_SLOTS
+SortedSlots
 -------------------------------------------------------------*/
 
 // the following LLDB command will format SortedSlots with meaningful values in the debugger 
@@ -826,4 +841,20 @@ fn n_take_r(n:usize, r:usize, order_matters:bool, with_replacement:bool)->u64{
             FACT[n] / (FACT[r]*FACT[n-r]) 
         }
     }
+}
+
+fn print_state_choices_header(){
+    println!("choice_type,choice,dice,rolls_remaining,upper_total,yahtzee_bonus_avail,open_slots,expected_value");
+}
+
+fn print_state_choice(state: &GameState, choice_ev:ChoiceEV){
+    if state.rolls_remaining==0 {
+        println!("S,{},{},{},{},{},{},{}",
+            choice_ev.choice, state.sorted_dievals, state.rolls_remaining, state.upper_total, 
+            if state.yahtzee_bonus_avail {"Y"}else{""}, state.sorted_open_slots, choice_ev.ev); 
+    } else {
+        println!("D,{:05b},{},{},{},{},{},{}",
+            choice_ev.choice, state.sorted_dievals, state.rolls_remaining, state.upper_total, 
+            if state.yahtzee_bonus_avail {"Y"}else{""}, state.sorted_open_slots, choice_ev.ev); 
+    };
 }
