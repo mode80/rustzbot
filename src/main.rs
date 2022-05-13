@@ -24,7 +24,6 @@ type Choice     = u8; // represents EITHER chosen scorecard Slot, OR a chosen di
 type Selection  = u8; // a bitfield representing a selection of dice to roll (1 means roll, 0 means don't)
 type Slot       = u8; // a single scorecard slot with values ranging from ACES to CHANCE 
 type DieVal     = u8; // a single die value 0 to 6 where 0 means "unselected"
-// type YahtCache  = [ChoiceEV;0];
 type YahtCache  = HashMap::<GameState,ChoiceEV,BuildHasherDefault<FxHasher>>;
 
 struct SlotID; impl SlotID{
@@ -47,7 +46,6 @@ struct App{
     game: GameState,
     bar:ProgressBar,
     ev_cache:YahtCache,
-    // leaf_cache:Box<[ChoiceEV;4194304]>, // 4194304 = 2^22,  22=bits of state in a one-slot GameState 
 }
 impl App{
 
@@ -83,7 +81,7 @@ impl App{
         let all_die_combos=outcomes_for_selection(0b11111);
         let placeholder_dievals= &OUTCOMES[0..=0]; //OUTCOMES[0] == [Dievals::default()]
         // let mut leaf_cache = YahtCache::default();//TODO this could be a straight array . faster?
-        let mut leaf_cache = Box::new([ChoiceEV{choice:0,ev:0.0}; 4_194_304]);
+        let mut leaf_cache = vec![ChoiceEV::default(); 4_194_305];
 
         // first handle special case of the most leafy leaf calcs -- where there's one slot left and no rolls remaining
         for single_slot in self.game.sorted_open_slots {  
