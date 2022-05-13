@@ -24,7 +24,6 @@ type Choice     = u8; // represents EITHER chosen scorecard Slot, OR a chosen di
 type Selection  = u8; // a bitfield representing a selection of dice to roll (1 means roll, 0 means don't)
 type Slot       = u8; // a single scorecard slot with values ranging from ACES to CHANCE 
 type DieVal     = u8; // a single die value 0 to 6 where 0 means "unselected"
-// type YahtCache  = [ChoiceEV;0];
 type YahtCache  = HashMap::<GameState,ChoiceEV,BuildHasherDefault<FxHasher>>;
 
 struct SlotID; impl SlotID{
@@ -36,7 +35,6 @@ struct SlotID; impl SlotID{
 static SELECTION_RANGES:Lazy<[Range<usize>;32]> = Lazy::new(selection_ranges); 
 static OUTCOMES:Lazy<[Outcome;1683]> = Lazy::new(all_selection_outcomes); 
 static FACT:Lazy<[u64;21]> = Lazy::new(||{let mut a:[u64;21]=[0;21]; for i in 0..=20 {a[i]=fact(i as u8);} a});  // cached factorials
-// static SORTED_DIEVALS_FOR_UNSORTED:Lazy<FxHashMap<DieVals,SortedDieVals>> = Lazy::new(sorted_dievals_for_unsorted); //the sorted version for every 5-dieval-permutation-with-repetition
 static SORTED_DIEVALS_FOR_UNSORTED:Lazy<[SortedDieVals;28087]> = Lazy::new(sorted_dievals_for_unsorted); //the sorted version for every 5-dieval-permutation-with-repetition
 static INDEXED_DIEVALS_SORTED:Lazy<[DieVals;253]> = Lazy::new(indexed_dievals_sorted); //all possible sorted combos of 5 dievals (252 of them)
 
@@ -126,7 +124,7 @@ impl App{
 
                             let die_combos = if rolls_remaining==3 {placeholder_dievals} else {all_die_combos}; 
 
-                            let built_from_threads = die_combos.into_par_iter().fold(FxHashMap::<GameState,ChoiceEV>::default, |mut built_this_thread, die_combo|{  
+                            let built_from_threads = die_combos.into_par_iter().fold(YahtCache::default, |mut built_this_thread, die_combo|{  
 
                                 if rolls_remaining==0  { 
                                 /* HANDLE SLOT SELECTION */
@@ -234,7 +232,7 @@ impl App{
 
                                 built_this_thread
 
-                            }).reduce(FxHashMap::<GameState,ChoiceEV>::default, |mut a,built_from_thread|{
+                            }).reduce(YahtCache::default, |mut a,built_from_thread|{
                                 a.extend(&built_from_thread); a 
                             }); // end die_combos.par_into_iter() 
 
