@@ -172,7 +172,7 @@ impl App{
                                                 upper_total: upper_total_now, 
                                                 yahtzee_bonus_avail: yahtzee_bonus_avail_now,
                                             };
-                                            let cache = if slots_piece==head { &leaf_cache } else { &self.ev_cache};
+                                            let cache = if slots_piece==head { &leaf_cache } else { &self.ev_cache}; //TODO why need leaf_cache separate from main? how is leaf_cache returning upper_total > 0?? also how is this shared state read from multi threads??
                                             let choice_ev = cache.get(state).unwrap(); 
                                             if slots_piece==head { // on the first pass only.. 
                                                 //going into tail slots next, we may need to adjust the state based on the head choice
@@ -373,12 +373,10 @@ INITIALIZERS
 
 fn sorted_dievals_for_unsorted() -> [SortedDieVals;28087] {
     let mut arr=[SortedDieVals{data:0};28087];
-    // arr.insert([0,0,0,0,0].into(), SortedDieVals { data: 0});// first one is the special wildcard 
     arr[0] = SortedDieVals { data: 0};// first one is the special wildcard 
     for (i,combo) in (1u8..=6).combinations_with_replacement(5).enumerate() {
         for perm in combo.to().permutations(5).unique(){
             let dievals:DieVals = perm.clone().to().collect_vec().into();
-            // arr.insert(dievals, SortedDieVals { data: i as u8 + 1} );
             arr[dievals.data as usize]= SortedDieVals { data: i as u8 + 1} ;
         }
     };
@@ -689,7 +687,6 @@ impl From<SortedDieVals> for DieVals{ fn from(sorted_dievals:SortedDieVals) -> D
     INDEXED_DIEVALS_SORTED[sorted_dievals.data as usize]
 }}
 impl From<DieVals> for SortedDieVals{ fn from(dievals:DieVals) -> SortedDieVals{
-    // *SORTED_DIEVALS_FOR_UNSORTED.get(&dievals).unwrap()
     SORTED_DIEVALS_FOR_UNSORTED[dievals.data as usize]
 }}
 impl From<[u8;5]> for SortedDieVals{ fn from(a:[u8;5]) -> SortedDieVals{
