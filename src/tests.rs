@@ -198,13 +198,6 @@ fn counts_test(){
 }
 
 // #[test]
-fn relevant_upper_totals_test(){
-   let slots:SortedSlots = [1,2,4].into();
-   let retval = slots.relevant_upper_totals() ;
-   eprintln!("{:?}", retval.to().sorted() );
-}
-
-// #[test]
 fn print_out_cache(){
     let game = GameState { 
         rolls_remaining: 2,
@@ -220,7 +213,7 @@ fn print_out_cache(){
     }
 }
 
-// #[test]
+#[test]
 fn known_values_test() {
     // this should be 20.73 per http://www-set.win.tue.nl/~wstomv/misc/yahtzee/osyp.php
     let game = GameState { 
@@ -265,3 +258,19 @@ fn how_is_this_working() {
     let lhs = app.ev_cache.get(&game).unwrap();
     println!("lhs {:?}",lhs); 
 }
+
+// #[test]
+// fn relevant_upper_totals_test(){
+//     let s:SortedSlots = [1,2,5].into();
+//     let lhs = s.relevant_upper_totals();
+//     println!("{:?}",lhs); 
+// }
+
+#[test]
+fn relevant_upper_totals_test(){
+   let slots:SortedSlots = [6].into();
+   let retval = slots.relevant_upper_totals() ;
+   eprintln!("{:?}", retval.to().sorted() );
+}
+
+

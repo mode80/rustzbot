@@ -47,8 +47,8 @@ struct SlotID; impl SlotID{
 static SELECTION_RANGES:Lazy<[Range<usize>;32]> = Lazy::new(selection_ranges); 
 static OUTCOMES:Lazy<[Outcome;1683]> = Lazy::new(all_selection_outcomes); 
 static FACT:Lazy<[u64;21]> = Lazy::new(||{let mut a:[u64;21]=[0;21]; for i in 0..=20 {a[i]=fact(i as u8);} a});  // cached factorials
-static SORTED_DIEVALS_FOR_UNSORTED:Lazy<[SortedDieVals;28087]> = Lazy::new(sorted_dievals_for_unsorted); //the sorted version for every 5-dieval-permutation-with-repetition
-static INDEXED_DIEVALS_SORTED:Lazy<[DieVals;253]> = Lazy::new(indexed_dievals_sorted); //all possible sorted combos of 5 dievals (252 of them)
+static DIEVALS_ID_FOR_DIEVALS:Lazy<[DieValsID;28087]> = Lazy::new(dievals_id_for_dievals); //the compact sorted version for every 5-dieval-permutation-with-repetition
+static DIEVALS_FOR_DIEVALS_ID:Lazy<[DieVals;253]> = Lazy::new(dievals_for_dievals_id); 
 
 /*-------------------------------------------------------------
 APP
@@ -162,11 +162,11 @@ impl App{
         
                                         // find the collective ev for the all the slots with this iteration's slot being first 
                                         // do this by summing the ev for the first (head) slot with the ev value that we look up for the remaining (tail) slots
-                                        let mut rolls_remaining = 0;
+                                        let mut rolls_remaining_now = 0;
                                         for slots_piece in [head,tail].to().unique(){
                                             upper_total_now = if upper_total_now + slots_piece.best_upper_total() >= 63 {upper_total_now} else {0}; // only relevant totals are cached
                                             let state = &GameState{
-                                                rolls_remaining, 
+                                                rolls_remaining: rolls_remaining_now, 
                                                 sorted_dievals: dievals_or_wildcard.into(),
                                                 sorted_open_slots: slots_piece, 
                                                 upper_total: upper_total_now, 
@@ -182,7 +182,7 @@ impl App{
                                                 } else if choice_ev.choice==SlotID::YAHTZEE { // adjust yahtzee related state for the next pass
                                                     if choice_ev.ev>0.0 {yahtzee_bonus_avail_now=true;};
                                                 }
-                                                rolls_remaining=3; // for upcoming tail lookup, we always want the ev for 3 rolls remaining
+                                                rolls_remaining_now=3; // for upcoming tail lookup, we always want the ev for 3 rolls remaining
                                                 dievals_or_wildcard = DieVals::default() // for 3 rolls remaining, use "wildcard" representative dievals since dice don't matter when rolling all of them
                                             }
                                             head_plus_tail_ev += choice_ev.ev;
@@ -293,7 +293,7 @@ GameState
 -------------------------------------------------------------*/
 #[derive(Debug, PartialEq, Eq, Ord, PartialOrd, Hash, Clone, Copy, Serialize, Deserialize)]
 struct GameState{
-    sorted_dievals:SortedDieVals, //3bits per die unsorted =15 bits minimally ... 8bits if combo is stored sorted (252 possibilities)
+    sorted_dievals:DieValsID, //3bits per die unsorted =15 bits minimally ... 8bits if combo is stored sorted (252 possibilities)
     sorted_open_slots:SortedSlots, // 13 bits " 4 bits for a single slot 
     upper_total:u8, // 6 bits " 
     rolls_remaining:u8, // 3 bits "
@@ -310,7 +310,7 @@ impl GameState{
             for slots_vec in self.sorted_open_slots.to().combinations(subset_len as usize) {
                 let slots:SortedSlots =slots_vec.into(); 
                 let joker_rules = !slots.to().contains(&SlotID::YAHTZEE); // yahtzees aren't wild whenever yahtzee slot is still available 
-                for _upper_bonus_deficit in slots.relevant_upper_totals() {
+                for _upper_total in slots.relevant_upper_totals() {
                     for _yahtzee_bonus_avail in [false,joker_rules].to().unique() {
                         let slot_lookups = (subset_len as u64 * if subset_len==1{1}else{2} as u64) * 252 ;// * subset_len as u64;
                         let dice_lookups = 848484; // previoiusly verified by counting up by 1s in the actual loop. however chunking forward is faster 
@@ -371,19 +371,19 @@ struct GameStateCounts {
 INITIALIZERS
 -------------------------------------------------------------*/
 
-fn sorted_dievals_for_unsorted() -> [SortedDieVals;28087] {
-    let mut arr=[SortedDieVals{data:0};28087];
-    arr[0] = SortedDieVals { data: 0};// first one is the special wildcard 
+fn dievals_id_for_dievals() -> [DieValsID;28087] {
+    let mut arr=[DieValsID{data:0};28087];
+    arr[0] = DieValsID { data: 0};// first one is the special wildcard 
     for (i,combo) in (1u8..=6).combinations_with_replacement(5).enumerate() {
         for perm in combo.to().permutations(5).unique(){
             let dievals:DieVals = perm.clone().to().collect_vec().into();
-            arr[dievals.data as usize]= SortedDieVals { data: i as u8 + 1} ;
+            arr[dievals.data as usize]= DieValsID { data: i as u8 + 1} ;
         }
     };
     arr
 }
 
-fn indexed_dievals_sorted() -> [DieVals; 253] {
+fn dievals_for_dievals_id() -> [DieVals; 253] {
     let mut out=[DieVals::default(); 253];
     out[0]=[0,0,0,0,0].into(); // first one is the special wildcard 
     for (i,combo) in (1u8..=6).combinations_with_replacement(5).enumerate() {
@@ -676,23 +676,23 @@ impl Iterator for DieValsIntoIter {
 }
 
 /*-------------------------------------------------------------
-SortedDieVals
+DiesValsID
 -------------------------------------------------------------*/
 #[derive(Debug,Clone,Copy,PartialEq,Serialize,Deserialize,Eq,PartialOrd,Ord,Hash,Default)]
 
-struct SortedDieVals{
-    data:u8, // all 252 sorted dievals combos fit inside 8 bits 
+struct DieValsID{
+    data:u8, // all 252 sorted dievals combos can be encoded in 8 bits using their index/id
 }
-impl From<SortedDieVals> for DieVals{ fn from(sorted_dievals:SortedDieVals) -> DieVals{
-    INDEXED_DIEVALS_SORTED[sorted_dievals.data as usize]
+impl From<DieValsID> for DieVals{ fn from(sorted_dievals:DieValsID) -> DieVals{
+    DIEVALS_FOR_DIEVALS_ID[sorted_dievals.data as usize]
 }}
-impl From<DieVals> for SortedDieVals{ fn from(dievals:DieVals) -> SortedDieVals{
-    SORTED_DIEVALS_FOR_UNSORTED[dievals.data as usize]
+impl From<DieVals> for DieValsID{ fn from(dievals:DieVals) -> DieValsID{
+    DIEVALS_ID_FOR_DIEVALS[dievals.data as usize]
 }}
-impl From<[u8;5]> for SortedDieVals{ fn from(a:[u8;5]) -> SortedDieVals{
+impl From<[u8;5]> for DieValsID{ fn from(a:[u8;5]) -> DieValsID{
     DieVals::from(a).into()
 }}
-impl Display for SortedDieVals { fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl Display for DieValsID { fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     DieVals::from(*self).fmt(f)
 }}
 
