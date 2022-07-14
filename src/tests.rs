@@ -247,16 +247,27 @@ fn new_bench_test() {
 } 
 
 #[test]
-fn how_is_this_working() {
-    let game = GameState{   rolls_remaining: 3,
-        sorted_dievals: [0,0,0,0,0].into(),
-        sorted_open_slots: [1,2,3,4,5].into(), //#6)#,7,8,9,10,11,12,13),
-        ..default()
+fn known_values_test2() {
+    // this should be 57.43 per http://www-set.win.tue.nl/~wstomv/misc/yahtzee/osyp.php
+    let game = GameState { 
+        // sorted_dievals: [1,1,1,1,1].into(), 
+        // sorted_open_slots: [2,3,4,5,6].into(), 
+        sorted_dievals: [0,0,0,0,0].into(), 
+        sorted_open_slots: [1,2,3,4,5,6,7,8,9,10,11,12,13].into(), 
+        upper_total: 0,
+        rolls_remaining: 3,
+        yahtzee_bonus_avail: false,
     };
     let app = &mut App::new(game);
     app.build_cache();
-    let lhs = app.ev_cache.get(&game).unwrap();
-    println!("lhs {:?}",lhs); 
+    // for entry in &app.ev_cache {
+    //     print_state_choice(entry.0, *entry.1)    
+    // }
+    let lhs=app.ev_cache.get(&game).unwrap();
+    println!("{:?}", lhs);
+    println!("{:?}", lhs);
+    println!("{:?}", lhs);
+    // assert_eq!(rounded(lhs.ev,2), 57.43);
 }
 
 // #[test]

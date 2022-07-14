@@ -17,7 +17,7 @@ fn main() {
 
     app.bar.reset(); app.bar.reset_eta(); app.bar.set_draw_rate(1);
     app.bar.set_length(app.ev_cache.len() as u64);
-    app.bar.println("Outputting...");
+    app.bar.println("Outputing...");
 
     print_state_choices_header();
     for entry in &app.ev_cache { 
