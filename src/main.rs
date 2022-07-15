@@ -164,12 +164,11 @@ impl App{
                                         // do this by summing the ev for the first (head) slot with the ev value that we look up for the remaining (tail) slots
                                         let mut rolls_remaining_now = 0;
                                         for slots_piece in [head,tail].to().unique(){
-                                            upper_total_now = if upper_total_now + slots_piece.best_upper_total() >= 63 {upper_total_now} else {0}; // only relevant totals are cached
                                             let state = &GameState{
                                                 rolls_remaining: rolls_remaining_now, 
                                                 sorted_dievals: dievals_or_wildcard.into(),
                                                 sorted_open_slots: slots_piece, 
-                                                upper_total: upper_total_now, 
+                                                upper_total:  if slots_piece.best_upper_total() + upper_total_now >= 63 {upper_total_now} else {0},  
                                                 yahtzee_bonus_avail: yahtzee_bonus_avail_now,
                                             };
                                             let cache = if slots_piece==head { &leaf_cache } else { &self.ev_cache}; //TODO why need leaf_cache separate from main? how is leaf_cache returning upper_total > 0?? also how is this shared state read from multi threads??
@@ -220,7 +219,7 @@ impl App{
                                             let state = GameState{
                                                 sorted_dievals: newvals.into(), 
                                                 sorted_open_slots: slots, 
-                                                upper_total, 
+                                                upper_total:if slots.best_upper_total() + upper_total >= 63 {upper_total} else {0},   
                                                 yahtzee_bonus_avail: yahtzee_bonus_available, 
                                                 rolls_remaining: next_roll, // we'll average all the 'next roll' possibilities (which we'd calclated last) to get ev for 'this roll' 
                                             };
@@ -329,8 +328,8 @@ impl GameState{
     
         /* add upper bonus when needed total is reached */
             if slot<=SlotID::SIXES && self.upper_total>0 { 
-                let new_deficit = self.upper_total.saturating_sub(score) ;
-                if new_deficit==0 {score += 35}; 
+                let new_upper_total = min(self.upper_total+score, 63) ;
+                if new_upper_total==63 {score += 35}; 
             } 
     
         /* special handling of "joker rules" */
@@ -534,6 +533,11 @@ impl SortedSlots{
             *used_slots_total + best_current_slot_total >= 63 // totals must reach the bonus threshhold to be relevant
         )
     }
+
+   //converts the given total to a default if the bonus threshold can't be reached 
+   fn relevant_total(self,given_total:u8) -> u8{
+    if self.best_upper_total() + given_total >= 63 {given_total} else {0}
+}
 
     fn best_upper_total (self) -> u8{
         let mut sum=0;

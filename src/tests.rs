@@ -248,7 +248,7 @@ fn new_bench_test() {
 
 #[test]
 fn known_values_test2() {
-    // this should be 57.43 per http://www-set.win.tue.nl/~wstomv/misc/yahtzee/osyp.php
+    // this should be 254.5896 per http://www-set.win.tue.nl/~wstomv/misc/yahtzee/trivia.html
     let game = GameState { 
         // sorted_dievals: [1,1,1,1,1].into(), 
         // sorted_open_slots: [2,3,4,5,6].into(), 
@@ -267,7 +267,7 @@ fn known_values_test2() {
     println!("{:?}", lhs);
     println!("{:?}", lhs);
     println!("{:?}", lhs);
-    // assert_eq!(rounded(lhs.ev,2), 57.43);
+    // assert_eq!(rounded(lhs.ev,2), 254.58);
 }
 
 // #[test]
@@ -285,3 +285,25 @@ fn relevant_upper_totals_test(){
 }
 
 
+
+#[test]
+fn regression_bugs_test_fix(){
+    // this was returning 38.84 , should now return correct 38.911697
+    // as per http://www-set.win.tue.nl/~wstomv/misc/yahtzee/osyp.php
+    let game = GameState { 
+        rolls_remaining: 2,
+        sorted_dievals: [3,4,4,6,6].into(), 
+        sorted_open_slots: [7,8,9,10,11,12,13].into(), 
+        upper_total: 0,
+        yahtzee_bonus_avail: false 
+    };
+    //  let game : GameState = default() ;
+    let app = &mut App::new(game);
+    app.build_cache();
+    // for entry in &app.ev_cache {
+    //     print_state_choice(entry.0, *entry.1)    
+    // }
+    let lhs=app.ev_cache.get(&game).unwrap();
+    println!("{:?}", lhs);
+    println!("{:?}", lhs);
+ }
