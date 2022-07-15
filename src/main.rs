@@ -171,7 +171,7 @@ impl App{
                                                 upper_total:  if slots_piece.best_upper_total() + upper_total_now >= 63 {upper_total_now} else {0},  
                                                 yahtzee_bonus_avail: yahtzee_bonus_avail_now,
                                             };
-                                            let cache = if slots_piece==head { &leaf_cache } else { &self.ev_cache}; //TODO why need leaf_cache separate from main? how is leaf_cache returning upper_total > 0?? also how is this shared state read from multi threads??
+                                            let cache = if slots_piece==head { &leaf_cache } else { &self.ev_cache}; //TODO do we need leaf_cache separate from main? how is this shared state being read from multi threads?
                                             let choice_ev = cache.get(state).unwrap(); 
                                             if slots_piece==head { // on the first pass only.. 
                                                 //going into tail slots next, we may need to adjust the state based on the head choice
