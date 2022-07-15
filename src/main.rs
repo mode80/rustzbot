@@ -327,7 +327,7 @@ impl GameState{
             let mut score = Score::slot_with_dice(slot, self.sorted_dievals.into()); 
     
         /* add upper bonus when needed total is reached */
-            if slot<=SlotID::SIXES && self.upper_total>0 { 
+            if slot<=SlotID::SIXES && self.upper_total<63 { 
                 let new_upper_total = min(self.upper_total+score, 63) ;
                 if new_upper_total==63 {score += 35}; 
             } 

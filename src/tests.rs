@@ -287,23 +287,21 @@ fn relevant_upper_totals_test(){
 
 
 #[test]
-fn regression_bugs_test_fix(){
-    // this was returning 38.84 , should now return correct 38.911697
-    // as per http://www-set.win.tue.nl/~wstomv/misc/yahtzee/osyp.php
+fn empty_scorecard_ev_test(){
+    // should be 254.589 as per http://www-set.win.tue.nl/~wstomv/misc/yahtzee/trivia.html    
     let game = GameState { 
-        rolls_remaining: 2,
-        sorted_dievals: [3,4,4,6,6].into(), 
-        sorted_open_slots: [7,8,9,10,11,12,13].into(), 
+        rolls_remaining: 3,
+        sorted_dievals: [0,0,0,0,0].into(), 
+        sorted_open_slots: [1,2,3,4,5,6,7,8,9,10,11,12,13].into(), 
         upper_total: 0,
         yahtzee_bonus_avail: false 
     };
-    //  let game : GameState = default() ;
     let app = &mut App::new(game);
     app.build_cache();
     // for entry in &app.ev_cache {
     //     print_state_choice(entry.0, *entry.1)    
     // }
-    let lhs=app.ev_cache.get(&game).unwrap();
+    let lhs=app.ev_cache.get(&game).expect("Invalid GameState");
     println!("{:?}", lhs);
-    println!("{:?}", lhs);
+    println!("{:?}", lhs); // print again so output insn't obscured by the progress bar
  }
