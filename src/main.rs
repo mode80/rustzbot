@@ -219,7 +219,7 @@ impl App{
                                             let state = GameState{
                                                 sorted_dievals: newvals.into(), 
                                                 sorted_open_slots: slots, 
-                                                upper_total:if slots.best_upper_total() + upper_total >= 63 {upper_total} else {0},   
+                                                upper_total,
                                                 yahtzee_bonus_avail: yahtzee_bonus_available, 
                                                 rolls_remaining: next_roll, // we'll average all the 'next roll' possibilities (which we'd calclated last) to get ev for 'this roll' 
                                             };
